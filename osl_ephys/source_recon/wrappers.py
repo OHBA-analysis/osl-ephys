@@ -5,17 +5,24 @@ section of a config.
 """
 
 # Authors: Chetan Gohil <chetan.gohil@psych.ox.ac.uk>
+#          Mats van Es <mats.vanes@psych.ox.ac.uk>
 
 
 import os
+import os.path as op
+import subprocess
 import pickle
 from pathlib import Path
 
 import mne
+from mne.coreg import Coregistration
+from mne.io import read_info
 import numpy as np
 
-from . import rhino, beamforming, parcellation, sign_flipping
+from . import rhino, beamforming, parcellation, sign_flipping, freesurfer_utils
+from .minimum_norm import minimum_norm
 from ..report import src_report
+from ..utils.logger import log_or_print
 
 import logging
 
@@ -246,19 +253,62 @@ def compute_surfaces(
             },
         )
 
+def recon_all(
+    smri_file,
+    subjects_dir,
+    subject,
+    ):
+    
+    os.environ["SUBJECTS_DIR"] = subjects_dir
+    
+    move_flag = False
+    if os.path.exists(os.path.join(subjects_dir, subject)):
+        log_or_print(f'Temporarily saving data to {op.join(subjects_dir, subject + "_freesurfer_temp")} because subject {subject} already exists')
+        cmd =  ['recon-all', '-i', smri_file, '-s', subject + '_freesurfer_temp', '-all'] 
+        move_flag = True
+    else:
+        cmd = ['recon-all', '-i', smri_file, '-s', subject, '-all'] 
+    
+    try:
+        subprocess.run(cmd, check=True, env=os.environ)
+        log_or_print(f"recon-all completed successfully for subject {subject}")
+    except subprocess.CalledProcessError as e:
+        log_or_print(f"Error running recon-all for subject {subject}: {e}")
+
+    if move_flag:
+        log_or_print(f'Moving data from {op.join(subjects_dir, subject + "_freesurfer_temp")} to {op.join(subjects_dir, subject)}')
+        os.rename(op.join(subjects_dir, subject + "_freesurfer_temp"), op.join(subjects_dir, subject))
+
+
+def make_watershed_bem(
+    outdir,
+    subject,
+    **kwargs,
+    ):
+    """Wrapper for :py:func:`mne.bem.make_watershed_bem <mne.bem.make_watershed_bem>` making a watershed BEM with FreeSurfer."""   
+    
+    freesurfer_utils.check_freesurfer()
+    
+    mne.bem.make_watershed_bem(
+        subject=subject,
+        subjects_dir=outdir,
+        **kwargs
+    )
+
 
 def coregister(
     outdir,
     subject,
-    smri_file,
+    mode="rhino",
     preproc_file=None,
     epoch_file=None,
     use_nose=True,
     use_headshape=True,
     already_coregistered=False,
     allow_smri_scaling=False,
-    n_init=1,
+    n_init=None,
     reportdir=None,
+    **kwargs,
 ):
     """Wrapper for coregistration.
 
@@ -271,6 +321,8 @@ def coregister(
     smri_file : str
         Path to the T1 weighted structural MRI file to use in source
         reconstruction.
+    mode : str, optional
+        Mode to use for coregistration. Can be 'rhino' or 'mne'.
     preproc_file : str, optional
         Path to the preprocessed fif file.
     epoch_file : str, optional
@@ -281,7 +333,7 @@ def coregister(
         Should we use the headshape points in the coregistration?
     already_coregistered : bool, optional
         Indicates that the data is already coregistered.
-    allow_smri_scaling : bool, optional
+    allow_smri_scaling : bool, str,  optional
         Indicates if we are to allow scaling of the sMRI, such that
         the sMRI-derived fids are scaled in size to better match the
         polhemus-derived fids. This assumes that we trust the size
@@ -289,8 +341,10 @@ def coregister(
         of the sMRI-derived fids. E.g. this might be the case if we
         do not trust the size (e.g. in mm) of the sMRI, or if we are
         using a template sMRI that has not come from this subject.
+        if in mode='mne', this can be 'uniform' or '3-axis'.
     n_init : int, optional
-        Number of initialisations for coregistration.
+        Number of initialisations for coregistration. Different defaults 
+        for mode='rhino' and mode='mne'
     reportdir : str, optional
         Path to report directory.
     """
@@ -298,39 +352,98 @@ def coregister(
         preproc_file = epoch_file
 
     # Run coregistration
-    rhino.coreg(
-        fif_file=preproc_file,
-        subjects_dir=outdir,
-        subject=subject,
-        use_headshape=use_headshape,
-        use_nose=use_nose,
-        already_coregistered=already_coregistered,
-        allow_smri_scaling=allow_smri_scaling,
-        n_init=n_init,
-    )
+    if mode=="rhino":
+        if n_init is None:
+            n_init = 1
+        
+        rhino.coreg(
+            fif_file=preproc_file,
+            subjects_dir=outdir,
+            subject=subject,
+            use_headshape=use_headshape,
+            use_nose=use_nose,
+            already_coregistered=already_coregistered,
+            allow_smri_scaling=allow_smri_scaling,
+            n_init=n_init,
+        )
 
-    # Calculate metrics
-    if already_coregistered:
-        fid_err = None
-    else:
-        fid_err = rhino.coreg_metrics(subjects_dir=outdir, subject=subject)
+        # Calculate metrics
+        if already_coregistered:
+            fid_err = None
+        else:
+            fid_err = rhino.coreg_metrics(subjects_dir=outdir, subject=subject)
 
-    # Save plots
-    coreg_dir = rhino.get_coreg_filenames(outdir, subject)["basedir"]
-    rhino.coreg_display(
-        subjects_dir=outdir,
-        subject=subject,
-        display_outskin_with_nose=False,
-        filename=f"{coreg_dir}/coreg.html",
-    )
-    coreg_filename = f"{coreg_dir}/coreg.html".replace(f"{outdir}/", "")
+        # Save plots
+        coreg_dir = rhino.get_coreg_filenames(outdir, subject)["basedir"]
+        rhino.coreg_display(
+            subjects_dir=outdir,
+            subject=subject,
+            display_outskin_with_nose=False,
+            filename=f"{coreg_dir}/coreg.html",
+        )
+        coreg_filename = f"{coreg_dir}/coreg.html".replace(f"{outdir}/", "")
+            
+    elif mode=="mne" or mode=='freesurfer':
+        coreg_files = freesurfer_utils.get_coreg_filenames(outdir, subject)
+        
+        def save_coreg_html(filename):
+            fig = mne.viz.plot_alignment(info, trans=coreg.trans, **plot_kwargs)
+            print("Saving", filename)
+            fig.plotter.export_html(filename)
 
+        info = read_info(preproc_file)
+        
+        raw = mne.io.RawArray(np.zeros([len(info["ch_names"]), 1]), info)
+        raw.save(coreg_files["info_fif_file"], overwrite=True)
+        
+        fiducials = "estimated"  # get fiducials from fsaverage
+        coreg = Coregistration(
+                    info, 
+                    subject, 
+                    outdir, 
+                    fiducials=fiducials)
+        
+        if allow_smri_scaling is False:
+            coreg.set_scale_mode(allow_smri_scaling)
+        if n_init is None:
+            n_init = 20
+        
+        coreg.fit_fiducials(verbose=True)
+        
+        coreg.fit_icp(n_iterations=n_init, verbose=True, **kwargs)
+        #coreg.omit_head_shape_points(distance=1e-3)
+        
+        plot_kwargs = dict(
+            subject=subject,
+            subjects_dir=outdir,
+            surfaces="head",
+            dig=True,
+            show_axes=True,
+        )
+
+        dists = coreg.compute_dig_mri_distances()  # in m
+        log_or_print(
+        f"Distance between HSP and MRI (mean/min/max):\n{np.mean(dists * 1e3):.2f} mm "
+        f"/ {np.min(dists * 1e3):.2f} mm / {np.max(dists * 1e3):.2f} mm"
+        )
+        
+        save_coreg_html(coreg_files['coreg_html'])
+        mne.write_trans(coreg_files['coreg_trans'], coreg.trans, overwrite=True)
+        
+        # Distance between polhemus and sMRI fiducials in m, and the median distance between the scalp and headshape points.
+        lpa_distance = np.sqrt(np.sum((coreg._dig_dict["lpa"] - coreg.fiducials.dig[0]["r"]) ** 2))
+        nasion_distance = np.sqrt(np.sum((coreg._dig_dict["nasion"] - coreg.fiducials.dig[1]["r"]) ** 2))
+        rpa_distance = np.sqrt(np.sum((coreg._dig_dict["rpa"] - coreg.fiducials.dig[2]["r"]) ** 2))
+        fid_err = np.array([nasion_distance, lpa_distance, rpa_distance, np.median(dists)]) * 1e2 # now in cm
+            
+            
     if reportdir is not None:
         # Save info for the report
         src_report.add_to_data(
             f"{reportdir}/{subject}/data.pkl",
             {
                 "coregister": True,
+                "mode": mode,
                 "use_headshape": use_headshape,
                 "use_nose": use_nose,
                 "already_coregistered": already_coregistered,
@@ -347,8 +460,10 @@ def forward_model(
     subject,
     gridstep=8,
     model="Single Layer",
+    mode="rhino",
     eeg=False,
     reportdir=None,
+    **kwargs,
 ):
     """Wrapper for computing the forward model.
 
@@ -366,26 +481,72 @@ def forward_model(
         where:
         'Single Layer' use a single layer (brain/cortex)
         'Triple Layer' uses three layers (scalp, inner skull, brain/cortex)
+    mode : str, optional
+        Are we using FSL-based RHINO, or FreeSurfer based MNE?
     eeg : bool, optional
         Are we using EEG channels in the source reconstruction?
     reportdir : str, optional
         Path to report directory.
     """
     # Compute forward model
-    rhino.forward_model(
-        subjects_dir=outdir,
-        subject=subject,
-        model=model,
-        gridstep=gridstep,
-        eeg=eeg,
-    )
+    if mode=='rhino':
+        rhino.forward_model(
+            subjects_dir=outdir,
+            subject=subject,
+            model=model,
+            gridstep=gridstep,
+            eeg=eeg,
+        )
 
+    elif mode=='mne':
+        log_or_print("*** RUNNING MNE FORWARD MODEL ***")
+        filenames = freesurfer_utils.get_coreg_filenames(outdir, subject)
+        fwd_fname = freesurfer_utils.get_freesurfer_files(outdir, subject)['fwd_model']
+        
+        src = mne.setup_source_space(
+        subjects_dir=outdir,
+        spacing="oct6",
+        subject=subject,
+        add_dist="patch",
+        )
+        mne.write_source_spaces(filenames['source_space'], src, overwrite=True)
+        
+        if model == "Single Layer":
+            conductivity = (0.3,)  # for single layer
+        elif model == "Triple Layer":
+            conductivity = (0.3, 0.006, 0.3)  # for three layers
+        
+        model = mne.make_bem_model(
+                    subjects_dir=outdir, 
+                    subject=subject, 
+                    conductivity=conductivity,
+                    **kwargs
+        )
+        
+        bem = mne.make_bem_solution(model)
+        
+        trans = mne.read_trans(filenames['coreg_trans'])
+        info = read_info(filenames['info_fif_file'])
+        fwd = mne.make_forward_solution(
+            info,
+            trans=trans,
+            src=src,
+            bem=bem,
+            meg=True,
+            eeg=False,
+            mindist=5.0,
+            verbose=True,
+        )
+        mne.write_forward_solution(fwd_fname, fwd, overwrite=True)
+        log_or_print("*** FINISHED MNE FORWARD MODEL ***")
+        
     if reportdir is not None:
         # Save info for the report
         src_report.add_to_data(
             f"{reportdir}/{subject}/data.pkl",
             {
                 "forward_model": True,
+                "mode": mode,
                 "model": model,
                 "gridstep": gridstep,
                 "eeg": eeg,
@@ -501,6 +662,57 @@ def beamform(
                 "filters_svd_plot": filters_svd_plot,
             },
         )
+
+
+
+def mne_source_localize(
+    outdir,
+    subject,
+    preproc_file,
+    epoch_file,
+    method,
+    rank,
+    loose=0.2,
+    lambda2=0.1,
+    reportdir=None,
+):
+    """ Wrapper function for MNE source localization.
+
+    Parameters
+    ----------
+    outdir : str
+        Path to where to output the source reconstruction files.
+    subject : str
+        Subject name/id.
+    preproc_file : str
+        Path to the preprocessed fif file.
+    epoch_file : str
+        Path to epoched preprocessed fif file.  
+    method : str
+        Method to use in the source localization.
+    rank : int
+        Rank of the noise covariance matrix.
+    loose : float, optional
+        Loose parameter for the inverse operator.
+    lambda2 : float, optional
+        Regularization parameter.
+    reportdir : str, optional
+        Path to report directory.
+    """
+
+    logger.info("MNE source localize")
+    
+    minimum_norm(
+        outdir,
+        subject,
+        preproc_file,
+        epoch_file,
+        method,
+        rank,
+        loose=0.2,
+        lambda2=0.1,
+        reportdir=None,
+    )
 
 
 def parcellate(
