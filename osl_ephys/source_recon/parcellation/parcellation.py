@@ -22,7 +22,7 @@ from mpl_toolkits.axes_grid1 import make_axes_locatable
 
 import osl_ephys.source_recon.rhino.utils as rhino_utils
 from osl_ephys.utils.logger import log_or_print
-
+from osl_ephys.source_recon import freesurfer_utils
 
 def load_parcellation(parcellation_file):
     """Load a parcellation file.
@@ -34,9 +34,28 @@ def load_parcellation(parcellation_file):
 
     Returns
     -------
-    parcellation : nibabel image
+    parcellation : nibabel image or mne.Label
         Parcellation.
     """
+    
+    # check if it's a freesurfer parcellation
+    if 'SUBJECTS_DIR' in os.environ:
+        avail = mne.label._read_annot_cands(os.path.join(os.environ["SUBJECTS_DIR"], 'fsaverage', 'label'))
+        if parcellation_file in avail:
+            labels = mne.label.read_labels_from_annot('fsaverage', parcellation_file)
+            if parcellation_file == 'aparc' or parcellation_file == "oasis.chubs":
+                labels = [l for l in labels if "unknown" not in l.name]
+            elif parcellation_file == 'aparc.a2009s':
+                labels = [l for l in labels if "Unknown" not in l.name]
+            elif parcellation_file == "Yeo2011_7Networks_N1000" or parcellation_file == "Yeo2011_17Networks_N1000":
+                labels = [l for l in labels if "FreeSurfer_Defined_Medial_Wall" not in l.name]
+            elif parcellation_file == "PALS_B12_Brodmann":
+                labels = [l for l in labels if "Brodmann" in l.name]
+            elif parcellation_file == "PALS_B12_Lobes":
+                labels = [l for l in labels if "LOBE" in l.name] 
+            return labels
+    
+    # otherwise, load the parcellation file
     parcellation_file = find_file(parcellation_file)
     return nib.load(parcellation_file)
 
@@ -55,6 +74,16 @@ def find_file(filename):
         Path to parcellation file found.
     """
     if not op.exists(filename):
+        # check if it's a freesurfer parcellation
+        if 'SUBJECTS_DIR' in os.environ:
+            avail = mne.label._read_annot_cands(os.path.join(os.environ["SUBJECTS_DIR"], 'fsaverage', 'label'))
+            if filename in avail:
+                filename, hemis = mne.label._get_annot_fname(
+                    None, 'fsaverage', 'both', filename, os.environ['SUBJECTS_DIR']
+                )
+                return filename
+        
+        # otherwise, try to find the parcellation file in the package
         files_dir = str(Path(__file__).parent) + "/files/"
         if op.exists(files_dir + filename):
             filename = files_dir + filename
@@ -94,6 +123,29 @@ def guess_parcellation(data, return_path=False):
         fname = "fmri_d100_parcellation_with_PCC_tighterMay15_v2_8mm.nii.gz"
     elif nparc==78:
         fname = "aal_cortical_merged_8mm_stacked.nii.gz"
+    
+    # the following are FreeSurfer parcellations:
+    elif nparc==68: # Desikan-Killiany (2006)
+        fname = "aparc"
+    # TODO: find out how many valid parcels these contain (might contain unkowns and ??? etc).
+    # elif nparc==156:
+    #     fname = "aparc.a2005s"
+    elif nparc==144: # Destrieux et al. 2010
+        fname = "aparc.a2009s"
+    elif nparc==16:
+        fname = "oasis.chubs"
+    elif nparc==82:
+        fname = "PALS_B12_Brodmann"
+    elif nparc==10:
+        fname = "PALS_B12_Lobes"
+    # elif nparc==105:
+    #     fname = "PALS_B12_OrbitoFrontal"
+    # elif nparc==43:
+    #     fname = "PALS_B12_Visuotopic"
+    elif nparc==34:
+        fname = "Yeo2011_17Networks_N1000"
+    elif nparc==14:
+        fname = "Yeo2011_7Networks_N1000"
     else:
         raise ValueError("Can't guess parcellation for {} channels".format(nparc))
     # print('Guessing parcellation is {}'.format(fname))
@@ -103,7 +155,7 @@ def guess_parcellation(data, return_path=False):
         return find_file(fname).split('/')[-1]
  
 
-def parcellate_timeseries(parcellation_file, voxel_timeseries, voxel_coords, method, working_dir):
+def vol_parcellate_timeseries(parcellation_file, voxel_timeseries, voxel_coords, method, working_dir):
     """Parcellate a voxel time series.
 
     Parameters
@@ -311,6 +363,37 @@ def _get_parcel_timeseries(voxel_timeseries, parcellation_asmatrix, method="spat
     return parcel_timeseries, voxel_weightings, voxel_assignments
 
 
+def surf_parcellate_timeseries(subject_dir, subject, preproc_file, epoch_file, method, parcellation_file):
+    """Save parcellated data as a fif file.
+    
+    Parameters
+    ----------
+    subject_dir : str
+        Path to subject directory.
+    subject : str
+        Subject ID.
+    preproc_file : str
+        Path to preprocessed file.
+    epoch_file : str or None
+        Path to epoch file.
+    method : str
+        Parcellation method. Can be 'pca_flip', 'max', 'mean', 'mean_flip', 'auto'
+    """
+    fs_files = freesurfer_utils.get_freesurfer_files(subject_dir, subject)
+    if epoch_file is not None:
+        src_file = op.join(subject_dir, subject, "mne_src", "src-epo")
+    else:
+        src_file = op.join(subject_dir, subject, "mne_src", "src-raw")
+    
+    labels = mne.read_labels_from_annot(subjects_dir=subject_dir, subject=subject, parc=parcellation_file)
+    labels = [l for l in labels if "unknown" not in l.name]
+    
+    stc = mne.read_source_estimate(src_file, subject=subject)
+    src = mne.read_source_spaces(fs_files['coreg']['source_space'])
+    parcel_data = mne.extract_label_time_course(stc, labels, src, mode=method)
+    return parcel_data
+
+
 def resample_parcellation(parcellation_file, voxel_coords, working_dir=None):
     """Resample parcellation so that its voxel coords correspond (using nearest neighbour) to passed in voxel_coords.
     Passed in voxel_coords and parcellation must be in the same space, e.g. MNI.
@@ -476,12 +559,17 @@ def parcel_centers(parcellation_file):
         Coordinates of each parcel. Shape is (n_parcels, 3).
     """
     parcellation = load_parcellation(parcellation_file)
-    n_parcels = parcellation.shape[3]
-    data = parcellation.get_fdata()
-    nonzero = [np.nonzero(data[..., i]) for i in range(n_parcels)]
-    nonzero_coords = [nib.affines.apply_affine(parcellation.affine, np.array(nz).T) for nz in nonzero ]
-    weights = [data[..., i][nz] for i, nz in enumerate(nonzero)]
-    coords = np.array([np.average(c, weights=w, axis=0) for c, w in zip(nonzero_coords, weights)])
+    if isinstance(parcellation, nib.nifti1.Nifti1Image):
+        n_parcels = parcellation.shape[3]
+        data = parcellation.get_fdata()
+        nonzero = [np.nonzero(data[..., i]) for i in range(n_parcels)]
+        nonzero_coords = [nib.affines.apply_affine(parcellation.affine, np.array(nz).T) for nz in nonzero ]
+        weights = [data[..., i][nz] for i, nz in enumerate(nonzero)]
+        coords = np.array([np.average(c, weights=w, axis=0) for c, w in zip(nonzero_coords, weights)])
+    elif isinstance(parcellation, list) and isinstance(parcellation[0], mne.Label): # freesurfer parcellation
+        vertices = np.array([l.center_of_mass() for l in parcellation])
+        hemis = [0 if l.hemi=='lh' else 1 for l in parcellation]
+        coords = mne.vertex_to_mni(vertices, hemis, "fsaverage")
     return coords
 
 

@@ -3,7 +3,8 @@ Installation
 
 A full installation of the OHBA Software Library includes:
 
-- `FSL <https://fsl.fmrib.ox.ac.uk/fsl/fslwiki/FslInstallation>`_ (FMRIB Software Library) - only needed if you want to do source reconstruction.
+- `FSL <https://fsl.fmrib.ox.ac.uk/fsl/fslwiki/FslInstallation>`_ (FMRIB Software Library) - only needed if you want to do volumetric source reconstruction.
+- `FreeSurfer <https://surfer.nmr.mgh.harvard.edu/fswiki/DownloadAndInstall>`_ (FreeSurfer) - only needed if you want to do surface-based source reconstruction.
 - `Miniconda <https://docs.conda.io/projects/miniconda/en/latest/miniconda-install.html>`_ (or `Anaconda <https://docs.anaconda.com/free/anaconda/install/index.html>`_).
 - `osl-ephys <https://github.com/OHBA-analysis/osl-ephys>`_ (OSL Ephys Toolbox).
 - `osl-dynamics <https://github.com/OHBA-analysis/osl-dynamics>`_ (OSL Dynamics Toolbox) - only needed if you want to train models for dynamics.
@@ -12,6 +13,8 @@ Linux Instructions
 ------------------
 
 1. Install FSL using the instructions `here <https://fsl.fmrib.ox.ac.uk/fsl/fslwiki/FslInstallation/Linux>`_.
+
+2. Install Freesurfer using the instructions `here <https://surfer.nmr.mgh.harvard.edu/fswiki/DownloadAndInstall>`_.
 
 2. Install `Miniconda <https://docs.conda.io/projects/miniconda/en/latest/miniconda-install.html>`_ inside the terminal::
 

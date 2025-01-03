@@ -61,7 +61,7 @@ def forward_model(
     meg : bool
         Whether to compute forward model for meg sensors
     """
-    log_or_print("*** RUNNING OSL-EPHYS RHINO FORWARD MODEL ***")
+    log_or_print("*** RUNNING RHINO VOLUMETRIC FORWARD MODEL ***")
 
     filenames = rhino_utils.get_rhino_files(subjects_dir, subject)
 
