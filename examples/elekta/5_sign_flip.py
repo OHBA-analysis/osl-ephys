@@ -25,7 +25,7 @@ if __name__ == "__main__":
 
     # Find a good template subject to align other subjects to
     template = find_template_subject(
-        src_dir, subjects, n_embeddings=15, standardize=True
+        outdir, subjects, n_embeddings=15, standardize=True
     )
 
     # Settings for batch processing
