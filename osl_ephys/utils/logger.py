@@ -7,15 +7,10 @@ Heavily inspired by logging in OSL.
 
 import yaml
 import logging
-import logging.config
-
-
-# Housekeeping for logging
-# Set logger level to WARNING as default
-logging.getLogger("osl").setLevel(logging.WARNING)
 
 # Initialise logging for this sub-module
-osl_logger = logging.getLogger(__name__)
+osl_logger = logging.getLogger("osl")
+osl_logger.setLevel(logging.WARNING)
 
 #%% ------------------------------------------------------------
 

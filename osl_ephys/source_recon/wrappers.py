@@ -9,8 +9,6 @@ section of a config.
 
 
 import os
-import os.path as op
-import subprocess
 import pickle
 from pathlib import Path
 
@@ -23,10 +21,6 @@ from . import rhino, beamforming, parcellation, sign_flipping, freesurfer_utils
 from .minimum_norm import minimum_norm, apply_inverse_solution as minimum_norm_estimate, apply_inverse_solution
 from ..report import src_report
 from ..utils.logger import log_or_print
-
-import logging
-
-logger = logging.getLogger(__name__)
 
 
 # --------------
@@ -223,7 +217,7 @@ def compute_surfaces(
     """
     if smri_file == "standard":
         std_struct = "MNI152_T1_2mm.nii.gz"
-        logger.info(f"Using standard structural: {std_struct}")
+        log_or_print(f"Using standard structural: {std_struct}")
         smri_file = os.path.join(os.environ["FSLDIR"], "data", "standard", std_struct)
 
     # Compute surfaces
@@ -588,21 +582,21 @@ def beamform(
     reportdir : str, optional
         Path to report directory
     """
-    logger.info("beamforming")
+    log_or_print("beamforming")
 
     if isinstance(chantypes, str):
         chantypes = [chantypes]
 
     # Load sensor-level data
     if epoch_file is not None:
-        logger.info("using epoched data")
+        log_or_print("using epoched data")
         data = mne.read_epochs(epoch_file, preload=True)
     else:
         data = mne.io.read_raw_fif(preproc_file, preload=True)
 
     # Bandpass filter
     if freq_range is not None:
-        logger.info(f"bandpass filtering: {freq_range[0]}-{freq_range[1]} Hz")
+        log_or_print(f"bandpass filtering: {freq_range[0]}-{freq_range[1]} Hz")
         data = data.filter(
             l_freq=freq_range[0],
             h_freq=freq_range[1],
@@ -614,9 +608,9 @@ def beamform(
     data.pick(chantypes)
 
     # Create beamforming filters
-    logger.info("beamforming.make_lcmv")
-    logger.info(f"chantypes: {chantypes}")
-    logger.info(f"rank: {rank}")
+    log_or_print("beamforming.make_lcmv")
+    log_or_print(f"chantypes: {chantypes}")
+    log_or_print(f"rank: {rank}")
     filters = beamforming.make_lcmv(
         subjects_dir=outdir,
         subject=subject,
@@ -709,7 +703,7 @@ def minimum_norm(
     
     # Bandpass filter
     if freq_range is not None:
-        logger.info(f"bandpass filtering: {freq_range[0]}-{freq_range[1]} Hz")
+        log_or_print(f"bandpass filtering: {freq_range[0]}-{freq_range[1]} Hz")
         data = data.filter(
             l_freq=freq_range[0],
             h_freq=freq_range[1],
@@ -717,7 +711,7 @@ def minimum_norm(
             iir_params={"order": 5, "ftype": "butter"},
         )
     
-    logger.info("MNE source localize")
+    log_or_print("MNE source localize")
     minimum_norm_estimate(
         outdir,
         subject,
@@ -810,11 +804,11 @@ def parcellate(
     reportdir : str, optional
         Path to report directory.
     """
-    logger.info("parcellate")
+    log_or_print("parcellate")
 
     # Load sensor-level data
     if epoch_file is not None:
-        logger.info("using epoched data")
+        log_or_print("using epoched data")
         data = mne.read_epochs(epoch_file, preload=True)
     else:
         data = mne.io.read_raw_fif(preproc_file, preload=True)
@@ -835,7 +829,7 @@ def parcellate(
         
     # Bandpass filter
     if freq_range is not None:
-        logger.info(f"bandpass filtering: {freq_range[0]}-{freq_range[1]} Hz")
+        log_or_print(f"bandpass filtering: {freq_range[0]}-{freq_range[1]} Hz")
         data = data.filter(
             l_freq=freq_range[0],
             h_freq=freq_range[1],
@@ -868,7 +862,7 @@ def parcellate(
         )
 
         # Parcellation
-        logger.info(f"using file {parcellation_file}")
+        log_or_print(f"using file {parcellation_file}")
         parcel_data, _, _ = parcellation.vol_parcellate_timeseries(
             parcellation_file,
             voxel_timeseries=bf_data_mni,
@@ -898,7 +892,7 @@ def parcellate(
         raise NotImplementedError(orthogonalisation)
 
     if orthogonalisation == "symmetric":
-        logger.info(f"{orthogonalisation} orthogonalisation")
+        log_or_print(f"{orthogonalisation} orthogonalisation")
         parcel_data = parcellation.symmetric_orthogonalise(
             parcel_data, maintain_magnitudes=True
         )
@@ -907,7 +901,7 @@ def parcellate(
     if epoch_file is None:
         # Save parcellated data as a MNE Raw object
         parc_fif_file = f"{outdir}/{subject}/parc/parc-raw.fif"
-        logger.info(f"saving {parc_fif_file}")
+        log_or_print(f"saving {parc_fif_file}")
         parc_raw = parcellation.convert2mne_raw(
             parcel_data, data, extra_chans=extra_chans
         )
@@ -915,7 +909,7 @@ def parcellate(
     else:
         # Save parcellated data as a MNE Epochs object
         parc_fif_file = f"{outdir}/{subject}/parc/parc-epo.fif"
-        logger.info(f"saving {parc_fif_file}")
+        log_or_print(f"saving {parc_fif_file}")
         parc_epo = parcellation.convert2mne_epochs(parcel_data, data)
         parc_epo.save(parc_fif_file, overwrite=True)
 
@@ -1028,21 +1022,21 @@ def beamform_and_parcellate(
     reportdir : str, optional
         Path to report directory.
     """
-    logger.info("beamform_and_parcellate")
+    log_or_print("beamform_and_parcellate")
 
     if isinstance(chantypes, str):
         chantypes = [chantypes]
 
     # Load sensor-level data
     if epoch_file is not None:
-        logger.info("using epoched data")
+        log_or_print("using epoched data")
         data = mne.read_epochs(epoch_file, preload=True)
     else:
         data = mne.io.read_raw_fif(preproc_file, preload=True)
 
     # Bandpass filter
     if freq_range is not None:
-        logger.info(f"bandpass filtering: {freq_range[0]}-{freq_range[1]} Hz")
+        log_or_print(f"bandpass filtering: {freq_range[0]}-{freq_range[1]} Hz")
         data = data.filter(
             l_freq=freq_range[0],
             h_freq=freq_range[1],
@@ -1054,9 +1048,9 @@ def beamform_and_parcellate(
     chantype_data = data.copy().pick(chantypes)
 
     # Create beamforming filters
-    logger.info("beamforming.make_lcmv")
-    logger.info(f"chantypes: {chantypes}")
-    logger.info(f"rank: {rank}")
+    log_or_print("beamforming.make_lcmv")
+    log_or_print(f"chantypes: {chantypes}")
+    log_or_print(f"rank: {rank}")
     filters = beamforming.make_lcmv(
         subjects_dir=outdir,
         subject=subject,
@@ -1092,8 +1086,8 @@ def beamform_and_parcellate(
     )
 
     # Parcellation
-    logger.info("parcellation")
-    logger.info(f"using file {parcellation_file}")
+    log_or_print("parcellation")
+    log_or_print(f"using file {parcellation_file}")
     parcel_data, _, _ = parcellation.vol_parcellate_timeseries(
         parcellation_file,
         voxel_timeseries=bf_data_mni,
@@ -1107,7 +1101,7 @@ def beamform_and_parcellate(
         raise NotImplementedError(orthogonalisation)
 
     if orthogonalisation == "symmetric":
-        logger.info(f"{orthogonalisation} orthogonalisation")
+        log_or_print(f"{orthogonalisation} orthogonalisation")
         parcel_data = parcellation.symmetric_orthogonalise(
             parcel_data, maintain_magnitudes=True
         )
@@ -1115,7 +1109,7 @@ def beamform_and_parcellate(
     if epoch_file is None:
         # Save parcellated data as a MNE Raw object
         parc_fif_file = f"{outdir}/{subject}/parc/parc-raw.fif"
-        logger.info(f"saving {parc_fif_file}")
+        log_or_print(f"saving {parc_fif_file}")
         parc_raw = parcellation.convert2mne_raw(
             parcel_data, data, extra_chans=extra_chans
         )
@@ -1123,7 +1117,7 @@ def beamform_and_parcellate(
     else:
         # Save parcellated data as a MNE Epochs object
         parc_fif_file = f"{outdir}/{subject}/parc/parc-epo.fif"
-        logger.info(f"saving {parc_fif_file}")
+        log_or_print(f"saving {parc_fif_file}")
         parc_epo = parcellation.convert2mne_epochs(parcel_data, data)
         parc_epo.save(parc_fif_file, overwrite=True)
 
@@ -1231,19 +1225,19 @@ def minimum_norm_and_parcellate(
     reportdir : str, optional
         Path to report directory.
     """
-    logger.info("minimum_norm_and_parcellate")
+    log_or_print("minimum_norm_and_parcellate")
     os.environ["SUBJECTS_DIR"] = outdir
     
     # Load sensor-level data
     if epoch_file is not None:
-        logger.info("using epoched data")
+        log_or_print("using epoched data")
         data = mne.read_epochs(epoch_file, preload=True)
     else:
         data = mne.io.read_raw_fif(preproc_file, preload=True)
 
     # Bandpass filter
     if freq_range is not None:
-        logger.info(f"bandpass filtering: {freq_range[0]}-{freq_range[1]} Hz")
+        log_or_print(f"bandpass filtering: {freq_range[0]}-{freq_range[1]} Hz")
         data = data.filter(
             l_freq=freq_range[0],
             h_freq=freq_range[1],
@@ -1251,7 +1245,7 @@ def minimum_norm_and_parcellate(
             iir_params={"order": 5, "ftype": "butter"},
         )
 
-    logger.info("MNE source localize")    
+    log_or_print("MNE source localize")
     inverse_operator = minimum_norm_estimate(
         outdir,
         subject,
@@ -1277,7 +1271,7 @@ def minimum_norm_and_parcellate(
         raise NotImplementedError(orthogonalisation)
 
     if orthogonalisation == "symmetric":
-        logger.info(f"{orthogonalisation} orthogonalisation")
+        log_or_print(f"{orthogonalisation} orthogonalisation")
         parcel_data = parcellation.symmetric_orthogonalise(
             parcel_data, maintain_magnitudes=True
         )
@@ -1286,7 +1280,7 @@ def minimum_norm_and_parcellate(
     if epoch_file is None:
         # Save parcellated data as a MNE Raw object
         parc_fif_file = f"{outdir}/{subject}/parc/parc-raw.fif"
-        logger.info(f"saving {parc_fif_file}")
+        log_or_print(f"saving {parc_fif_file}")
         parc_raw = parcellation.convert2mne_raw(
             parcel_data, data, extra_chans=extra_chans
         )
@@ -1294,7 +1288,7 @@ def minimum_norm_and_parcellate(
     else:
         # Save parcellated data as a MNE Epochs object
         parc_fif_file = f"{outdir}/{subject}/parc/parc-epo.fif"
-        logger.info(f"saving {parc_fif_file}")
+        log_or_print(f"saving {parc_fif_file}")
         parc_epo = parcellation.convert2mne_epochs(parcel_data, data)
         parc_epo.save(parc_fif_file, overwrite=True)
 
@@ -1454,8 +1448,8 @@ def fix_sign_ambiguity(
     reportdir : str, optional
         Path to report directory.
     """
-    logger.info("fix_sign_ambiguity")
-    logger.info(f"using template: {template}")
+    log_or_print("fix_sign_ambiguity")
+    log_or_print(f"using template: {template}")
 
     # Get path to the parcellated data file for this subject and the template
     parc_files = []
