@@ -4,12 +4,13 @@ Heavily inspired by logging in OSL.
 """
 
 # Authors: Andrew Quinn <a.quinn@bham.ac.uk>
+#          Chetan Gohil <chetan.gohil@psych.ox.ac.uk>
 
 import yaml
 import logging
 
 # Initialise logging for this sub-module
-osl_logger = logging.getLogger("osl")
+osl_logger = logging.getLogger("osl_ephys")
 osl_logger.setLevel(logging.WARNING)
 
 #%% ------------------------------------------------------------
@@ -18,7 +19,7 @@ osl_logger.setLevel(logging.WARNING)
 default_config = """
 version: 1
 loggers:
-  osl:
+  osl_ephys:
     level: DEBUG
     handlers: [console, file]
     propagate: false
@@ -75,7 +76,7 @@ def set_up(prefix='', log_file=None, level=None, console_format=None, startup=Tr
 
     # Remove log file from dict if not user requested
     if log_file is None:
-        new_config['loggers']['osl']['handlers'] = ['console']
+        new_config['loggers']['osl_ephys']['handlers'] = ['console']
         del new_config['handlers']['file']
 
     # Configure osl_logger with dict
