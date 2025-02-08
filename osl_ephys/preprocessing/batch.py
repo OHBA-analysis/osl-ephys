@@ -812,9 +812,7 @@ def run_proc_chain(
     # Generate log filename
     if logsdir is not None:
         logbase = os.path.join(logsdir, name_base)
-        logfile = logbase.format(
-            run_id=run_id.replace("_raw", ""), ftype=ftype, fext="log"
-        )
+        logfile = logbase.format(run_id=run_id, ftype=ftype.replace("-raw", ""), fext="log")
         mne.utils._logging.set_log_file(logfile, overwrite=overwrite)
     else:
         logfile = None
@@ -838,9 +836,7 @@ def run_proc_chain(
     # Write preprocessed data to output directory
     if outdir is not None:
         # Check for existing outputs - should be a .fif at least
-        fifout = outbase.format(
-            run_id=run_id.replace('_raw', ''), ftype=ftype, fext='fif'
-        )
+        fifout = outbase.format(run_id=run_id, ftype=ftype, fext='fif')
         if os.path.exists(fifout) and (overwrite is False):
             logger.critical('Skipping preprocessing - existing output detected')
             return False
@@ -1050,7 +1046,7 @@ def run_proc_batch(
     if strictrun and verbose not in ['INFO', 'DEBUG']:
         # override logger level if strictrun requested but user won't see any info...
         verobse = 'INFO'
-    logfile = os.path.join(logsdir, 'osl_batch.log')
+    logfile = os.path.join(logsdir, 'batch_preproc.log')
     osl_logger.set_up(log_file=logfile, level=verbose, startup=False)
 
     logger.info('Starting osl-ephys Batch Processing')
@@ -1134,11 +1130,7 @@ def run_proc_batch(
             proc_flags = [flag[0] for flag in proc_flags]
         
         osl_logger.set_up(log_file=logfile, level=verbose, startup=False)
-        logger.info(
-            "Processed {0}/{1} files successfully".format(
-                np.sum(proc_flags), len(proc_flags)
-            )
-        )
+        logger.info("Processed {0}/{1} files successfully".format( np.sum(proc_flags), len(proc_flags)))
         
         # Generate a report
         if gen_report and len(infiles) > 0:

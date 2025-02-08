@@ -315,7 +315,7 @@ def run_src_batch(
 
     # Initialise Loggers
     mne.set_log_level(mneverbose)
-    logfile = os.path.join(logsdir, 'osl_batch.log')
+    logfile = os.path.join(logsdir, 'batch_src.log')
     osl_logger.set_up(log_file=logfile, level=verbose, startup=False)
     logger.info('Starting osl-ephys Batch Source Reconstruction')
 
