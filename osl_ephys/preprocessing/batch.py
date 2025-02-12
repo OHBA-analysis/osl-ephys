@@ -888,7 +888,7 @@ def run_proc_chain(
 
             from ..report import gen_html_data, gen_html_page  # avoids circular import
             logger.info("{0} : Generating Report".format(now))
-            report_data_dir = validate_outdir(reportdir / Path(outnames["raw"]).stem)
+            report_data_dir = validate_outdir(reportdir / Path(outnames["raw"]).stem.replace(f"_{ftype}", ""))
             gen_html_data(
                 dataset["raw"],
                 report_data_dir,
