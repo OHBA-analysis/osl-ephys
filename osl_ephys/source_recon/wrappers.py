@@ -669,7 +669,7 @@ def minimum_norm(
     reportdir=None,
     **kwargs,
 ):
-    """ Wrapper function for MNE source localization.
+    """Wrapper function for MNE source localization.
 
     Parameters
     ----------
@@ -703,6 +703,9 @@ def minimum_norm(
         Path to report directory.
     """
     os.environ["SUBJECTS_DIR"] = str(outdir)
+
+    if isinstance(chantypes, str):
+        chantypes = [chantypes]
 
     allowed_modes = ["rhino", "mne", "freesurfer"]
     if mode not in allowed_modes:
@@ -1322,6 +1325,9 @@ def minimum_norm_and_parcellate(
     """
     log_or_print("minimum_norm_and_parcellate")
     os.environ["SUBJECTS_DIR"] = str(outdir)
+
+    if isinstance(chantypes, str):
+        chantypes = [chantypes]
     
     # Load sensor-level data
     if epoch_file is not None:
