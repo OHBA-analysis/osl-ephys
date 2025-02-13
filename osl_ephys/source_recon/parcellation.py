@@ -24,13 +24,15 @@ import osl_ephys.source_recon.rhino.utils as rhino_utils
 from osl_ephys.utils.logger import log_or_print
 from osl_ephys.source_recon import freesurfer_utils
 
-def load_parcellation(parcellation_file, subject=None):
+def load_parcellation(parcellation_file, freesurfer=False, subject=None):
     """Load a parcellation file.
 
     Parameters
     ----------
     parcellation_file : str
         Path to parcellation file.
+    freesurfer : bool, optional
+        Are we loading a FreeSurfer parcellation?
     subject : str
         Subject ID. Only needed for FreeSurfer parcellations.
 
@@ -40,8 +42,8 @@ def load_parcellation(parcellation_file, subject=None):
         Parcellation.
     """
     
-    # check if it's a freesurfer parcellation
-    if 'SUBJECTS_DIR' in os.environ:
+    # is it a freesurfer parcellation
+    if freesurfer:
         if subject is None:
             subject = "fsaverage"
         
@@ -61,17 +63,37 @@ def load_parcellation(parcellation_file, subject=None):
             return labels
     
     # otherwise, load the nifti parcellation file
-    parcellation_file = find_file(parcellation_file)
+    parcellation_file = find_file(parcellation_file, freesurfer=freesurfer)
+
     return nib.load(parcellation_file)
 
 
-def find_file(filename):
+def _find_package_file(filename):
+    files_dir = str(Path(__file__).parent) + "/files/"
+    if op.exists(files_dir + filename):
+        return files_dir + filename
+
+
+def _find_freesurfer_file(filename):
+    avail = mne.label._read_annot_cands(
+        os.path.join(os.environ["SUBJECTS_DIR"], 'fsaverage', 'label')
+    )
+    if filename in avail:
+        filename, hemis = mne.label._get_annot_fname(
+            None, 'fsaverage', 'both', filename, os.environ['SUBJECTS_DIR']
+        )
+        return filename
+
+
+def find_file(filename, freesurfer=False):
     """Look for a parcellation file within the package.
 
     Parameters
     ----------
     filename : str
         Path to parcellation file to look for.
+    freesurfer : bool, optional
+        Should we look in the freesurfer directory?
 
     Returns
     -------
@@ -79,21 +101,14 @@ def find_file(filename):
         Path to parcellation file found.
     """
     if not op.exists(filename):
-        # check if it's a freesurfer parcellation
-        if 'SUBJECTS_DIR' in os.environ:
-            avail = mne.label._read_annot_cands(os.path.join(os.environ["SUBJECTS_DIR"], 'fsaverage', 'label'))
-            if filename in avail:
-                filename, hemis = mne.label._get_annot_fname(
-                    None, 'fsaverage', 'both', filename, os.environ['SUBJECTS_DIR']
-                )
-                return filename
-        
-        # otherwise, try to find the parcellation file in the package
-        files_dir = str(Path(__file__).parent) + "/files/"
-        if op.exists(files_dir + filename):
-            filename = files_dir + filename
+        if freesurfer:
+            filename = _find_freesurfer_file(filename)
         else:
-            raise FileNotFoundError(filename)
+            filename = _find_package_file(filename)
+        
+    if filename is None:
+        raise FileNotFoundError(filename)
+
     return filename
 
 
@@ -384,12 +399,13 @@ def surf_parcellate_timeseries(subject_dir, subject, stc, method, parc):
     parc : str
         Parcellation name.
     """
-    fs_files = freesurfer_utils.get_freesurfer_files(subject_dir, subject)
-    
-    labels = load_parcellation(parc, subject=subject)
-    
+    fs_files = freesurfer_utils.get_freesurfer_filenames(subject_dir, subject)
+
+    labels = load_parcellation(parc, freesurfer=True, subject=subject)
+
     src = mne.read_source_spaces(fs_files['coreg']['source_space'])
     parcel_data = mne.extract_label_time_course(stc, labels, src, mode=method)
+
     return parcel_data
 
 
@@ -1096,7 +1112,7 @@ def convert2source_estimate(subjects_dir, data, parc=None, reference_brain='fsav
     labels = load_parcellation(parc)
     nparc=len(labels)
     
-    src = mne.read_source_spaces(freesurfer_utils.get_freesurfer_files(os.environ["SUBJECTS_DIR"], reference_brain)['source_space'])
+    src = mne.read_source_spaces(freesurfer_utils.get_freesurfer_filenames(os.environ["SUBJECTS_DIR"], reference_brain)['source_space'])
     
     vertices = [s["vertno"] for s in src]
     kernel = np.zeros((src[0]['nuse'], nparc))

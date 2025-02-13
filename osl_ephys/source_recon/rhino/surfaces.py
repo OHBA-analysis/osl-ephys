@@ -44,7 +44,7 @@ def get_surfaces_filenames(subjects_dir, subject):
         - bet_outskull_*_file is actually the inner skull surface
         - bet_outskin_*_file is the outer skin/scalp surface
     """
-    rhino_files = rhino_utils.get_rhino_files(subjects_dir, subject)
+    rhino_files = rhino_utils.get_rhino_filenames(subjects_dir, subject)
     return rhino_files["surf"]
 
 

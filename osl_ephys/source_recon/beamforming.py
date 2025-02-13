@@ -163,7 +163,7 @@ def make_lcmv(
     """
     log_or_print("*** RUNNING OSL MAKE LCMV ***")
 
-    rhino_files = rhino_utils.get_rhino_files(subjects_dir, subject)
+    rhino_files = rhino_utils.get_rhino_filenames(subjects_dir, subject)
     beamforming_files = get_beamforming_filenames(subjects_dir, subject)
 
     # load forward solution
@@ -366,7 +366,7 @@ def get_recon_timeseries(subjects_dir, subject, coord_mni, recon_timeseries_head
         The timecourse in recon_timeseries_head nearest to coord_mni.
     """
 
-    rhino_files = rhino_utils.get_rhino_files(subjects_dir, subject)
+    rhino_files = rhino_utils.get_rhino_filenames(subjects_dir, subject)
     surfaces_filenames = rhino_files["surf"]
     coreg_filenames = rhino_files["coreg"]
 
@@ -427,7 +427,7 @@ def transform_recon_timeseries(
         Array of coordinates (in mm) of dipoles in recon_timeseries_out in "reference_brain" space.
     """
 
-    rhino_files = rhino_utils.get_rhino_files(subjects_dir, subject)
+    rhino_files = rhino_utils.get_rhino_filenames(subjects_dir, subject)
     surfaces_filenames = rhino_files["surf"]
     coreg_filenames = rhino_files["coreg"]
 
@@ -553,7 +553,7 @@ def get_lcmv_weights(
     coords : (3, ndipoles) numpy.ndarray
         Array of coordinates (in mm) of dipoles in weights in "reference_brain" space.
     """
-    rhino_files = rhino_utils.get_rhino_files(subjects_dir, subject)
+    rhino_files = rhino_utils.get_rhino_filenames(subjects_dir, subject)
 
     # Load forward model and LCMV beamformer
     fwd = read_forward_solution(rhino_files["fwd_model"], verbose=verbose)
@@ -617,7 +617,7 @@ def get_leadfields(
     coords : (3, ndipoles) numpy.ndarray
         Array of coordinates (in mm) of dipoles in leadfield_out in "reference_brain" space.
     """
-    rhino_files = rhino_utils.get_rhino_files(subjects_dir, subject)
+    rhino_files = rhino_utils.get_rhino_filenames(subjects_dir, subject)
 
     # ------------------------
     # Leadfields in head space

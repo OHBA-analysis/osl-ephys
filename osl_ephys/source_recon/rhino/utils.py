@@ -44,7 +44,7 @@ from osl_ephys.source_recon.beamforming import transform_recon_timeseries
 from osl_ephys.utils.logger import log_or_print
 from osl_ephys.utils import soft_import
 
-def get_rhino_files(subjects_dir, subject):
+def get_rhino_filenames(subjects_dir, subject):
     """Get paths to all RHINO files.
 
     Files will be in subjects_dir/subject/rhino.
@@ -1364,7 +1364,7 @@ def save_polhemus_fif(raw, subjects_dir,subject):
                 headshape = np.vstack([headshape, p["r"]*1000])  # Stack headshape points
 
     # Get the location to save the files to
-    coreg_filenames = get_rhino_files(subjects_dir, subject)
+    coreg_filenames = get_rhino_filenames(subjects_dir, subject)
     path_to_save    = coreg_filenames['coreg']['basedir']
 
     # Save to .txt files

@@ -3,6 +3,7 @@
 """
 
 # Authors: Mats van Es <mats.vanes@psych.ox.ac.uk>
+#          Chetan Gohil <chetan.gohil@psych.ox.ac.uk>
 
 import os
 import subprocess
@@ -12,12 +13,12 @@ from mne import setup_source_space, write_source_spaces, read_source_spaces, bem
 from osl_ephys.utils.logger import log_or_print
 
 def setup_freesurfer(directory, subjects_dir=None):
-    """Setup FSL.
+    """Setup FreeSurfer.
 
     Parameters
     ----------
     directory : str
-        Path to FSL installation.
+        Path to FreeSurfer installation.
     """
     
     os.environ["FREESURFERDIR"] = directory
@@ -52,7 +53,7 @@ def check_freesurfer():
         raise RuntimeError("Please setup FreeSurfer, e.g. with osl_ephys.source_recon.setup_freesurfer().")
 
 
-def get_freesurfer_files(subjects_dir, subject):
+def get_freesurfer_filenames(subjects_dir, subject):
     """Get paths to all FreeSurfer files.
 
     Files will be in subjects_dir/subject/.
@@ -99,24 +100,23 @@ def get_freesurfer_files(subjects_dir, subject):
     }
     
     # Coregistration files
-    coreg_dir = op.join(fs_dir, "mne_src")
+    coreg_dir = op.join(fs_dir, "coreg")
     os.makedirs(coreg_dir, exist_ok=True)
     coreg_files = {
         "basedir": coreg_dir,
         "info_fif_file": op.join(coreg_dir, "info-raw.fif"),
+        "source_space": op.join(coreg_dir, "space-src.fif"),
         "coreg_trans": op.join(coreg_dir, "coreg-trans.fif"),
         "coreg_html": op.join(coreg_dir, "coreg.html"),
-        "source_space": op.join(coreg_dir, "space-src.fif"),
-        "inverse_solution": op.join(coreg_dir, "{0}-inv.fif"),
-        "source_estimate_raw": op.join(coreg_dir, "src-raw"), # followed by -lh/rh.stc
-        "source_estimate_epo": op.join(coreg_dir, "src-epo"),
     }
 
-    # All Freesurfer files files
-    files = {"surf": surf_files, "coreg": coreg_files, "fwd_model": op.join(fs_dir, "model-fwd.fif")}
+    # Forward model filename
+    fwd = op.join(fs_dir, "model-fwd.fif")
+
+    # All Freesurfer files
+    files = {"surf": surf_files, "coreg": coreg_files, "fwd_model": fwd}
 
     return files
-
 
 
 def get_coreg_filenames(subjects_dir, subject):
@@ -136,16 +136,12 @@ def get_coreg_filenames(subjects_dir, subject):
     filenames : dict
         A dict of files generated and used by FreeSurfer.
     """
-    fs_files = get_freesurfer_files(subjects_dir, subject)
+    fs_files = get_freesurfer_filenames(subjects_dir, subject)
     return fs_files["coreg"]
 
 
-def recon_all(
-    smri_file,
-    subjects_dir,
-    subject,
-    ):
-    
+def recon_all(smri_file, subjects_dir, subject):
+
     os.environ["SUBJECTS_DIR"] = subjects_dir
     
     move_flag = False
@@ -167,11 +163,7 @@ def recon_all(
         os.rename(op.join(subjects_dir, subject + "_freesurfer_temp"), op.join(subjects_dir, subject))
 
 
-def make_watershed_bem(
-    outdir,
-    subject,
-    **kwargs,
-    ):
+def make_watershed_bem(outdir, subject, **kwargs):
     """Wrapper for :py:func:`mne.bem.make_watershed_bem <mne.bem.make_watershed_bem>` making a watershed BEM with FreeSurfer."""   
     
     check_freesurfer()
@@ -184,14 +176,15 @@ def make_watershed_bem(
 
 
 def make_fsaverage_src(subjects_dir, spacing='oct6'):
+
     subject = 'fsaverage'
     src_fname = get_coreg_filenames(subjects_dir, subject)['source_space']
     
     if not op.exists(src_fname):
         src = setup_source_space(
-        subjects_dir=subjects_dir,
-        subject=subject,
-        spacing=spacing,
-        add_dist="patch",
+            subjects_dir=subjects_dir,
+            subject=subject,
+            spacing=spacing,
+            add_dist="patch",
         )
         write_source_spaces(src_fname, src)

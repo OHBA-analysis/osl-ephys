@@ -80,18 +80,8 @@ def gen_html_data(config, outdir, subject, reportdir, logger=None, extra_funcs=N
     data["minimum_norm_and_parcellate"] = data.pop("minimum_norm_and_parcellate", False)
     data["fix_sign_ambiguity"] = data.pop("fix_sign_ambiguity", False)
 
-    # Save info
-    if data["beamform_and_parcellate"] or data['minimum_norm_and_parcellate']:
-        data["n_samples"] = data["n_samples"]
-    if data["coregister"]:
-        data["fid_err"] = data["fid_err"]
-    if data["beamform_and_parcellate"] or data['minimum_norm_and_parcellate']:
-        data["parcellation_file"] = data["parcellation_file"]
-        if data["beamform_and_parcellate"]:
-            data["parcellation_filename"] = Path(data["parcellation_file"]).name
-    if data["fix_sign_ambiguity"]:
-        data["template"] = data["template"]
-        data["metrics"] = data["metrics"]
+    if data["parcellate"]:
+        data["parcellation_filename"] = Path(data["parcellation_file"]).name
 
     # Copy plots
     if "surface_plots" in data:

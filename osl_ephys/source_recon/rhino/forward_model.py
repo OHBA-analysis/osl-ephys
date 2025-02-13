@@ -63,7 +63,7 @@ def forward_model(
     """
     log_or_print("*** RUNNING RHINO VOLUMETRIC FORWARD MODEL ***")
 
-    filenames = rhino_utils.get_rhino_files(subjects_dir, subject)
+    filenames = rhino_utils.get_rhino_filenames(subjects_dir, subject)
 
     # Compute MNE bem solution
     if model == "Single Layer":

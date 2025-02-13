@@ -57,7 +57,7 @@ def get_coreg_filenames(subjects_dir, subject):
     filenames : dict
         A dict of files generated and used by RHINO.
     """
-    rhino_files = rhino_utils.get_rhino_files(subjects_dir, subject)
+    rhino_files = rhino_utils.get_rhino_filenames(subjects_dir, subject)
     return rhino_files["coreg"]
 
 
@@ -886,7 +886,7 @@ def bem_display(
     #
     # RHINO does everthing in mm
 
-    rhino_files = rhino_utils.get_rhino_files(subjects_dir, subject)
+    rhino_files = rhino_utils.get_rhino_filenames(subjects_dir, subject)
     filenames = rhino_files["coreg"]
 
     bet_outskin_plus_nose_mesh_file = filenames["bet_outskin_plus_nose_mesh_file"]

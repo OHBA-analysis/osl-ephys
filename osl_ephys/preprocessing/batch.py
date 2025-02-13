@@ -597,7 +597,7 @@ def read_dataset(fif, preload=False, ftype=None):
 def plot_preproc_flowchart(
     config,
     outname=None,
-    show=True,
+    show=False,
     stagecol="wheat",
     startcol="red",
     fig=None,
