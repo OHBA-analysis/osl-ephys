@@ -952,6 +952,11 @@ def parcellate(
                 reference_brain=reference_brain,
             )
 
+            # Standardise voxel time courses
+            m = np.mean(mne_data_mni, axis=0, keepdims=True)
+            s = np.std(mne_data_mni, axis=0, keepdims=True)
+            mne_data_mni = (mne_data_mni - m) / s
+
             log_or_print(f"using file {parcellation_file}")
             parcel_data, _, _ = parcellation.vol_parcellate_timeseries(
                 parcellation_file,
@@ -1412,6 +1417,11 @@ def minimum_norm_and_parcellate(
             spatial_resolution=spatial_resolution,
             reference_brain=reference_brain,
         )
+
+        # Standardise voxel time courses
+        m = np.mean(mne_data_mni, axis=0, keepdims=True)
+        s = np.std(mne_data_mni, axis=0, keepdims=True)
+        mne_data_mni = (mne_data_mni - m) / s
 
         log_or_print(f"using file {parcellation_file}")
         parcel_data, _, _ = parcellation.vol_parcellate_timeseries(
