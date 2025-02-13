@@ -66,8 +66,7 @@ setup(name=name,
 
       packages=['osl_ephys', 'osl_ephys.tests', 'osl_ephys.report', 'osl_ephys.maxfilter',
                 'osl_ephys.preprocessing', 'osl_ephys.utils', 'osl_ephys.utils.spmio',
-                'osl_ephys.source_recon', 'osl_ephys.source_recon.rhino',
-                'osl_ephys.source_recon.parcellation', 'osl_ephys.glm'],
+                'osl_ephys.source_recon', 'osl_ephys.source_recon.rhino', 'osl_ephys.glm'],
 
 
       package_data={'osl_ephys': [# Simulations
@@ -76,7 +75,7 @@ setup(name=name,
                             # Channel information
                             'utils/neuromag306_info.yml',
                             # Parcellation files
-                            'source_recon/parcellation/files/*gz',
+                            'source_recon/files/*gz',
                             # Report templates
                             'report/templates/*',
                             # READMEs

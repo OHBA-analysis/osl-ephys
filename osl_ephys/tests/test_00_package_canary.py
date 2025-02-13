@@ -72,5 +72,5 @@ class TestPackageData(unittest.TestCase):
                     'giles_39_binary.nii.gz']
 
         for ff in to_check:
-            template = os.path.join(self.osldir, 'source_recon', 'parcellation', 'files', ff)
+            template = os.path.join(self.osldir, 'source_recon', 'files', ff)
             assert(os.path.exists(template))
