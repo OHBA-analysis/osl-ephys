@@ -291,7 +291,7 @@ def apply_flips_to_covariance(cov, flips, n_embeddings=1):
     return cov * flips
 
 
-def apply_flips(outdir, subject, flips, epoched=False):
+def apply_flips(outdir, subject, flips, epoched=False, source_method="lcmv"):
     """Saves the sign flipped data.
 
     Parameters
@@ -304,6 +304,8 @@ def apply_flips(outdir, subject, flips, epoched=False):
         Flips to apply.
     epoched : bool
         Are we performing sign flipping on parc-raw.fif (epoched=False) or parc-epo.fif files (epoched=True)?
+    source_method : str, optional
+        Which parcellation file should we apply flips to.
     """
     if epoched:
         parc_file = op.join(outdir, str(subject), "parc", "parc-epo.fif")
@@ -318,13 +320,13 @@ def apply_flips(outdir, subject, flips, epoched=False):
         sflip_epochs.apply_function(flip, picks=_get_parc_chans(epochs), channel_wise=False)
 
         # Save
-        outfile = op.join(outdir, str(subject), str(subject) + "_sflip_parc-epo.fif")
+        outfile = op.join(outdir, str(subject), str(subject) + f"_sflip_{source_method}-parc-epo.fif")
         log_or_print(f"saving: {outfile}")
         sflip_epochs.save(outfile, overwrite=True)
 
     else:
         # Load parcellated data
-        parc_file = op.join(outdir, str(subject), "parc", "parc-raw.fif")
+        parc_file = op.join(outdir, str(subject), "parc", f"{source_method}-parc-raw.fif")
         raw = mne.io.read_raw_fif(parc_file, verbose=False)
         sflip_raw = raw.copy()
         sflip_raw.load_data()
@@ -336,7 +338,7 @@ def apply_flips(outdir, subject, flips, epoched=False):
         sflip_raw.apply_function(flip, picks=_get_parc_chans(raw), channel_wise=False)
 
         # Save
-        outfile = op.join(outdir, str(subject), str(subject) + "_sflip_parc-raw.fif")
+        outfile = op.join(outdir, str(subject), str(subject) + f"_sflip_{source_method}-parc-raw.fif")
         log_or_print(f"saving: {outfile}")
         sflip_raw.save(outfile, overwrite=True)
 

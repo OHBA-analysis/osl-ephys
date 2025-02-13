@@ -1652,7 +1652,7 @@ def fix_sign_ambiguity(
     )
 
     # Apply flips to the parcellated data
-    sign_flipping.apply_flips(outdir, subject, flips, epoched=epoched)
+    sign_flipping.apply_flips(outdir, subject, flips, epoched=epoched, source_method=source_method)
 
     if reportdir is not None:
         # Save info for the report
