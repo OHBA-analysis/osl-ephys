@@ -95,7 +95,12 @@ def create_inverse_operator(
         fwd = mne.read_forward_solution(fwd)
 
     inverse_operator = mne.minimum_norm.make_inverse_operator(
-        data.info, fwd, noise_cov, loose=loose, depth=depth
+        data.info,
+        fwd,
+        noise_cov,
+        loose=loose,
+        depth=depth,
+        rank=rank,
     )
 
     mne.minimum_norm.write_inverse_operator(
@@ -207,6 +212,7 @@ def apply_inverse_operator_vol(
     lambda2,
     pick_ori="pca",
     inverse_operator=None,
+    norm=None,
 ):
     """Apply previously computed minimum norm inverse solution (volumetric).
     
@@ -228,6 +234,9 @@ def apply_inverse_operator_vol(
         Regularization parameter.
     pick_ori : str
         Orientation to pick.
+    norm : str, optional
+        Should we standardise ('ztrans') or de-mean ('demean') the voxel
+        time courses? If None, no normalisation is applied.
 
     Returns
     -------
@@ -294,6 +303,13 @@ def apply_inverse_operator_vol(
         )
     indices = data.time_as_index(times, use_rounding=True)
     ts = ts[..., indices]
+
+    # Normalisation
+    if norm == "ztrans":
+        ts -= np.mean(ts, axis=0, keepdims=True)
+        ts /= np.std(ts, axis=0, keepdims=True)
+    elif norm == "demean":
+        ts -= np.mean(ts, axis=0, keepdims=True)
 
     return ts
     

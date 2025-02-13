@@ -777,6 +777,7 @@ def parcellate(
     mode="rhino",
     spatial_resolution=None,
     reference_brain=None,
+    voxel_norm="ztrans",
     extra_chans="stim",
     reportdir=None,
     **kwargs,
@@ -812,6 +813,9 @@ def parcellate(
         Default depends on mode (rhino or mne) and source_method (lcmv or mne).
         If mode='rhino', defaults to 'mni'. Alternatives: 'mri' or 'unscaled_mri'.
         If mode='mne', defaults to 'fsaverage'. Alternatives: 'mri'.
+    voxel_norm : str, optional
+        Should we standardise ('ztrans') or de-mean ('demean') the voxel
+        time courses? If None, no normalisation is applied.
     extra_chans : str or list of str, optional
         Extra channels to include in the parc-raw.fif file.
         Defaults to 'stim'. Stim channels are always added to parc-raw.fif
@@ -945,6 +949,7 @@ def parcellate(
                 lambda2=lambda2,
                 pick_ori="pca",
                 inverse_operator=None,
+                norm=voxel_norm,
             )
 
             mne_data_mni, _, coords_mni, _ = beamforming.transform_recon_timeseries(
@@ -954,11 +959,6 @@ def parcellate(
                 spatial_resolution=spatial_resolution,
                 reference_brain=reference_brain,
             )
-
-            # Standardise voxel time courses
-            m = np.mean(mne_data_mni, axis=0, keepdims=True)
-            s = np.std(mne_data_mni, axis=0, keepdims=True)
-            mne_data_mni = (mne_data_mni - m) / s
 
             log_or_print(f"using file {parcellation_file}")
             parcel_data, _, _ = parcellation.vol_parcellate_timeseries(
@@ -1267,6 +1267,7 @@ def minimum_norm_and_parcellate(
     freq_range=None,
     spatial_resolution=None,
     reference_brain=None,
+    voxel_norm="ztrans",
     extra_chans="stim",
     reportdir=None,
 ):
@@ -1316,6 +1317,9 @@ def minimum_norm_and_parcellate(
         Default depends on mode (rhino or mne) and source_method (lcmv or mne).
         If mode='rhino', defaults to 'mni'. Alternatives: 'mri' or 'unscaled_mri'.
         If mode='mne', defaults to 'fsaverage'. Alternatives: 'mri'.
+    voxel_norm : str, optional
+        Should we standardise ('ztrans') or de-mean ('demean') the voxel
+        time courses? If None, no normalisation is applied.
     extra_chans : str or list of str, optional
         Extra channels to include in the parc-raw.fif file.
         Defaults to 'stim'. Stim channels are always added to parc-raw.fif
@@ -1414,6 +1418,7 @@ def minimum_norm_and_parcellate(
             lambda2=lambda2,
             pick_ori="pca",
             inverse_operator=None,
+            norm=voxel_norm,
         )
 
         mne_data_mni, _, coords_mni, _ = beamforming.transform_recon_timeseries(
@@ -1423,11 +1428,6 @@ def minimum_norm_and_parcellate(
             spatial_resolution=spatial_resolution,
             reference_brain=reference_brain,
         )
-
-        # Standardise voxel time courses
-        m = np.mean(mne_data_mni, axis=0, keepdims=True)
-        s = np.std(mne_data_mni, axis=0, keepdims=True)
-        mne_data_mni = (mne_data_mni - m) / s
 
         log_or_print(f"using file {parcellation_file}")
         parcel_data, _, _ = parcellation.vol_parcellate_timeseries(
