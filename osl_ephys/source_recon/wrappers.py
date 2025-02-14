@@ -779,6 +779,7 @@ def parcellate(
     reference_brain=None,
     voxel_trans="ztrans",
     extra_chans="stim",
+    neighbour_distance=None,
     reportdir=None,
     **kwargs,
 ):
@@ -798,8 +799,9 @@ def parcellate(
         Path to the parcellation file to use.
     method : str
         Method to use in the parcellation.
-    orthogonalisation : bool
-        Should we do orthogonalisation?
+    orthogonalisation : str, None
+        Options are 'symmetric', 'local', None. If 'local', neighbour_distance 
+        must be specified.
     source_method : str, optional
         Method used for source reconstruction. Can be 'lcmv' or one of the MNE methods
         ('mne', 'dspm', 'sloreta', 'eloreta').
@@ -820,6 +822,9 @@ def parcellate(
         Extra channels to include in the parc-raw.fif file.
         Defaults to 'stim'. Stim channels are always added to parc-raw.fif
         in addition to extra_chans.
+    neighbour_distance : float, optional
+        Distance in mm between parcel centers to consider neighbours 
+        for orthogonalisation='local'.
     reportdir : str, optional
         Path to report directory.
     """
@@ -970,13 +975,18 @@ def parcellate(
             )
 
     # Orthogonalisation
-    if orthogonalisation not in [None, "symmetric", "none", "None"]:
+    if orthogonalisation not in [None, "symmetric", "local", "none", "None"]:
         raise NotImplementedError(orthogonalisation)
 
     if orthogonalisation == "symmetric":
         log_or_print(f"{orthogonalisation} orthogonalisation")
         parcel_data = parcellation.symmetric_orthogonalise(
             parcel_data, maintain_magnitudes=True
+        )
+    elif orthogonalisation == "local":
+        log_or_print(f"{orthogonalisation} orthogonalisation")
+        parcel_data = parcellation.local_orthogonalise(
+            parcel_data, parcellation_file, neighbour_distance,
         )
 
     os.makedirs(f"{outdir}/{subject}/parc", exist_ok=True)
@@ -1049,6 +1059,7 @@ def beamform_and_parcellate(
     spatial_resolution=None,
     reference_brain="mni",
     extra_chans="stim",
+    neighbour_distance=None,
     reportdir=None,
 ):
     """Wrapper function for beamforming and parcellation.
@@ -1072,8 +1083,9 @@ def beamform_and_parcellate(
         Path to the parcellation file to use.
     method : str
         Method to use in the parcellation.
-    orthogonalisation : bool
-        Should we do orthogonalisation?
+    orthogonalisation : str, None
+        Options are 'symmetric', 'local', None. If 'local', neighbour_distance 
+        must be specified.
     freq_range : list, optional
         Lower and upper band to bandpass filter before beamforming.
         If None, no filtering is done.
@@ -1101,6 +1113,9 @@ def beamform_and_parcellate(
         Extra channels to include in the parc-raw.fif file.
         Defaults to 'stim'. Stim channels are always added to parc-raw.fif
         in addition to extra_chans.
+    neighbour_distance : float, optional
+        Distance in mm between parcel centers to consider neighbours 
+        for orthogonalisation='local'.
     reportdir : str, optional
         Path to report directory.
     """
@@ -1179,13 +1194,18 @@ def beamform_and_parcellate(
     )
 
     # Orthogonalisation
-    if orthogonalisation not in [None, "symmetric", "none", "None"]:
+    if orthogonalisation not in [None, "symmetric", "local", "none", "None"]:
         raise NotImplementedError(orthogonalisation)
 
     if orthogonalisation == "symmetric":
         log_or_print(f"{orthogonalisation} orthogonalisation")
         parcel_data = parcellation.symmetric_orthogonalise(
             parcel_data, maintain_magnitudes=True
+        )
+    elif orthogonalisation == "local":
+        log_or_print(f"{orthogonalisation} orthogonalisation")
+        parcel_data = parcellation.local_orthogonalise(
+            parcel_data, parcellation_file, neighbour_distance,
         )
 
     if epoch_file is None:
@@ -1269,6 +1289,7 @@ def minimum_norm_and_parcellate(
     reference_brain=None,
     voxel_trans="ztrans",
     extra_chans="stim",
+    neighbour_distance=None,
     reportdir=None,
 ):
     """Wrapper function for minimum_norm and parcellation.
@@ -1293,8 +1314,9 @@ def minimum_norm_and_parcellate(
         Method to use in the parcellation.
     parcellation_file : str
         Path to the parcellation file to use.
-    orthogonalisation : bool
-        Should we do orthogonalisation?
+    orthogonalisation : str, None
+        Options are 'symmetric', 'local', None. If 'local', neighbour_distance 
+        must be specified.
     mode : str, optional
         Which mode was coregistration performed? 'rhino' (default) or 'mne'/'freesurfer'.
     depth : float, optional
@@ -1439,13 +1461,18 @@ def minimum_norm_and_parcellate(
         )
 
     # Orthogonalisation
-    if orthogonalisation not in [None, "symmetric", "none", "None"]:
+    if orthogonalisation not in [None, "symmetric", "local", "none", "None"]:
         raise NotImplementedError(orthogonalisation)
 
     if orthogonalisation == "symmetric":
         log_or_print(f"{orthogonalisation} orthogonalisation")
         parcel_data = parcellation.symmetric_orthogonalise(
             parcel_data, maintain_magnitudes=True
+        )
+    elif orthogonalisation == "local":
+        log_or_print(f"{orthogonalisation} orthogonalisation")
+        parcel_data = parcellation.local_orthogonalise(
+            parcel_data, parcellation_file, neighbour_distance,
         )
 
     os.makedirs(f"{outdir}/{subject}/parc", exist_ok=True)

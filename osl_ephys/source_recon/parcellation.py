@@ -15,6 +15,7 @@ import numpy as np
 import nibabel as nib
 import matplotlib.pyplot as plt
 import scipy.sparse.linalg
+import glmtools as glm
 from scipy.spatial import KDTree
 from scipy.signal import welch
 from nilearn.plotting import plot_markers
@@ -473,6 +474,90 @@ def resample_parcellation(parcellation_file, voxel_coords, working_dir=None):
                 parcellation_asmatrix[ind, parcel_index] = parcellation_vals[index]
 
     return parcellation_asmatrix
+
+
+def local_orthogonalise(timeseries, parcellation_file=None, dist=None, adjacency=None, ):
+    """Returns a local orthogonalisation of the timeseries, where the time series of local neighbours are regressed out with multiple linear regression.
+    
+    Parameters
+    ----------
+    timeseries : numpy.ndarray
+        (nparcels x ntpts) or (nparcels x ntpts x ntrials) data to orthoganlise. In the latter case, the ntpts and ntrials dimensions are concatenated.
+    parcellation_file : nifti parcellation file
+        If None, adjacency must be provided.
+    dist : float
+        Distance in mm to consider as neighbours. Must be provided together with parcellation file. If None, adjacency must be provided.
+    adjacency : numpy.ndarray
+        nparcels x nparcels binary adjacency matrix.
+        
+    Returns
+    -------
+    ortho_timeseries : numpy.ndarray
+        (nparcels x ntpts) or (nparcels x ntpts x ntrials) orthoganalised data
+    
+    """
+    
+    # do some checks
+    if parcellation_file is None and adjacency is None:
+        raise ValueError("Either parcellation_file or adjacency must be provided")
+    if parcellation_file is not None and adjacency is not None:
+        raise ValueError("Either parcellation_file or adjacency must be provided, not both")
+    if parcellation_file is not None and dist is None:
+        raise ValueError("If parcellation_file is provided, dist must also be provided")
+    
+    if len(timeseries.shape) == 2:
+        # add dim for trials:
+        timeseries = np.expand_dims(timeseries, axis=2)
+        added_dim = True
+    else:
+        added_dim = False
+    
+    nparcels = timeseries.shape[0]
+    ntpts = timeseries.shape[1]
+    ntrials = timeseries.shape[2]
+    
+    # combine the trials and time dimensions together,
+    # we will re-separate them after the parcel timeseries are computed
+    timeseries = np.transpose(np.reshape(timeseries, (nparcels, ntpts * ntrials)))
+    
+    # get the adjacency matrix
+    if adjacency is None:
+        adjacency = spatial_dist_adjacency(parcellation_file, dist)
+    
+    # set the diagonal to zero
+    np.fill_diagonal(adjacency, 0)
+    
+    ortho_timeseries = np.zeros_like(timeseries)
+    for i_parc in range(nparcels):
+        neighbors = np.where(adjacency[i_parc, :])[0]
+        
+        DC = glm.design.DesignConfig()
+        datainfo = {}
+        for i in neighbors:
+            # DC.add_regressor(name=f'Parcel_{i}', rtype='Parametric', values=timeseries[:, i])
+            datainfo[f"Parcel_{i}"] = timeseries[:, i]
+            DC.add_regressor(name=f'Parcel_{i}', rtype='Parametric', datainfo=f"Parcel_{i}")
+        
+        DC.add_simple_contrasts()
+        
+        for i in range(len(DC.regressors)):
+            DC.regressors[i]['num_observations'] = ntpts * ntrials
+        
+        design = DC.design_from_datainfo(datainfo)       
+        glmdata = glm.data.TrialGLMData(data=timeseries[:,i_parc])
+        model = glm.fit.OLSModel(design, glmdata)
+        
+        # set constant to zero and subtract the model projection from the timeseries
+        design_matrix = design.design_matrix
+        ortho_timeseries[:, i_parc] = timeseries[:, i_parc] - design_matrix.dot(model.betas)[:,0]
+        
+    # Re-separate the trials and time dimensions
+    ortho_timeseries = np.reshape(np.transpose(ortho_timeseries), (nparcels, ntpts, ntrials))
+
+    if added_dim:
+        ortho_timeseries = np.squeeze(ortho_timeseries, axis=2)  
+    
+    return ortho_timeseries
 
 
 def symmetric_orthogonalise(timeseries, maintain_magnitudes=False, compute_weights=False):
