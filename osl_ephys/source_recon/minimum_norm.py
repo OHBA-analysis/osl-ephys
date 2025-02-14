@@ -306,9 +306,11 @@ def apply_inverse_operator_vol(
 
     # Transform the voxel time courses
     if transform == "ztrans":
+        log_or_print(f"Applying {transform} to voxel time courses")
         ts -= np.mean(ts, axis=0, keepdims=True)
         ts /= np.std(ts, axis=0, keepdims=True)
     elif transform == "demean":
+        log_or_print(f"Applying {transform} to voxel time courses")
         ts -= np.mean(ts, axis=0, keepdims=True)
 
     return ts
