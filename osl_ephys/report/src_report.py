@@ -75,8 +75,9 @@ def gen_html_data(config, outdir, subject, reportdir, logger=None, extra_funcs=N
     data["compute_surfaces"] = data.pop("compute_surfaces", False)
     data["coregister"] = data.pop("coregister", False)
     data["beamform"] = data.pop("beamform", False)
-    data["beamform_and_parcellate"] = data.pop("beamform_and_parcellate", False)
     data["minimum_norm"] = data.pop("minimum_norm", False)
+    data["parcellate"] = data.pop("parcellate", False)
+    data["beamform_and_parcellate"] = data.pop("beamform_and_parcellate", False)
     data["minimum_norm_and_parcellate"] = data.pop("minimum_norm_and_parcellate", False)
     data["fix_sign_ambiguity"] = data.pop("fix_sign_ambiguity", False)
 
