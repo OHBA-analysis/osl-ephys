@@ -658,15 +658,16 @@ def parcel_centers(parcellation_file):
     coords : np.ndarray
         Coordinates of each parcel. Shape is (n_parcels, 3).
     """
-    parcellation = load_parcellation(parcellation_file)
-    if isinstance(parcellation, nib.nifti1.Nifti1Image):
+    try: # nifti parcellation
+        parcellation = load_parcellation(parcellation_file)
         n_parcels = parcellation.shape[3]
         data = parcellation.get_fdata()
         nonzero = [np.nonzero(data[..., i]) for i in range(n_parcels)]
         nonzero_coords = [nib.affines.apply_affine(parcellation.affine, np.array(nz).T) for nz in nonzero ]
         weights = [data[..., i][nz] for i, nz in enumerate(nonzero)]
         coords = np.array([np.average(c, weights=w, axis=0) for c, w in zip(nonzero_coords, weights)])
-    elif isinstance(parcellation, list) and isinstance(parcellation[0], mne.Label): # freesurfer parcellation
+    except: # freesurfer parcellation
+        parcellation = load_parcellation(parcellation_file, freesurfer=True)
         vertices = np.array([l.center_of_mass() for l in parcellation])
         hemis = [0 if l.hemi=='lh' else 1 for l in parcellation]
         coords = mne.vertex_to_mni(vertices, hemis, "fsaverage")
