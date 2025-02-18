@@ -1346,6 +1346,9 @@ def minimum_norm_and_parcellate(
         Extra channels to include in the parc-raw.fif file.
         Defaults to 'stim'. Stim channels are always added to parc-raw.fif
         in addition to extra_chans.
+    neighbour_distance : float, optional
+        Distance in mm between parcel centers to consider neighbours 
+        for orthogonalisation='local'.
     reportdir : str, optional
         Path to report directory.
     """
