@@ -177,6 +177,20 @@ def run_src_chain(
     if not isinstance(config, dict):
         config = load_config(config)
 
+    # Check what files are in the output directory
+    preproc_filename = f"{outdir}/{subject}/{subject}_preproc-raw.fif"
+    epoch_filename = f"{outdir}/{subject}/{subject}_epo.fif"
+    if os.path.exists(preproc_filename) and os.path.exists(epoch_filename):
+        if preproc_file is None and epoch_file is None:
+            raise ValueError(
+                "Both preproc and epoch fif files found. "
+                "Please pass preproc_file=True or epoch_file=True."
+            )
+    elif os.path.exists(preproc_filename):
+        preproc_file = preproc_filename
+    elif os.path.exists(epoch_filename):
+        epoch_file = epoch_filename
+
     # Validation
     doing_coreg = (
         any(["compute_surfaces" in method for method in config["source_recon"]]) or
@@ -361,7 +375,7 @@ def run_src_batch(
         epoch_files_list = []
         for subject in subjects:
             preproc_file = f"{outdir}/{subject}/{subject}_preproc-raw.fif"
-            epoch_file = f"{outdir}/{subject}/{subject}-epo.fif"
+            epoch_file = f"{outdir}/{subject}/{subject}_epo.fif"
             if os.path.exists(preproc_file) and os.path.exists(epoch_file):
                 if preproc_files is None and epoch_files is None:
                     raise ValueError(
