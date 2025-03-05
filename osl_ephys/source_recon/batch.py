@@ -261,6 +261,9 @@ def run_src_chain(
         # Generate data and individual HTML data for the report
         src_report.gen_html_data(config, outdir, subject, reportdir, extra_funcs=extra_funcs)
 
+        # Generate individual subject HTML report
+        src_report.gen_html_page(reportdir)
+
     return True
 
 
