@@ -499,10 +499,10 @@ def forward_model(
         mindist = kwargs.pop("mindist", 0)
         
         model = mne.make_bem_model(
-                    subjects_dir=outdir, 
-                    subject=subject, 
-                    conductivity=conductivity,
-                    ico=ico,
+            subjects_dir=outdir,
+            subject=subject,
+            conductivity=conductivity,
+            ico=ico,
         )
         
         bem = mne.make_bem_solution(model)
