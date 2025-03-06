@@ -182,6 +182,23 @@ def extract_polhemus_from_elc(
     )
 
 
+def place_eeg_sensors_on_outskin(outdir, subject):
+    """Wrapper to place EEG sensors on MRI outskin surface.
+
+    Warning this function overwrite the preproc fif file.
+
+    This function also assumes that EEG sensors were extracted as headshape points in extract_polhemus_from_info.
+
+    Parameters
+    ----------
+    outdir : str
+        Path to where to output the source reconstruction files.
+    subject : str
+        Subject name/id.
+    """
+    rhino.place_eeg_sensors_on_outskin(outdir, subject)
+
+
 def compute_surfaces(
     outdir,
     subject,
