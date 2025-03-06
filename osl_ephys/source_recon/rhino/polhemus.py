@@ -23,7 +23,7 @@ from osl_ephys.utils.logger import log_or_print
 
 
 def get_polhemus_from_info(
-    fif_file,
+    info,
     include_eeg_as_headshape=False,
     include_hpi_as_headshape=True,
 ):
@@ -31,8 +31,8 @@ def get_polhemus_from_info(
 
     Parameters
     ----------
-    fif_file : str
-        Path to fif file.
+    info : MNE Info object
+        Info object.
     include_eeg_as_headshape : bool, optional
         Should we include EEG locations as headshape points?
     include_hpi_as_headshape : bool, optional
@@ -55,9 +55,6 @@ def get_polhemus_from_info(
     polhemus_rpa = []
     polhemus_lpa = []
     polhemus_nasion = []
-
-    # Read info from fif file
-    info = read_info(fif_file)
 
     # Get fiducials/headshape points
     for dig in info["dig"]:
@@ -119,9 +116,12 @@ def extract_polhemus_from_info(
     """
     log_or_print("Extracting polhemus from fif info")
 
+    # Read info from fif file
+    info = read_info(fif_file)
+
     # Get coordinates from the fif file
     polhemus_headshape, polhemus_rpa, polhemus_lpa, polhemus_nasion = get_polhemus_from_info(
-        fif_file=fif_file,
+        info=info,
         include_eeg_as_headshape=include_eeg_as_headshape,
         include_hpi_as_headshape=include_hpi_as_headshape,
     )
@@ -520,13 +520,13 @@ def get_nearest_smri_points_polhemus(subjects_dir, subject):
 
     Returns
     -------
-    headshape : (n, 3) np.ndarray
+    headshape : (3, n) np.ndarray
         Nearest point on the sMRI to the polhemus headshape points.
-    rpa : (1, 3) np.ndarray
+    rpa : (3,) np.ndarray
         Nearest point on the sMRI to the polhemus rpa.
-    lpa : (1, 3) np.ndarray
+    lpa : (3,) np.ndarray
         Nearest point on the sMRI to the polhemus lpa.
-    nas : (1, 3) np.ndarray
+    nas : (3,) np.ndarray
         Nearest point on the sMRI to the polhemus nasion.
     """
 
@@ -570,21 +570,56 @@ def get_nearest_smri_points_polhemus(subjects_dir, subject):
     for i in range(polhemus_headshape_polhemus.shape[1]):
         index, _ = rhino_utils.closest_node(polhemus_headshape_polhemus[:, i], smri_headshape_polhemus.T)
         polhemus_headshape_nearest.append(smri_headshape_polhemus[:, index])
-    polhemus_headshape_nearest = np.array(polhemus_headshape_nearest)
+    polhemus_headshape_nearest = np.array(polhemus_headshape_nearest).T
 
-    polhemus_rpa_nearest = []
     index, _ = rhino_utils.closest_node(polhemus_rpa_polhemus, smri_headshape_polhemus.T)
-    polhemus_rpa_nearest.append(smri_headshape_polhemus[:, index])
-    polhemus_rpa_nearest = np.array(polhemus_rpa_nearest)
+    polhemus_rpa_nearest = smri_headshape_polhemus[:, index]
 
-    polhemus_lpa_nearest = []
     index, _ = rhino_utils.closest_node(polhemus_lpa_polhemus, smri_headshape_polhemus.T)
-    polhemus_lpa_nearest.append(smri_headshape_polhemus[:, index])
-    polhemus_lpa_nearest = np.array(polhemus_lpa_nearest)
+    polhemus_lpa_nearest = smri_headshape_polhemus[:, index]
 
-    polhemus_nasion_nearest = []
     index, _ = rhino_utils.closest_node(polhemus_nasion_polhemus, smri_headshape_polhemus.T)
-    polhemus_nasion_nearest.append(smri_headshape_polhemus[:, index])
-    polhemus_nasion_nearest = np.array(polhemus_nasion_nearest)
+    polhemus_nasion_nearest = smri_headshape_polhemus[:, index]
 
     return polhemus_headshape_nearest, polhemus_rpa_nearest, polhemus_lpa_nearest, polhemus_nasion_nearest
+
+
+def place_eeg_sensors_on_outskin(subjects_dir, subject):
+    """Place EEG sensors on outskin.
+
+    Warning this function overwrite the preproc fif file.
+
+    This function also assumes that EEG sensors were extracted as headshape points in extract_polhemus_from_info.
+
+    Parameters
+    ----------
+    subjects_dir : str
+        Subjects directory.
+    subject : str
+        Subject subdirectory/ID.
+    """
+
+    # fif file containing the preprocessed data
+    preproc_file = f"{subjects_dir}/{subject}/{subject}_preproc-raw.fif"
+    if not os.path.exists(preproc_file):
+        raise ValueError(f"{preproc_file} is missing.")
+
+    # Get the nearest point on the outskin surface to the existing locations of the EEG sensors
+    hs, rpa, lpa, nas = get_nearest_smri_points_polhemus(subjects_dir, subject)
+
+    # Assuming order in digitised points is (lpa, nas, rpa, eeg/headshape...)
+    coords = np.array([lpa, nas, rpa] + list(hs.T))
+    coords *= 1e-3  # mm -> m
+
+    # Load montage
+    raw = mne.io.read_raw_fif(preproc_file, preload=True)
+    montage = raw.get_montage()
+
+    # Move the sensors
+    for d, c in zip(montage.dig, coords):
+        d["r"] = c
+
+    # Save
+    raw.set_montage(montage)
+    log_or_print(f"Overwritting {preproc_file} with new EEG sensor positions")
+    raw.save(preproc_file, overwrite=True)
