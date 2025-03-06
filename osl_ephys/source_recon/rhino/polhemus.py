@@ -18,6 +18,70 @@ import sys
 from osl_ephys.source_recon.rhino.coreg import get_coreg_filenames
 from osl_ephys.utils.logger import log_or_print
 
+
+def get_polhemus_from_info(
+    fif_file,
+    include_eeg_as_headshape=False,
+    include_hpi_as_headshape=True,
+):
+    """Get polhemus from fif file.
+
+    Parameters
+    ----------
+    fif_file : str
+        Path to fif file.
+    include_eeg_as_headshape : bool, optional
+        Should we include EEG locations as headshape points?
+    include_hpi_as_headshape : bool, optional
+        Should we include HPI locations as headshape points?
+
+    Returns
+    -------
+    polhemus_headshape : list
+        3D coordinates for each headshape point.
+    polhemus_rpa : list
+        3D coordinates for rpa.
+    polhemus_lpa : list
+        3D coordinates for lpa.
+    polhemus_nasion : list
+        3D coordinates for nasion.
+    """
+
+    # Lists to hold polhemus data
+    polhemus_headshape = []
+    polhemus_rpa = []
+    polhemus_lpa = []
+    polhemus_nasion = []
+
+    # Read info from fif file
+    info = read_info(fif_file)
+
+    # Get fiducials/headshape points
+    for dig in info["dig"]:
+
+        # Check dig is in HEAD/Polhemus space
+        if dig["coord_frame"] != FIFF.FIFFV_COORD_HEAD:
+            raise ValueError("{} is not in Head/Polhemus space".format(dig["ident"]))
+
+        if dig["kind"] == FIFF.FIFFV_POINT_CARDINAL:
+            if dig["ident"] == FIFF.FIFFV_POINT_LPA:
+                polhemus_lpa = dig["r"]
+            elif dig["ident"] == FIFF.FIFFV_POINT_RPA:
+                polhemus_rpa = dig["r"]
+            elif dig["ident"] == FIFF.FIFFV_POINT_NASION:
+                polhemus_nasion = dig["r"]
+            else:
+                raise ValueError("Unknown fiducial: {}".format(dig["ident"]))
+        elif dig["kind"] == FIFF.FIFFV_POINT_EXTRA:
+            polhemus_headshape.append(dig["r"])
+        elif dig["kind"] == FIFF.FIFFV_POINT_EEG and include_eeg_as_headshape:
+            polhemus_headshape.append(dig["r"])
+        elif dig["kind"] == FIFF.FIFFV_POINT_HPI and include_hpi_as_headshape:
+            polhemus_headshape.append(dig["r"])
+
+    return polhemus_headshape, polhemus_rpa, polhemus_lpa, polhemus_nasion
+    
+
 def extract_polhemus_from_info(
     fif_file,
     headshape_outfile,
@@ -52,37 +116,12 @@ def extract_polhemus_from_info(
     """
     log_or_print("Extracting polhemus from fif info")
 
-    # Lists to hold polhemus data
-    polhemus_headshape = []
-    polhemus_rpa = []
-    polhemus_lpa = []
-    polhemus_nasion = []
-
-    # Read info from fif file
-    info = read_info(fif_file)
-
-    # Get fiducials/headshape points
-    for dig in info["dig"]:
-
-        # Check dig is in HEAD/Polhemus space
-        if dig["coord_frame"] != FIFF.FIFFV_COORD_HEAD:
-            raise ValueError("{} is not in Head/Polhemus space".format(dig["ident"]))
-
-        if dig["kind"] == FIFF.FIFFV_POINT_CARDINAL:
-            if dig["ident"] == FIFF.FIFFV_POINT_LPA:
-                polhemus_lpa = dig["r"]
-            elif dig["ident"] == FIFF.FIFFV_POINT_RPA:
-                polhemus_rpa = dig["r"]
-            elif dig["ident"] == FIFF.FIFFV_POINT_NASION:
-                polhemus_nasion = dig["r"]
-            else:
-                raise ValueError("Unknown fiducial: {}".format(dig["ident"]))
-        elif dig["kind"] == FIFF.FIFFV_POINT_EXTRA:
-            polhemus_headshape.append(dig["r"])
-        elif dig["kind"] == FIFF.FIFFV_POINT_EEG and include_eeg_as_headshape:
-            polhemus_headshape.append(dig["r"])
-        elif dig["kind"] == FIFF.FIFFV_POINT_HPI and include_hpi_as_headshape:
-            polhemus_headshape.append(dig["r"])
+    # Get coordinates from the fif file
+    polhemus_headshape, polhemus_rpa, polhemus_lpa, polhemus_nasion = get_polhemus_from_info(
+        fif_file=fif_file,
+        include_eeg_as_headshape=include_eeg_as_headshape,
+        include_hpi_as_headshape=include_hpi_as_headshape,
+    )
 
     # Check if info is from a CTF scanner
     if info["dev_ctf_t"] is not None:
