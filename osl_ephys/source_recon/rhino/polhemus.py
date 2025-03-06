@@ -7,15 +7,18 @@
 #          Mats van Es <mats.vanes@psych.ox.ac.uk>
 
 import os
+import sys
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 
+import mne
 from mne.io import read_info
 from mne.io.constants import FIFF
 
-import sys
+import osl_ephys.source_recon.rhino.utils as rhino_utils
 from osl_ephys.source_recon.rhino.coreg import get_coreg_filenames
+from osl_ephys.source_recon.rhino.surfaces import get_surfaces_filenames
 from osl_ephys.utils.logger import log_or_print
 
 
@@ -503,3 +506,85 @@ def extract_polhemus_from_elc(outdir, subject, filepath, remove_headshape_near_n
     np.savetxt(filenames["polhemus_lpa_file"], lpa)
     log_or_print(f"saved: {filenames['polhemus_headshape_file']}")
     np.savetxt(filenames["polhemus_headshape_file"], headshape)
+
+
+def get_nearest_smri_points_polhemus(subjects_dir, subject):
+    """Get nearest point on the sMRI outskin to the polhemus headshape points and fiducials.
+
+    Parameters
+    ----------
+    subjects_dir : str
+        Subjects directory.
+    subject : str
+        Subject subdirectory/ID.
+
+    Returns
+    -------
+    headshape : (n, 3) np.ndarray
+        Nearest point on the sMRI to the polhemus headshape points.
+    rpa : (1, 3) np.ndarray
+        Nearest point on the sMRI to the polhemus rpa.
+    lpa : (1, 3) np.ndarray
+        Nearest point on the sMRI to the polhemus lpa.
+    nas : (1, 3) np.ndarray
+        Nearest point on the sMRI to the polhemus nasion.
+    """
+
+    # Get polhemus data
+    coreg_filenames = get_coreg_filenames(subjects_dir, subject)
+    polhemus_headshape_polhemus = np.loadtxt(coreg_filenames["polhemus_headshape_file"])
+    polhemus_nasion_polhemus = np.loadtxt(coreg_filenames["polhemus_nasion_file"])
+    polhemus_rpa_polhemus = np.loadtxt(coreg_filenames["polhemus_rpa_file"])
+    polhemus_lpa_polhemus = np.loadtxt(coreg_filenames["polhemus_lpa_file"])
+    polhemus_fid_polhemus = np.concatenate(
+        [np.reshape(polhemus_nasion_polhemus, [-1, 1]), np.reshape(polhemus_rpa_polhemus, [-1, 1]), np.reshape(polhemus_lpa_polhemus, [-1, 1])],
+        axis=1,
+    )
+
+    # Get extracted outskin surface
+    outskin_mesh_file = coreg_filenames["bet_outskin_mesh_file"]
+    xform_nativeindex2native = rhino_utils.get_sform(outskin_mesh_file)["trans"]
+    smri_headshape_nativeindex = rhino_utils.niimask2indexpointcloud(outskin_mesh_file)
+    smri_headshape_native = rhino_utils.xform_points(xform_nativeindex2native, smri_headshape_nativeindex)
+
+    # Transform sMRI data to polhemus space
+    surfaces_filenames = get_surfaces_filenames(subjects_dir, subject)
+    mni_nasion_mni = np.asarray([1, 85, -41])
+    mni_rpa_mni = np.asarray([83, -20, -65])
+    mni_lpa_mni = np.asarray([-83, -20, -65])
+    mni_mri_t = mne.transforms.read_trans(surfaces_filenames["mni_mri_t_file"])
+    smri_nasion_native = rhino_utils.xform_points(mni_mri_t["trans"], mni_nasion_mni)
+    smri_lpa_native = rhino_utils.xform_points(mni_mri_t["trans"], mni_lpa_mni)
+    smri_rpa_native = rhino_utils.xform_points(mni_mri_t["trans"], mni_rpa_mni)
+    smri_fid_native = np.concatenate(
+        [np.reshape(smri_nasion_native, [-1, 1]), np.reshape(smri_rpa_native, [-1, 1]), np.reshape(smri_lpa_native, [-1, 1])],
+        axis=1,
+    )
+
+    xform_native2polhemus, xform_native2native = rhino_utils.rigid_transform_3D(polhemus_fid_polhemus, smri_fid_native)
+
+    smri_headshape_polhemus = rhino_utils.xform_points(xform_native2polhemus, smri_headshape_native)
+
+    # Find nearest neighbour
+    polhemus_headshape_nearest = []
+    for i in range(polhemus_headshape_polhemus.shape[1]):
+        index, _ = rhino_utils.closest_node(polhemus_headshape_polhemus[:, i], smri_headshape_polhemus.T)
+        polhemus_headshape_nearest.append(smri_headshape_polhemus[:, index])
+    polhemus_headshape_nearest = np.array(polhemus_headshape_nearest)
+
+    polhemus_rpa_nearest = []
+    index, _ = rhino_utils.closest_node(polhemus_rpa_polhemus, smri_headshape_polhemus.T)
+    polhemus_rpa_nearest.append(smri_headshape_polhemus[:, index])
+    polhemus_rpa_nearest = np.array(polhemus_rpa_nearest)
+
+    polhemus_lpa_nearest = []
+    index, _ = rhino_utils.closest_node(polhemus_lpa_polhemus, smri_headshape_polhemus.T)
+    polhemus_lpa_nearest.append(smri_headshape_polhemus[:, index])
+    polhemus_lpa_nearest = np.array(polhemus_lpa_nearest)
+
+    polhemus_nasion_nearest = []
+    index, _ = rhino_utils.closest_node(polhemus_nasion_polhemus, smri_headshape_polhemus.T)
+    polhemus_nasion_nearest.append(smri_headshape_polhemus[:, index])
+    polhemus_nasion_nearest = np.array(polhemus_nasion_nearest)
+
+    return polhemus_headshape_nearest, polhemus_rpa_nearest, polhemus_lpa_nearest, polhemus_nasion_nearest
