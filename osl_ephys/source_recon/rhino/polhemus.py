@@ -529,6 +529,7 @@ def get_nearest_smri_points_polhemus(subjects_dir, subject):
     nas : (3,) np.ndarray
         Nearest point on the sMRI to the polhemus nasion.
     """
+    log_or_print("Moving sensors to nearest neighbour on MRI outskin surface")
 
     # Get polhemus data
     coreg_filenames = get_coreg_filenames(subjects_dir, subject)
@@ -548,22 +549,8 @@ def get_nearest_smri_points_polhemus(subjects_dir, subject):
     smri_headshape_native = rhino_utils.xform_points(xform_nativeindex2native, smri_headshape_nativeindex)
 
     # Transform sMRI data to polhemus space
-    surfaces_filenames = get_surfaces_filenames(subjects_dir, subject)
-    mni_nasion_mni = np.asarray([1, 85, -41])
-    mni_rpa_mni = np.asarray([83, -20, -65])
-    mni_lpa_mni = np.asarray([-83, -20, -65])
-    mni_mri_t = mne.transforms.read_trans(surfaces_filenames["mni_mri_t_file"])
-    smri_nasion_native = rhino_utils.xform_points(mni_mri_t["trans"], mni_nasion_mni)
-    smri_lpa_native = rhino_utils.xform_points(mni_mri_t["trans"], mni_lpa_mni)
-    smri_rpa_native = rhino_utils.xform_points(mni_mri_t["trans"], mni_rpa_mni)
-    smri_fid_native = np.concatenate(
-        [np.reshape(smri_nasion_native, [-1, 1]), np.reshape(smri_rpa_native, [-1, 1]), np.reshape(smri_lpa_native, [-1, 1])],
-        axis=1,
-    )
-
-    xform_native2polhemus, xform_native2native = rhino_utils.rigid_transform_3D(polhemus_fid_polhemus, smri_fid_native)
-
-    smri_headshape_polhemus = rhino_utils.xform_points(xform_native2polhemus, smri_headshape_native)
+    xform_native2polhemus = mne.transforms.read_trans(coreg_filenames["head_mri_t_file"])
+    smri_headshape_polhemus = rhino_utils.xform_points(xform_native2polhemus["trans"], smri_headshape_native)
 
     # Find nearest neighbour
     polhemus_headshape_nearest = []
