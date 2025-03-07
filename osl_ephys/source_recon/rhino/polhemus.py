@@ -99,9 +99,12 @@ def extract_polhemus_from_info(
 ):
     """Extract polhemus from FIF info.
 
-    Extract polhemus fids and headshape points from MNE raw.info and write them out in the required file format for rhino (in head/polhemus space in mm).
+    Extract polhemus fids and headshape points from MNE raw.info and write
+    them out in the required file format for rhino (in head/polhemus space
+    in mm).
 
-    Should only be used with MNE-derived .fif files that have the expected digitised points held in info['dig'] of fif_file.
+    Should only be used with MNE-derived .fif files that have the expected
+    digitised points held in info['dig'] of fif_file.
 
     Parameters
     ----------
@@ -139,7 +142,7 @@ def extract_polhemus_from_info(
     if rescale is not None:
         if not isinstance(rescale, list) or len(rescale) != 3:
             raise ValueError("rescale must be a list: [xscale, yscale, zscale].")
-        log_or_print("rescaling polhemus")
+        log_or_print("Rescaling polhemus")
 
     if len(polhemus_headshape) > 0:
         polhemus_headshape[:, 0] *= rescale[0]  # x
@@ -171,13 +174,13 @@ def extract_polhemus_from_info(
         polhemus_headshape = [0, 0, 0]
 
     # Save
-    log_or_print(f"saved: {nasion_outfile}")
+    log_or_print(f"Saved: {nasion_outfile}")
     np.savetxt(nasion_outfile, polhemus_nasion * 1000)
-    log_or_print(f"saved: {rpa_outfile}")
+    log_or_print(f"Saved: {rpa_outfile}")
     np.savetxt(rpa_outfile, polhemus_rpa * 1000)
-    log_or_print(f"saved: {lpa_outfile}")
+    log_or_print(f"Saved: {lpa_outfile}")
     np.savetxt(lpa_outfile, polhemus_lpa * 1000)
-    log_or_print(f"saved: {headshape_outfile}")
+    log_or_print(f"Saved: {headshape_outfile}")
     np.savetxt(headshape_outfile, np.array(polhemus_headshape).T * 1000)
 
     if info["dev_ctf_t"] is not None:
