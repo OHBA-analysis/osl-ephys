@@ -33,6 +33,27 @@ from ..utils.logger import log_or_print
 # RHINO wrappers
 
 
+def rescale_sensor_positions(outdir, subject, rescale):
+    """Wrapper to move sensor positions.
+
+    Parameters
+    ----------
+    outdir : str
+        Path to where to output the source reconstruction files.
+    subject : str
+        Subject name/id.
+    rescale : list, optional
+        List containing scaling factors for the x,y,z coordinates
+        of the headshape points and fiducials: [xscale, yscale, zscale].
+    """
+    rhino.rescale_sensor_positions(
+        fif_file=f"{outdir}/{subject}/{subject}_preproc-raw.fif",
+        xscale=rescale[0],
+        yscale=rescale[1],
+        zscale=rescale[2],
+    )
+
+
 def extract_polhemus_from_info(
     outdir,
     subject,
