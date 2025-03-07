@@ -537,18 +537,18 @@ def extract_polhemus_from_elc(outdir, subject, filepath, remove_headshape_near_n
     np.savetxt(filenames["polhemus_headshape_file"], headshape)
 
 
-def rescale_sensor_positions(fif_file, xscale, yscale, zscale):
+def rescale_sensor_positions(fif_file, xscale=1, yscale=1, zscale=1):
     """Rescale the x, y, z coordinates of sensors.
 
     Parameters
     ----------
     fif_file : str
         Path to fif file.
-    xscale : float
+    xscale : float, optional
         x coordinate scale factor.
-    yscale : float
+    yscale : float, optional
         y coordinate scale factor.
-    zscale : float
+    zscale : float, optional
         z coordinate scale factor.
     """
 
@@ -558,11 +558,21 @@ def rescale_sensor_positions(fif_file, xscale, yscale, zscale):
 
     # Load montage
     raw = mne.io.read_raw_fif(fif_file, preload=True)
-    montage = raw.get_montage()
+
+    # Check if rescaling has already been applied
+    if "rescale_sensor_positions" in raw.info["description"]:
+        raise ValueError(f"sensor positions have already been rescaled in {fif_file}.")
 
     # Move the sensors
-    for d, c in zip(montage.dig, coords):
-        d["r"] = c
+    log_or_print(f"Rescaling with xscale={xscale}, yscale={yscale}, zscale={zscale}")
+    montage = raw.get_montage()
+    for d in montage.dig:
+        d["r"][0] *= xscale
+        d["r"][1] *= yscale
+        d["r"][2] *= zscale
+
+    # Add scaling info to the fif description
+    raw.info["description"] += f"\n\n%% rescale_sensor_positions start %%\nxscale={xscale}, yscale={yscale}, zscale={zscale}\n%% rescale_sensor_positions end %%"
 
     # Save
     raw.set_montage(montage)
