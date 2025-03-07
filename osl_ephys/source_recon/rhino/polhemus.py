@@ -40,13 +40,13 @@ def get_polhemus_from_info(
 
     Returns
     -------
-    polhemus_headshape : list
+    polhemus_headshape : np.ndarray
         3D coordinates for each headshape point.
-    polhemus_rpa : list
+    polhemus_rpa : np.ndarray
         3D coordinates for rpa.
-    polhemus_lpa : list
+    polhemus_lpa : np.ndarray
         3D coordinates for lpa.
-    polhemus_nasion : list
+    polhemus_nasion : np.ndarray
         3D coordinates for nasion.
     """
 
@@ -79,6 +79,11 @@ def get_polhemus_from_info(
         elif dig["kind"] == FIFF.FIFFV_POINT_HPI and include_hpi_as_headshape:
             polhemus_headshape.append(dig["r"])
 
+    polhemus_headshape = np.array(polhemus_headshape)
+    polhemus_rpa = np.array(polhemus_rpa)
+    polhemus_lpa = np.array(polhemus_lpa)
+    polhemus_nasion = np.array(polhemus_nasion)
+
     return polhemus_headshape, polhemus_rpa, polhemus_lpa, polhemus_nasion
     
 
@@ -90,6 +95,7 @@ def extract_polhemus_from_info(
     lpa_outfile,
     include_eeg_as_headshape=False,
     include_hpi_as_headshape=True,
+    rescale=None,
 ):
     """Extract polhemus from FIF info.
 
@@ -113,6 +119,9 @@ def extract_polhemus_from_info(
         Should we include EEG locations as headshape points?
     include_hpi_as_headshape : bool, optional
         Should we include HPI locations as headshape points?
+    rescale : list, optional
+        List containing scaling factors for the x,y,z coordinates
+        of the headshape points and fiducials: [xscale, yscale, zscale].
     """
     log_or_print("Extracting polhemus from fif info")
 
@@ -125,6 +134,22 @@ def extract_polhemus_from_info(
         include_eeg_as_headshape=include_eeg_as_headshape,
         include_hpi_as_headshape=include_hpi_as_headshape,
     )
+
+    # Rescale
+    if rescale is not None:
+        if not isinstance(rescale, list) or len(rescale) != 3:
+            raise ValueError("rescale must be a list: [xscale, yscale, zscale].")
+        log_or_print("rescaling polhemus")
+
+    if len(polhemus_headshape) > 0:
+        polhemus_headshape[:, 0] *= rescale[0]  # x
+        polhemus_headshape[:, 1] *= rescale[1]  # y
+        polhemus_headshape[:, 2] *= rescale[2]  # z
+
+    for fid in [polhemus_rpa, polhemus_lpa, polhemus_nasion]:
+        fid[0] *= rescale[0]  # x
+        fid[1] *= rescale[1]  # y
+        fid[2] *= rescale[2]  # z
 
     # Check if info is from a CTF scanner
     if info["dev_ctf_t"] is not None:

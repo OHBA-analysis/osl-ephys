@@ -38,6 +38,7 @@ def extract_polhemus_from_info(
     subject,
     include_eeg_as_headshape=False,
     include_hpi_as_headshape=True,
+    rescale=None,
     preproc_file=None,
     epoch_file=None,
 ):
@@ -53,6 +54,9 @@ def extract_polhemus_from_info(
         Should we include EEG locations as headshape points?
     include_hpi_as_headshape : bool, optional
         Should we include HPI locations as headshape points?
+    rescale : list, optional
+        List containing scaling factors for the x,y,z coordinates
+        of the headshape points and fiducials: [xscale, yscale, zscale].
     preproc_file : str, optional
         Path to the preprocessed fif file.
     epoch_file : str, optional
@@ -69,6 +73,7 @@ def extract_polhemus_from_info(
         lpa_outfile=filenames["polhemus_lpa_file"],
         include_eeg_as_headshape=include_eeg_as_headshape,
         include_hpi_as_headshape=include_hpi_as_headshape,
+        rescale=rescale,
     )
 
 
