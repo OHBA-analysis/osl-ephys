@@ -508,98 +508,27 @@ def extract_polhemus_from_elc(outdir, subject, filepath, remove_headshape_near_n
     np.savetxt(filenames["polhemus_headshape_file"], headshape)
 
 
-def get_nearest_smri_points_polhemus(subjects_dir, subject):
-    """Get nearest point on the sMRI outskin to the polhemus headshape points and fiducials.
+def rescale_sensor_positions(fif_file, xscale, yscale, zscale):
+    """Rescale the x, y, z coordinates of sensors.
 
     Parameters
     ----------
-    subjects_dir : str
-        Subjects directory.
-    subject : str
-        Subject subdirectory/ID.
-
-    Returns
-    -------
-    headshape : (3, n) np.ndarray
-        Nearest point on the sMRI to the polhemus headshape points.
-    rpa : (3,) np.ndarray
-        Nearest point on the sMRI to the polhemus rpa.
-    lpa : (3,) np.ndarray
-        Nearest point on the sMRI to the polhemus lpa.
-    nas : (3,) np.ndarray
-        Nearest point on the sMRI to the polhemus nasion.
-    """
-    log_or_print("Moving sensors to nearest neighbour on MRI outskin surface")
-
-    # Get polhemus data
-    coreg_filenames = get_coreg_filenames(subjects_dir, subject)
-    polhemus_headshape_polhemus = np.loadtxt(coreg_filenames["polhemus_headshape_file"])
-    polhemus_nasion_polhemus = np.loadtxt(coreg_filenames["polhemus_nasion_file"])
-    polhemus_rpa_polhemus = np.loadtxt(coreg_filenames["polhemus_rpa_file"])
-    polhemus_lpa_polhemus = np.loadtxt(coreg_filenames["polhemus_lpa_file"])
-    polhemus_fid_polhemus = np.concatenate(
-        [np.reshape(polhemus_nasion_polhemus, [-1, 1]), np.reshape(polhemus_rpa_polhemus, [-1, 1]), np.reshape(polhemus_lpa_polhemus, [-1, 1])],
-        axis=1,
-    )
-
-    # Get extracted outskin surface
-    outskin_mesh_file = coreg_filenames["bet_outskin_mesh_file"]
-    xform_nativeindex2native = rhino_utils.get_sform(outskin_mesh_file)["trans"]
-    smri_headshape_nativeindex = rhino_utils.niimask2indexpointcloud(outskin_mesh_file)
-    smri_headshape_native = rhino_utils.xform_points(xform_nativeindex2native, smri_headshape_nativeindex)
-
-    # Transform sMRI data to polhemus space
-    xform_native2polhemus = mne.transforms.read_trans(coreg_filenames["head_mri_t_file"])
-    smri_headshape_polhemus = rhino_utils.xform_points(xform_native2polhemus["trans"], smri_headshape_native)
-
-    # Find nearest neighbour
-    polhemus_headshape_nearest = []
-    for i in range(polhemus_headshape_polhemus.shape[1]):
-        index, _ = rhino_utils.closest_node(polhemus_headshape_polhemus[:, i], smri_headshape_polhemus.T)
-        polhemus_headshape_nearest.append(smri_headshape_polhemus[:, index])
-    polhemus_headshape_nearest = np.array(polhemus_headshape_nearest).T
-
-    index, _ = rhino_utils.closest_node(polhemus_rpa_polhemus, smri_headshape_polhemus.T)
-    polhemus_rpa_nearest = smri_headshape_polhemus[:, index]
-
-    index, _ = rhino_utils.closest_node(polhemus_lpa_polhemus, smri_headshape_polhemus.T)
-    polhemus_lpa_nearest = smri_headshape_polhemus[:, index]
-
-    index, _ = rhino_utils.closest_node(polhemus_nasion_polhemus, smri_headshape_polhemus.T)
-    polhemus_nasion_nearest = smri_headshape_polhemus[:, index]
-
-    return polhemus_headshape_nearest, polhemus_rpa_nearest, polhemus_lpa_nearest, polhemus_nasion_nearest
-
-
-def place_eeg_sensors_on_outskin(subjects_dir, subject):
-    """Place EEG sensors on outskin.
-
-    Warning this function overwrite the preproc fif file.
-
-    This function also assumes that EEG sensors were extracted as headshape points in extract_polhemus_from_info.
-
-    Parameters
-    ----------
-    subjects_dir : str
-        Subjects directory.
-    subject : str
-        Subject subdirectory/ID.
+    fif_file : str
+        Path to fif file.
+    xscale : float
+        x coordinate scale factor.
+    yscale : float
+        y coordinate scale factor.
+    zscale : float
+        z coordinate scale factor.
     """
 
     # fif file containing the preprocessed data
-    preproc_file = f"{subjects_dir}/{subject}/{subject}_preproc-raw.fif"
-    if not os.path.exists(preproc_file):
-        raise ValueError(f"{preproc_file} is missing.")
-
-    # Get the nearest point on the outskin surface to the existing locations of the EEG sensors
-    hs, rpa, lpa, nas = get_nearest_smri_points_polhemus(subjects_dir, subject)
-
-    # Assuming order in digitised points is (lpa, nas, rpa, eeg/headshape...)
-    coords = np.array([lpa, nas, rpa] + list(hs.T))
-    coords *= 1e-3  # mm -> m
+    if not os.path.exists(fif_file):
+        raise ValueError(f"{fif_file} is missing.")
 
     # Load montage
-    raw = mne.io.read_raw_fif(preproc_file, preload=True)
+    raw = mne.io.read_raw_fif(fif_file, preload=True)
     montage = raw.get_montage()
 
     # Move the sensors
@@ -608,5 +537,5 @@ def place_eeg_sensors_on_outskin(subjects_dir, subject):
 
     # Save
     raw.set_montage(montage)
-    log_or_print(f"Overwritting {preproc_file} with new EEG sensor positions")
-    raw.save(preproc_file, overwrite=True)
+    log_or_print(f"Overwritting {fif_file} with new sensor positions")
+    raw.save(fif_file, overwrite=True)
