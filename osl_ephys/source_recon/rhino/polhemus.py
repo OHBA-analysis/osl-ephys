@@ -142,17 +142,18 @@ def extract_polhemus_from_info(
     if rescale is not None:
         if not isinstance(rescale, list) or len(rescale) != 3:
             raise ValueError("rescale must be a list: [xscale, yscale, zscale].")
+
         log_or_print("Rescaling polhemus")
 
-    if len(polhemus_headshape) > 0:
-        polhemus_headshape[:, 0] *= rescale[0]  # x
-        polhemus_headshape[:, 1] *= rescale[1]  # y
-        polhemus_headshape[:, 2] *= rescale[2]  # z
+        if len(polhemus_headshape) > 0:
+            polhemus_headshape[:, 0] *= rescale[0]  # x
+            polhemus_headshape[:, 1] *= rescale[1]  # y
+            polhemus_headshape[:, 2] *= rescale[2]  # z
 
-    for fid in [polhemus_rpa, polhemus_lpa, polhemus_nasion]:
-        fid[0] *= rescale[0]  # x
-        fid[1] *= rescale[1]  # y
-        fid[2] *= rescale[2]  # z
+        for fid in [polhemus_rpa, polhemus_lpa, polhemus_nasion]:
+            fid[0] *= rescale[0]  # x
+            fid[1] *= rescale[1]  # y
+            fid[2] *= rescale[2]  # z
 
     # Check if info is from a CTF scanner
     if info["dev_ctf_t"] is not None:
