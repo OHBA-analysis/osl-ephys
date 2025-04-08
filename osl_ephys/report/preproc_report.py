@@ -39,7 +39,7 @@ from ..utils.logger import log_or_print
 
 # ----------------------------------------------------------------------------------
 # Report generation
-
+mne.viz.set_browser_backend("matplotlib")
 
 def gen_report_from_fif(infiles, outdir, ftype=None, logsdir=None, run_id=None):
     """Generate web-report for a set of MNE data objects.
@@ -100,7 +100,7 @@ def get_header_id(raw):
         Scan name.
     
     """
-    return raw.filenames[0].split('/')[-1].strip('.fif')
+    return str(raw.filenames[0]).split('/')[-1].strip('.fif')
 
 
 def gen_html_data(
@@ -247,7 +247,7 @@ def gen_html_data(
     # we have to guess the exact filename
     g=[]
     for ext in ['tsss', 'trans', 'transdef', 'autobad', 'autobad_sss']:
-        g.append(glob(data['filename'].replace(f"{ext}.fif",'') +  '*.log'))
+        g.append(glob(str(data['filename']).replace(f"{ext}.fif",'') +  '*.log'))
     g = list(np.concatenate(g))
     
     for ig in g:
@@ -544,7 +544,7 @@ def plot_rawdata(raw, savebase):
     
     """
 
-    fig = raw.pick(['meg', 'eeg']).plot(n_channels=np.inf, duration=raw.times[-1])
+    fig = raw.pick(['meg', 'eeg']).plot(n_channels=np.inf, duration=raw.times[-1], use_opengl=False, show=False)
 
     if savebase is not None:
         figname = savebase.format('rawdata')

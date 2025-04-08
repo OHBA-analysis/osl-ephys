@@ -346,7 +346,7 @@ def detect_maxfilt_zeros(raw):
         Boolean array indicating which time points are zeroed out.
     """    
     if raw.filenames[0] is not None:
-        log_fname = raw.filenames[0].replace('.fif', '.log')
+        log_fname = str(raw.filenames[0]).replace('.fif', '.log')
     if 'log_fname' in locals() and exists(log_fname):
         try:
             starttime = raw.first_time
