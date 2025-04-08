@@ -52,9 +52,9 @@ def ica_label(data_dir, subject, reject=None, interactive=True):
     preproc_file = os.path.join(data_dir, subject, subject + '_preproc-raw.fif')
     ica_file = os.path.join(data_dir, subject, subject + '_ica.fif')
     report_dir_base =  os.path.join(data_dir, 'preproc_report')
-    report_dir = os.path.join(report_dir_base, subject + '_preproc-raw')
+    report_dir = os.path.join(report_dir_base, subject)
     logs_dir = os.path.join(data_dir, 'logs')
-    logfile = os.path.join(logs_dir, subject + '_preproc-raw.log')
+    logfile = os.path.join(logs_dir, subject + '_preproc.log')
     
     # setup loggers
     mne.utils._logging.set_log_file(logfile, overwrite=False)
@@ -72,7 +72,7 @@ def ica_label(data_dir, subject, reject=None, interactive=True):
         # keep these for later
         if reject=='manual':
             exclude_old = deepcopy(ica.exclude)
-                
+
         # interactive components plot
         if interactive:
             logger.info('INTERACTIVE ICA LABELING')
@@ -102,36 +102,37 @@ def ica_label(data_dir, subject, reject=None, interactive=True):
             ica.labels_[key] = list(ica.labels_[key])
 
         ica.save(ica_file, overwrite=True)
+
+        # if reject is not None:
+        logger.info("Attempting to update report")
         
-        if reject is not None:
-            logger.info("Attempting to update report")
-            
-            savebase = os.path.join(report_dir, "{0}.png")
-            logger.info("Assuming report directory: {0}".format(report_dir))
-            if os.path.exists(os.path.join(report_dir, "ica.png")) or os.path.exists(os.path.join(report_dir, "data.pkl")):
-                logger.info("Generating ICA plot")
-                _ = plot_bad_ica(raw, ica, savebase)
+        savebase = os.path.join(report_dir, "{0}.png")
+        logger.info("Assuming report directory: {0}".format(report_dir))
+        if os.path.exists(os.path.join(report_dir, "ica.png")) or os.path.exists(os.path.join(report_dir, "data.pkl")):
+            logger.info("Generating ICA plot")
+            _ = plot_bad_ica(raw, deepcopy(ica), savebase)
 
-                # try updating the report data
-                logger.info("Updating data.pkl")
-                data = pickle.load(open(os.path.join(report_dir, "data.pkl"), 'rb'))
-                if 'plt_ica' not in data.keys():
-                    data['plt_ica'] = os.path.join(report_dir.split("/")[-1], "ica.png")
+            # try updating the report data
+            logger.info("Updating data.pkl")
+            data = pickle.load(open(os.path.join(report_dir, "data.pkl"), 'rb'))
+            if 'plt_ica' not in data.keys():
+                data['plt_ica'] = os.path.join(report_dir.split("/")[-1], "ica.png")
 
-                # update number of bad components
-                data['ica_ncomps_rej'] = len(ica.exclude)
-                data['ica_ncomps_rej_ecg'] = [len(ica.labels_['ecg']) if 'ecg' in ica.labels_.keys() else 'N/A'][0]
-                data['ica_ncomps_rej_eog'] = [len(ica.labels_['eog']) if 'eog' in ica.labels_.keys() else 'N/A'][0]
+            # update number of bad components
+            data['ica_ncomps_rej'] = len(ica.exclude)
 
-                # save data
-                pickle.dump(data, open(os.path.join(report_dir, "data.pkl"), 'wb'))
+            data['ica_ncomps_rej_ecg'] = [len(ica.labels_['ecg']) if 'ecg' in ica.labels_.keys() else 'N/A'][0]
+            data['ica_ncomps_rej_eog'] = [len(ica.labels_['eog']) if 'eog' in ica.labels_.keys() else 'N/A'][0]
 
-                # gen html pages
-                logger.info("Generating subject_report.html")
-                gen_html_page(report_dir_base)
-                logger.info("Generating summary_report.html")
-                gen_html_summary(report_dir_base)
-                logger.info("Successfully updated report")
+            # save data
+            pickle.dump(data, open(os.path.join(report_dir, "data.pkl"), 'wb'))
+
+            # gen html pages
+            logger.info("Generating subject_report.html")
+            gen_html_page(report_dir_base)
+            logger.info("Generating summary_report.html")
+            gen_html_summary(report_dir_base)
+            logger.info("Successfully updated report")
                 
     except Exception as e:
         logger.critical("**********************")

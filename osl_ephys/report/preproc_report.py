@@ -1204,6 +1204,12 @@ def plot_bad_ica(raw, ica, savebase):
 
             if title is not None:
                 axes[i][0].set_title(title, fontsize=12)
+                
+            # check if the bads were excluded
+            if np.isclose(ica._transform_raw(raw, 0, len(raw.times))[exclude_uniq[i],:].mean(), 0, atol=1e-9):
+                fig.text(0.5, lowerlimit + 1 / multiplier, 'Excluded from preprocessed data', ha='center', va='center', fontsize=14, color='black')
+            else:
+                fig.text(0.5, lowerlimit + 1 / multiplier, 'Not yet excluded from data', ha='center', va='center', fontsize=14, color='red')
 
     if savebase is not None:
         figname = savebase.format('ica')

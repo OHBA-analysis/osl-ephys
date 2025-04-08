@@ -6,6 +6,7 @@
 import logging
 import numpy as np
 import matplotlib.pyplot as plt
+from mne._fiff.pick import channel_type
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -149,8 +150,8 @@ def _plot_sources(
     from mne.viz.utils import _compute_scalings, _make_event_color_dict, plt_show
     from mne import EpochsArray, BaseEpochs
     from mne.io import RawArray, BaseRaw
-    from mne.io.meas_info import create_info
-    from mne.io.pick import pick_types
+    from mne import create_info
+    from mne import pick_types
     from mne.defaults import _handle_default
 
     # handle defaults / check arg validity
@@ -200,7 +201,10 @@ def _plot_sources(
     ch_order = np.arange(len(picks))
     n_channels = min([n_channels, len(picks)])
     ch_names_picked = [ch_names[x] for x in picks]
-
+    
+    # because we added channels to the beginning of the data, we need to adjust exclude:
+    exclude = [x + len(extra_picks) for x in exclude if x in picks]
+    
     # create info
     info = create_info(ch_names_picked, sfreq, ch_types=ch_types)
     with info._unlock():
@@ -425,7 +429,7 @@ class osl_MNEBrowseFigure(MNEBrowseFigure):
         n_topos = len(
             np.unique(
                 [
-                    mne.io.pick.channel_type(ica.info, ch)
+                    channel_type(ica.info, ch)
                     for ch in mne.pick_types(ica.info, meg=exist_meg, eeg=exist_eeg)
                 ]
             )
@@ -699,7 +703,7 @@ class osl_MNEBrowseFigure(MNEBrowseFigure):
 
         # OSL ADDITION
         from mne import pick_types
-        from mne.io.pick import channel_type
+        
 
         # clear scalebars
         if self.mne.scalebars_visible:
@@ -924,7 +928,7 @@ class osl_MNEBrowseFigure(MNEBrowseFigure):
         nchans, ncomps = ica_tmp.get_components().shape
         chtype = np.unique(
             [
-                mne.io.pick.channel_type(ica.info, ch)
+                channel_type(ica.info, ch)
                 for ch in mne.pick_types(ica.info, meg=exist_meg, eeg=exist_eeg)
             ]
         )
