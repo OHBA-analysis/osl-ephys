@@ -12,6 +12,8 @@ import os
 import pickle
 from pathlib import Path
 
+import matplotlib
+matplotlib.use('Agg') 
 import mne
 from mne.coreg import Coregistration
 from mne.io import read_info
@@ -426,7 +428,7 @@ def coregister(
         lpa_distance = np.sqrt(np.sum((coreg._dig_dict["lpa"] - coreg.fiducials.dig[0]["r"]) ** 2))
         nasion_distance = np.sqrt(np.sum((coreg._dig_dict["nasion"] - coreg.fiducials.dig[1]["r"]) ** 2))
         rpa_distance = np.sqrt(np.sum((coreg._dig_dict["rpa"] - coreg.fiducials.dig[2]["r"]) ** 2))
-        fid_err = np.array([nasion_distance, lpa_distance, rpa_distance, np.median(dists)]) * 1e2 # now in cm
+        fid_err = np.array([nasion_distance, lpa_distance, rpa_distance, np.sqrt(np.mean(dists**2))]) * 1e2 # now in cm
             
             
     if reportdir is not None:
@@ -1576,7 +1578,7 @@ def find_template_subject(
     template : str
         Template subject.
     """
-    print("Finding template subject:")
+    log_or_print("Finding template subject:")
 
     # Get the parcellated data files
     parc_files = []
@@ -1588,7 +1590,7 @@ def find_template_subject(
         if Path(parc_file).exists():
             parc_files.append(parc_file)
         else:
-            print(f"Warning: {parc_file} not found")
+            log_or_print(f"Warning: {parc_file} not found")
 
     # Validation
     n_parc_files = len(parc_files)
@@ -1604,7 +1606,7 @@ def find_template_subject(
     # Find a subject to use as a template
     template_index = sign_flipping.find_template_subject(covs, n_embeddings)
     template_subject = parc_files[template_index].split("/")[-3]
-    print("Template for sign flipping:", template_subject)
+    log_or_print("Template for sign flipping:", template_subject)
 
     return template_subject
 

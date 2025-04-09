@@ -371,7 +371,8 @@ def coreg(
         np.savetxt(filenames["smri_nasion_file"], smri_nasion_polhemus)
         np.savetxt(filenames["smri_rpa_file"], smri_rpa_polhemus)
         np.savetxt(filenames["smri_lpa_file"], smri_lpa_polhemus)
-
+        np.savetxt(filenames["coreg_error_file"], err)
+        
     # ---------------------------------------------------------------------------------------------
     # Create sMRI-derived freesurfer meshes in native/mri space in mm, for use by forward modelling
 
@@ -405,6 +406,7 @@ def coreg_metrics(subjects_dir, subject):
     polhemus_nasion_file = coreg_filenames["polhemus_nasion_file"]
     polhemus_rpa_file = coreg_filenames["polhemus_rpa_file"]
     polhemus_lpa_file = coreg_filenames["polhemus_lpa_file"]
+    coreg_error_file = coreg_filenames["coreg_error_file"]
     info_fif_file = coreg_filenames["info_fif_file"]
 
     info = read_info(info_fif_file)
@@ -438,11 +440,16 @@ def coreg_metrics(subjects_dir, subject):
         smri_lpa_polhemus = np.loadtxt(smri_lpa_file)
         smri_lpa_meg = rhino_utils.xform_points(head_trans["trans"], smri_lpa_polhemus)
 
+    # load coreg error
+    if op.isfile(coreg_error_file):
+        coreg_error = np.loadtxt(coreg_error_file)
+        coreg_error = float(coreg_error)
+    
     # Distance between polhemus and sMRI fiducials in cm
     nasion_distance = np.sqrt(np.sum((polhemus_nasion_meg - smri_nasion_meg) ** 2))
     lpa_distance = np.sqrt(np.sum((polhemus_lpa_meg - smri_lpa_meg) ** 2))
     rpa_distance = np.sqrt(np.sum((polhemus_rpa_meg - smri_rpa_meg) ** 2))
-    distances = np.array([nasion_distance, lpa_distance, rpa_distance]) * 1e-1
+    distances = np.array([nasion_distance, lpa_distance, rpa_distance, coreg_error]) * 1e-1
 
     return distances
 
@@ -662,14 +669,102 @@ def coreg_display(
 
     # --------
     # Do plots
+    # import pyvista as pv
+    # # Enable offscreen rendering
+    # pv.OFF_SCREEN = True
 
+    # # Initialize the PyVista plotter
+    # plotter = pv.Plotter(window_size=(500, 500))
+    # plotter.set_background((0.5, 0.5, 0.5))
+    
+    # with warnings.catch_warnings():
+    #     warnings.simplefilter("ignore")
+    #     if plot_type == "surf":
+    #         # Display headshape points
+    #         if display_headshape_pnts:
+    #             if polhemus_headshape_meg is not None and len(polhemus_headshape_meg.T) > 0:
+    #                 polhemus_headshape_megt = polhemus_headshape_meg.T
+    #                 scale = 0.007 if len(polhemus_headshape_megt) < 200 else (0.005 if len(polhemus_headshape_megt) < 400 else 0.003)
+    #                 for point in polhemus_headshape_megt:
+    #                     sphere = pv.Sphere(radius=scale * 1000, center=point)
+    #                     plotter.add_mesh(sphere, color="red", opacity=1)
+    #             else:
+    #                 log_or_print("There are no headshape points to display")
+
+    #         # Display fiducials
+    #         if display_fiducials:
+    #             # MRI-derived nasion, rpa, lpa
+    #             if smri_nasion_meg is not None and len(smri_nasion_meg.T) > 0:
+    #                 color, scale = "yellow", 0.09
+    #                 for data in [smri_nasion_meg.T, smri_rpa_meg.T, smri_lpa_meg.T]:
+    #                     for point in data:
+    #                         sphere = pv.Sphere(radius=scale * 1000, center=point)
+    #                         plotter.add_mesh(sphere, color=color, opacity=1)
+    #             else:
+    #                 log_or_print("There are no MRI derived fiducials to display")
+
+    #             # Polhemus-derived nasion, rpa, lpa
+    #             if polhemus_nasion_meg is not None and len(polhemus_nasion_meg.T) > 0:
+    #                 color, scale = "pink", 0.012
+    #                 for data in [polhemus_nasion_meg.T, polhemus_rpa_meg.T, polhemus_lpa_meg.T]:
+    #                     for point in data:
+    #                         sphere = pv.Sphere(radius=scale * 1000, center=point)
+    #                         plotter.add_mesh(sphere, color=color, opacity=1)
+    #             else:
+    #                 log_or_print("There are no Polhemus derived fiducials to display")
+
+    #         # Display sensors
+    #         if display_sensors and len(meg_rrs) > 0:
+    #             surf = pv.PolyData(meg_rrs)
+    #             surf.faces = np.hstack([[3] + list(tri) for tri in meg_tris])
+    #             plotter.add_mesh(surf, color=(0.0, 0.25, 0.5), opacity=0.2)
+
+    #         # Display sensor orientations
+    #         if display_sensor_oris and len(meg_rrs) > 0:
+    #             color = (0.0, 0.25, 0.5)
+    #             scale = 15
+    #             # Loop over each sensor location and orientation
+    #             for loc, ori in zip(meg_sensor_locs, meg_sensor_oris):
+    #                 arrow = pv.Arrow(start=loc, direction=ori, scale=scale)
+    #                 plotter.add_mesh(arrow, color=color)
+
+    #         # Display scalp surface (outskin)
+    #         if display_outskin or display_outskin_with_nose:
+    #             rhino_utils.create_freesurfer_mesh_from_bet_surface(
+    #                 infile=outskin_mesh_4surf_file,
+    #                 surf_outfile=outskin_surf_file,
+    #                 nii_mesh_file=outskin_mesh_file,
+    #                 xform_mri_voxel2mri=mrivoxel_scaledmri_t["trans"],
+    #             )
+
+    #             coords_native, faces = nib.freesurfer.read_geometry(outskin_surf_file)
+    #             coords_meg = rhino_utils.xform_points(mri_trans["trans"], coords_native.T).T
+
+    #             scalp_surf = pv.PolyData(coords_meg)
+    #             scalp_surf.faces = np.hstack([[3] + list(face) for face in faces]) #faces.flatten()
+    #             plotter.add_mesh(scalp_surf, color=(0, 0.7, 0.7), opacity=0.4)
+
+    #         # Set camera position
+    #         plotter.camera_position = [(600, 600, 600), (0.0, 0.0, 0.0), (0.0, 1.0, 0.0)]
+
+    #         # Save or show the rendered scene
+    #         image_array = plotter.screenshot(return_img=True)
+    #         plotter.screenshot(filename)
+            
+    #         plotter.close()
+    
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
 
         if plot_type == "surf":
             # Initialize figure
-            renderer = _get_renderer(None, bgcolor=(0.5, 0.5, 0.5), size=(500, 500))
+            import pyvista as pv
+            pv.OFF_SCREEN = True
 
+            renderer = _get_renderer(None, bgcolor=(0.5, 0.5, 0.5), size=(500, 500))
+            # plotter = pv.Plotter(off_screen=True)
+            # plotter.set_background((0.5, 0.5, 0.5))
+            
             if display_headshape_pnts:
                 # Polhemus-derived headshape points
                 if polhemus_headshape_meg is not None and len(polhemus_headshape_meg.T) > 0:
@@ -682,6 +777,9 @@ def coreg_display(
                         scale = 0.003
                     color, alpha = "red", 1
                     renderer.sphere(center=polhemus_headshape_megt, color=color, scale=scale * 1000, opacity=alpha, backface_culling=True)
+                    # for pnt in range(len(polhemus_headshape_megt)):
+                    #     sphere = pv.Sphere(center=polhemus_headshape_megt[pnt]).compute_normals()
+                    #     _ = plotter.add_mesh(sphere, color=color, opacity=alpha, backface_culling=True, show_edges=False)
                 else:
                     log_or_print("There are no headshape points to display")
 

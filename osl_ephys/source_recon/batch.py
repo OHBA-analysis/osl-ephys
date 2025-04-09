@@ -3,6 +3,7 @@
 """
 
 # Authors: Chetan Gohil <chetan.gohil@psych.ox.ac.uk>
+#          Mats van Es <mats.vanes@psych.ox.ac.uk>           
 
 import os
 import sys
@@ -214,8 +215,10 @@ def run_src_chain(
                         + f"or use available functions: {avail_names}."
                     )
             def wrapped_func(**kwargs):
-                args, _, _, defaults = inspect.getargspec(func)
-                args_with_defaults = args[-len(defaults):] if defaults is not None else []
+                sig = inspect.signature(func)
+                args = [param for param in sig.parameters.keys() if param != 'kwargs']
+                defaults = [param.default for param in sig.parameters.values() if param.default is not inspect.Parameter.empty]
+                args_with_defaults = args[-len(defaults):] if defaults else []
                 kwargs_to_pass = {}
                 for a in args:
                     if a in kwargs:

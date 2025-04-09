@@ -4,6 +4,7 @@
 
 # Authors: Mark Woolrich <mark.woolrich@ohba.ox.ac.uk>
 #          Chetan Gohil <chetan.gohil@psych.ox.ac.uk>
+#          Mats van Es <mats.vanes@psych.ox.ac.uk>
 
 import os.path as op
 import warnings
@@ -14,6 +15,8 @@ from copy import deepcopy
 import cv2
 import numpy as np
 import nibabel as nib
+import matplotlib
+matplotlib.use('Agg') 
 import nilearn as nil
 from scipy.ndimage import morphology
 from sklearn.mixture import GaussianMixture
@@ -558,7 +561,7 @@ def plot_surfaces(subjects_dir, subject, include_nose, already_computed=False):
         display_copy = deepcopy(display)
         nii_file = filenames[f"bet_{surface}_mesh_file"]
         img = nil._utils.check_niimg_3d(nii_file)
-        data = nil._utils.niimg._safe_get_data(img, ensure_finite=True)
+        data = nil.image.get_data(img)
         vmin = np.nanmin(data)
         vmax = np.nanmax(data)
         display_copy.add_overlay(img, vmin=vmin, vmax=vmax)

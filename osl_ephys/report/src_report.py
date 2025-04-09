@@ -246,10 +246,10 @@ def gen_html_summary(reportdir, logsdir=None):
         fid_err_table = pd.DataFrame()
         fid_err_table["Session ID"] = [subject_data[i]["fif_id"] for i in range(len(subject_data))]
         if len(subject_data[0]['fid_err'])==4:
-            for i_err, hdr in enumerate(["Nasion", "LPA", "RPA", "Med(HSP-MRI)"]):
+            for i_err, hdr in enumerate(["Nasion", "LPA", "RPA", "RMS(Headshape-MRI)"]):
                 fid_err_table[hdr] = [np.round(subject_data[i]['fid_err'][i_err], decimals=2) if 'fid_err' in subject_data[i].keys() else None for i in range(len(subject_data))]   
         else:
-            for i_err, hdr in enumerate(["Nasion", "LPA", "RPA"]):
+            for i_err, hdr in enumerate(["Nasion", "LPA", "RPA", "RMS(Headshape-MRI)"]):
                 fid_err_table[hdr] = [np.round(subject_data[i]['fid_err'][i_err], decimals=2) if 'fid_err' in subject_data[i].keys() else None for i in range(len(subject_data))]
         fid_err_table.index += 1 # Start indexing from 1
         data['coreg_table'] = fid_err_table.to_html(classes="display", table_id="coreg_tbl")
