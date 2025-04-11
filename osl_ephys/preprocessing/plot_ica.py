@@ -8,6 +8,18 @@ import numpy as np
 import matplotlib.pyplot as plt
 from mne._fiff.pick import channel_type
 
+import matplotlib
+
+# Force matplotlib to use an interactive backend:
+backends_to_try = ['Qt5Agg', 'QtAgg', 'ipympl', 'GTK3Agg', 'GTK4Agg', 'macosx', 'TkAgg', 'GTK3Cairo', 'GTK4Cairo', 'wxAgg' ]
+for backend in backends_to_try:
+    try:
+        matplotlib.use(backend, force=True)
+        break
+    except ImportError:
+        continue
+
+
 # Configure logging
 logger = logging.getLogger(__name__)
 
