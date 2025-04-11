@@ -17,7 +17,7 @@ import matplotlib.pyplot as plt
 import scipy.sparse.linalg
 from scipy.spatial import KDTree
 from scipy.signal import welch
-from nilearn.plotting import plot_markers
+from nilearn.plotting import plot_markers, plot_glass_brain
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 
 import osl_ephys.source_recon.rhino.utils as rhino_utils
@@ -922,7 +922,12 @@ def convert2mne_raw(parc_data, raw, parcel_names=None, extra_chans="stim"):
 
     # Create Raw object
     parc_raw = mne.io.RawArray(data, parc_info)
-
+    
+    # Update filter info
+    with parc_raw.info._unlock():
+        parc_raw.info["highpass"] = float(raw.info['highpass'])
+        parc_raw.info["lowpass"] = float(raw.info['lowpass'])
+    
     # Copy timing info
     parc_raw.set_meas_date(raw.info["meas_date"])
     parc_raw.__dict__["_first_samps"] = raw.__dict__["_first_samps"]
@@ -1122,3 +1127,92 @@ def convert2source_estimate(subjects_dir, data, parc=None, reference_brain='fsav
         kernel[v, i] = 1
     
     return mne.SourceEstimate((kernel, data.get_data(picks='misc')), vertices, tmin=0, tstep=1/data.info['sfreq'])   
+
+
+def plot_source_topo(
+    data_map,
+    parcellation_file=None,
+    mask_file='MNI152_T1_8mm_brain.nii.gz',
+    axis=None,
+    cmap=None,
+    vmin=None,
+    vmax=None,
+    alpha=0.7,
+):
+    """Plot a data map on a cortical surface. Wrapper for nilearn.plotting.plot_glass_brain.
+    
+    Parameters
+    ----------
+    data_map : array_like
+        Vector of data values to plot (nparc,)
+    parcellation_file : str
+        Filepath of parcellation file to plot data on
+    mask_file : str
+        Filepath of mask file to plot data on (Default value = 'MNI152_T1_8mm_brain.nii.gz')
+    axis : {None or axis handle}
+        Axis to plot into (Default value = None)
+    cmap : {None or matplotlib colormap}
+        Colormap to use for plotting (Default value = None)
+    vmin : {None or float}
+        Minimum value for colormap (Default value = None)
+    vmax : {None or float}
+        Maximum value for colormap (Default value = None)
+    alpha : {None or float}
+        Alpha value for colormap (Default value = None)
+
+    Returns
+    -------
+    image : :py:class:`matplotlib.image.AxesImage <matplotlib.image.AxesImage>`
+        AxesImage object
+    """
+    
+    if parcellation_file is None:
+        parcellation_file = guess_parcellation(data_map)
+    parcellation_file = find_file(parcellation_file)
+    mask_file = find_file(mask_file)
+    
+    if vmin is None:
+        vmin = data_map.min()
+    if vmax is None:
+        vmax = data_map.max()
+    
+    if vmin < 0 and vmax>0:
+        vmax = np.max(np.abs([vmin,vmax]))
+        vmin = -vmax
+    
+    if cmap is None:
+        if vmin<0 and vmax>0:
+            cmap = 'RdBu_r'
+        elif vmin >= 0:
+            cmap = 'Reds'
+        else:
+            cmap = 'Blues_r'
+    
+    if axis is None:
+        # Create figure
+        fig, axis = plt.subplots()
+
+    # Fill parcel values into a 3D voxel grid
+    data_map = parcel_vector_to_voxel_grid(mask_file, parcellation_file, data_map)
+    data_map = data_map[..., np.newaxis]
+    mask = nib.load(mask_file)
+    nii = nib.Nifti1Image(data_map, mask.affine, mask.header)   
+    
+    # Plot
+    plot_glass_brain(
+        nii,
+        output_file=None,
+        display_mode='z',
+        colorbar=False,
+        axes=axis,
+        cmap=cmap,
+        alpha=alpha,
+        vmin=vmin,
+        vmax=vmax,
+        plot_abs=False,
+        annotate=False,
+    )
+    
+    # despite the options of vmin, vmax, the colorbar is always set to -vmax to vmax. correct this
+    # plt.gca().get_images()[0].set_clim(vmin, vmax)
+    return plt.gca().get_images()[0]

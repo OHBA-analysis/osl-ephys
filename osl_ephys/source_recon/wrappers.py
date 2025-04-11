@@ -28,6 +28,7 @@ from . import (
     freesurfer_utils,
 )
 from ..report import src_report
+from ..report.preproc_report import plot_freqbands
 from ..utils.logger import log_or_print
 from ..utils.parallel import schedule_or_execute_task
 
@@ -1039,6 +1040,9 @@ def parcellate(
     parc_corr_plot = f"{subject}/parc/corr.png"
     parcellation.plot_correlation(parcel_data, filename=f"{outdir}/{parc_corr_plot}")
 
+    parc_freqbands_plot = f"{subject}/parc/freqbands.png"
+    plot_freqbands(parc_raw, filename=f"{outdir}/{parc_freqbands_plot}")
+    
     # Save info for the report
     n_parcels = parcel_data.shape[0]
     n_samples = parcel_data.shape[1]
@@ -1060,6 +1064,7 @@ def parcellate(
             "n_epochs": n_epochs,
             "parc_psd_plot": parc_psd_plot,
             "parc_corr_plot": parc_corr_plot,
+            "parc_freqbands_plot": parc_freqbands_plot,
         },
     )
 
@@ -1247,6 +1252,9 @@ def beamform_and_parcellate(
     parc_corr_plot = f"{subject}/parc/corr.png"
     parcellation.plot_correlation(parcel_data, filename=f"{outdir}/{parc_corr_plot}")
 
+    parc_freqbands_plot = f"{subject}/parc/freqbands.png"
+    plot_freqbands(parc_raw, f"{outdir}/{parc_freqbands_plot}")
+
     if reportdir is not None:
         # Save info for the report
         n_parcels = parcel_data.shape[0]
@@ -1277,6 +1285,7 @@ def beamform_and_parcellate(
                 "n_epochs": n_epochs,
                 "parc_psd_plot": parc_psd_plot,
                 "parc_corr_plot": parc_corr_plot,
+                "parc_freqbands_plot": parc_freqbands_plot,
             },
         )
 
@@ -1508,6 +1517,9 @@ def minimum_norm_and_parcellate(
     parc_corr_plot = f"{subject}/parc/corr.png"
     parcellation.plot_correlation(parcel_data, filename=f"{outdir}/{parc_corr_plot}")
 
+    parc_freqbands_plot = f"{subject}/parc/freqbands.png"
+    plot_freqbands(parc_raw, filename=f"{outdir}/{parc_freqbands_plot}")
+    
     if reportdir is not None:
         # Save info for the report
         n_parcels = parcel_data.shape[0]
@@ -1540,6 +1552,7 @@ def minimum_norm_and_parcellate(
                 "n_epochs": n_epochs,
                 "parc_psd_plot": parc_psd_plot,
                 "parc_corr_plot": parc_corr_plot,
+                "parc_freqbands_plot": parc_freqbands_plot,
             },
         )
 

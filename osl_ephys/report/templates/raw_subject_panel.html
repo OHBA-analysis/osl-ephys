@@ -107,20 +107,24 @@
     </div>
         
     <div class="tabpage" style="width: 100%; display: none" id={{ data.fif_id }}_spectra>
-        <div style="width: 100%; display: table">
+        <div style="width: 100%; display: table; table-layout: fixed;">
             <div style="display: table-row; height: 100px;">
-                <div class='figbox'>
+                <div class='figbox' style="display: table-cell; width: 50%; vertical-align: top;">
                     <h4>Full Power Spectra Excluding Bad Chans and Segs</h4>
                     <img src="{{ data.plt_spectra }}" alt="" style='max-width: 100%'/>
                 </div>
-                <div class='figbox'>
+                <div class='figbox' style="display: table-cell; width: 50%; vertical-align: top;">
                     <h4>1-48Hz Power Spectra Excluding Bad Chans and Segs</h4>
-                    <img src="{{ data.plt_zoomspectra }}" alt="", style='max-width: 100%'/>
+                    <img src="{{ data.plt_zoomspectra }}" alt="" style='max-width: 100%'/>
                 </div>
             </div>
         </div>
+        <div style="width: 100%; margin:0 auto">
+            <h4>Topographies of Band-limited Power Excluding Bad Chans and Segs</h4>
+            <img src="{{ data.plt_freqbands }}" alt="" style='max-width: 100%'/>
+        </div>
     </div>
-
+    
     <div class="tabpage" style="width: 100%; display: none" id={{ data.fif_id }}_digitisation>
         <div style="width: 100%">
             <h4>Digitisation and Headshape</h4>

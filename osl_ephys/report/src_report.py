@@ -112,6 +112,10 @@ def gen_html_data(config, outdir, subject, reportdir, logger=None, extra_funcs=N
         data["plt_parc_corr"] = f"{subject}/parc_corr.png"
         copy("{}/{}".format(outdir, data["parc_corr_plot"]), "{}/{}/parc_corr.png".format(reportdir, subject))
 
+    if "parc_freqbands_plot" in data:
+        data["plt_parc_freqbands"] = f"{subject}/parc_freqbands.png"
+        copy("{}/{}".format(outdir, data["parc_freqbands_plot"]), "{}/{}/parc_freqbands.png".format(reportdir, subject))
+
     # Logs
     if logsdir is None:
         logsdir = os.path.join(outdir, 'logs')
