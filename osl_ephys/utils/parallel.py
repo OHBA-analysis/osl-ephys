@@ -6,7 +6,10 @@
 
 from functools import partial
 import dask.bag as db
-from dask.distributed import Client, LocalCluster, wait, default_client
+import queue
+from dask.distributed import Client, LocalCluster, Queue, wait, default_client
+from distributed.worker import get_worker
+import multiprocessing
 
 # Housekeeping for logging
 import logging
@@ -14,7 +17,8 @@ osl_logger = logging.getLogger(__name__)
 
 
 def dask_parallel_bag(func, iter_args,
-                      func_args=None, func_kwargs=None):
+                      func_args=None, func_kwargs=None,
+                      queue_name="MAIN_THREAD_TASKS"):
     """A maybe more consistent alternative to ``dask_parallel``.
     
     Parameters
@@ -44,6 +48,15 @@ def dask_parallel_bag(func, iter_args,
 
     # Get connection to currently active cluster
     client = default_client()
+    queue = Queue(name="MAIN_THREAD_TASKS")
+    # # Initialize or retrieve the shared queue on the scheduler
+    # try:
+    #     queue = Queue(name=queue_name)
+    #     osl_logger.info(f"Queue '{queue_name}' initialized.")
+    # except ValueError:
+    #     # If the queue doesn't exist, create it explicitly
+    #     queue = Queue(name=queue_name, client=client)
+    #     osl_logger.info(f"Queue '{queue_name}' created.")
 
     # Print some helpful info
     osl_logger.info('Dask Client : {0}'.format(client.__repr__()))
@@ -77,3 +90,33 @@ def dask_parallel_bag(func, iter_args,
     osl_logger.info('Computation complete')
 
     return flags
+
+#%% Main thread scheduler
+# Some tasks can't be run on individual workers, and have to be run on the main thread.
+
+def is_dask_worker():
+    """Check if the current code is running inside a Dask worker."""
+    try:
+        get_worker()  # Attempt to get the current worker
+        return True
+    except ValueError:
+        return False  # Not running in a Dask worker
+
+def schedule_or_execute_task(id, func, *args, **kwargs): 
+    """Add a task to be executed on the main thread. If already on the main thread, execute it immediately."""
+    if is_dask_worker():
+        # Dynamically retrieve the shared queue
+        queue = Queue('MAIN_THREAD_TASKS')
+        task = (id, func, args, kwargs)  # Package task as tuple
+        osl_logger.info(f"Delaying task <{func.__name__}> for subject '{id}' to be run on the main thread.")
+        queue.put(task)  # Add task to queue
+    else:
+        func(*args, **kwargs)
+
+def execute_main_thread_tasks(queue_name="MAIN_THREAD_TASKS"):
+    """Execute all tasks stored in the shared queue."""
+    queue = Queue('MAIN_THREAD_TASKS')  # Dynamically retrieve the shared queue
+    while queue.qsize() > 0:
+        id, func, args, kwargs = queue.get()  # Retrieve task from queue
+        osl_logger.info(f"Executing task <{func.__name__}> for subject '{id}' on main thread")
+        func(*args, **kwargs)  # Execute task on main thread

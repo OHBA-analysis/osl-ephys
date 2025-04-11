@@ -10,9 +10,11 @@ import sys
 import traceback
 import pprint
 import inspect
+
 from copy import deepcopy
 from time import localtime, strftime
 from functools import partial
+from dask.distributed import Variable, Queue
 
 import numpy as np
 import yaml
@@ -23,6 +25,7 @@ from ..report import src_report
 from ..utils import logger as osl_logger
 from ..utils import validate_outdir, find_run_id, parallel
 from ..utils.misc import set_random_seed
+from ..utils.parallel import execute_main_thread_tasks
 
 import logging
 logger = logging.getLogger(__name__)
@@ -149,6 +152,17 @@ def run_src_chain(
     logsdir = validate_outdir(logsdir or outdir / "logs")
     reportdir = validate_outdir(reportdir or outdir / "src_report")
 
+    # initialise the report data.pkl here, containing 'filename'. If we don't do this,
+    # gen_html_page might fail because not all data.pkl files in the report directory
+    # will have the filename yet.
+    if reportdir is not None: 
+        src_report.add_to_data(
+            f"{reportdir}/{subject}/data.pkl",
+            {
+                "filename": subject,
+            },
+        )
+    
     # Use the subject ID for the run ID
     run_id = subject
 
@@ -433,6 +447,8 @@ def run_src_batch(
     # Actually run the processes
     if dask_client:
         flags = parallel.dask_parallel_bag(pool_func, args)
+        # Wait for all tasks to finish, and then execute any main thread tasks
+        execute_main_thread_tasks()
     else:
         flags = [pool_func(*aa) for aa in args]
 

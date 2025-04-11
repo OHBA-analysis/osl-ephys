@@ -713,7 +713,7 @@ def get_vtk_mesh_native(vtk_mesh_file, nii_mesh_file):
     nii_mesh_file needs to be the corresponding niftii file from bet that corresponds to the same mesh as in vtk_mesh_file
     """
 
-    data = pd.read_csv(vtk_mesh_file, delim_whitespace=True)
+    data = pd.read_csv(vtk_mesh_file, sep=r"\s+")
 
     num_rrs = int(data.iloc[3, 1])
 
@@ -785,7 +785,7 @@ def transform_vtk_mesh(vtk_mesh_file_in, nii_mesh_file_in, out_vtk_file, nii_mes
     # transform them using the passed in xform
     rrs_out = xform_points(overall_xform, rrs_in.T).T
 
-    data = pd.read_csv(vtk_mesh_file_in, delim_whitespace=True)
+    data = pd.read_csv(vtk_mesh_file_in, sep=r"\s+")
 
     num_rrs = int(data.iloc[3, 1])
     data.iloc[4 : num_rrs + 4, 0:3] = rrs_out

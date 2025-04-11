@@ -20,7 +20,7 @@ import inspect
 
 from . import preproc_report
 from ..source_recon import parcellation
-
+from ..utils.parallel import schedule_or_execute_task
 
 def gen_html_data(config, outdir, subject, reportdir, logger=None, extra_funcs=None, logsdir=None):
     """Generate data for HTML report.
@@ -92,8 +92,9 @@ def gen_html_data(config, outdir, subject, reportdir, logger=None, extra_funcs=N
             copy("{}/{}".format(outdir, plot), "{}/{}/{}.png".format(reportdir, subject, surface))
 
     if "coreg_plot" in data:
-        data["plt_coreg"] = f"{subject}/coreg.html"
-        copy("{}/{}".format(outdir, data["coreg_plot"]), "{}/{}/coreg.html".format(reportdir, subject))
+        data["plt_coreg"] = f"{subject}/coreg.html" # this might not have been rendered yet (if using dask), so potentially need to copy it over later
+        schedule_or_execute_task(subject, copy, "{}/{}".format(outdir, data["coreg_plot"]), "{}/{}/coreg.html".format(reportdir, subject))
+        # copy("{}/{}".format(outdir, data["coreg_plot"]), "{}/{}/coreg.html".format(reportdir, subject))
 
     if "filters_cov_plot" in data:
         data["plt_filters_cov"] = f"{subject}/filters_cov.png"
