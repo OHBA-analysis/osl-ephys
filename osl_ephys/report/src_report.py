@@ -153,7 +153,10 @@ def gen_html_page(reportdir):
         subdir = Path(subdir)
         # Just generate the html page with the successful runs
         try:
-            data.append(pickle.load(open(reportdir / subdir / "data.pkl", "rb")))
+            report_data = pickle.load(open(reportdir / subdir / "data.pkl", "rb"))
+            if "filename" not in report_data:
+                continue
+            data.append(report_data)
         except:
             pass
 
