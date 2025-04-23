@@ -357,7 +357,7 @@ def coregister(
 
         # Calculate metrics
         if already_coregistered:
-            fid_err = None
+            fid_err = [np.nan, np.nan, np.nan]
         else:
             fid_err = rhino.coreg_metrics(subjects_dir=outdir, subject=subject)
 
