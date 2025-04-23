@@ -4,38 +4,37 @@
 
 # Authors: Chetan Gohil <chetan.gohil@psych.ox.ac.uk>
 
-import os
+from dask.distributed import Client
+from osl_ephys import source_recon, utils
 
-from osl_ephys import source_recon
+if __name__ == "__main__":
+    utils.logger.set_up(level="INFO")
+    client = Client(n_workers=4, threads_per_worker=1)
 
-# Directories
-outdir = "data"
+    config = """
+        source_recon:
+        - forward_model:
+            model: Single Layer
+        - beamform_and_parcellate:
+            freq_range: [1, 45]
+            chantypes: mag
+            rank: {mag: 100}
+            spatial_resolution: 8
+            parcellation_file: aal_cortical_merged_8mm_stacked.nii.gz
+            method: spatial_basis
+            orthogonalisation: symmetric
+    """
 
-# Settings
-config = """
-    source_recon:
-    - beamform_and_parcellate:
-        freq_range: [4, 40]
-        chantypes: mag
-        rank: {mag: 100}
-        spatial_resolution: 8
-        parcellation_file: aal_cortical_merged_8mm_stacked.nii.gz
-        method: spatial_basis
-        orthogonalisation: symmetric
-"""
+    subjects = []
+    for sub in range(1, 11):
+        for run in range(1, 3):
+            subjects.append(f"sub-{sub:03d}_run-{run:03d}")
 
-# Subject IDs
-subjects = ["13703"]
+    outdir = "data/preproc"
 
-# Fif files containing the sensor-level preprocessed data for each subject
-preproc_files = [
-    "data/13703/13703-braille_test-meg_preproc-raw.fif",
-]
-
-# Do source reconstruction
-source_recon.run_src_batch(
-    config,
-    outdir=outdir,
-    subjects=subjects,
-    preproc_files=preproc_files,
-)
+    source_recon.run_src_batch(
+        config,
+        outdir=outdir,
+        subjects=subjects,
+        dask_client=True,
+    )

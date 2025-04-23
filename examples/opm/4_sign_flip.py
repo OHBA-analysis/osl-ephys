@@ -10,28 +10,39 @@ correlations or power.
 
 # Authors: Chetan Gohil <chetan.gohil@psych.ox.ac.uk>
 
-from osl_ephys import source_recon
+from dask.distributed import Client
+from osl_ephys import source_recon, utils
 
-# Source directory and subjects to sign flip
-outdir = "data"
-subjects = ["13703"]
+if __name__ == "__main__":
+    utils.logger.set_up(level="INFO")
+    client = Client(n_workers=4, threads_per_worker=1)
 
-# Find a good template subject to align other subjects to
-template = source_recon.find_template_subject(
-    outdir, subjects, n_embeddings=15, standardize=True
-)
+    subjects = []
+    for sub in range(1, 11):
+        for run in range(1, 3):
+            subjects.append(f"sub-{sub:03d}_run-{run:03d}")
 
-# Settings
-config = f"""
-    source_recon:
-    - fix_sign_ambiguity:
-        template: {template}
-        n_embeddings: 15
-        standardize: True
-        n_init: 3
-        n_iter: 2500
-        max_flips: 20
-"""
+    outdir = "data/preproc"
 
-# Do the sign flipping
-source_recon.run_src_batch(config, outdir, subjects)
+    # Find a good template subject to align other subjects to
+    template = source_recon.find_template_subject(
+        outdir, subjects, n_embeddings=15, standardize=True
+    )
+
+    config = f"""
+        source_recon:
+        - fix_sign_ambiguity:
+            template: {template}
+            n_embeddings: 15
+            standardize: True
+            n_init: 3
+            n_iter: 2500
+            max_flips: 20
+    """
+
+    source_recon.run_src_batch(
+        config,
+        outdir=outdir,
+        subjects=subjects,
+        dask_client=True,
+    )
