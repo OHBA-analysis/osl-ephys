@@ -19,7 +19,7 @@ from tabulate import tabulate
 import inspect
 
 from . import preproc_report
-from ..source_recon import parcellation
+from ..source_recon import parcellation, batch
 from ..utils.parallel import schedule_or_execute_task
 
 def gen_html_data(config, outdir, subject, reportdir, logger=None, extra_funcs=None, logsdir=None):
@@ -93,7 +93,11 @@ def gen_html_data(config, outdir, subject, reportdir, logger=None, extra_funcs=N
 
     if "coreg_plot" in data:
         data["plt_coreg"] = f"{subject}/coreg.html" # this might not have been rendered yet (if using dask), so potentially need to copy it over later
-        schedule_or_execute_task(subject, copy, "{}/{}".format(outdir, data["coreg_plot"]), "{}/{}/coreg.html".format(reportdir, subject))
+        if outdir.__str__() in data['coreg_plot']:
+            origfile = data["coreg_plot"]
+        else:
+            origfile = "{}/{}".format(outdir, data["coreg_plot"])
+        schedule_or_execute_task(subject, copy, origfile, "{}/{}/coreg.html".format(reportdir, subject))
         # copy("{}/{}".format(outdir, data["coreg_plot"]), "{}/{}/coreg.html".format(reportdir, subject))
 
     if "filters_cov_plot" in data:
@@ -112,7 +116,7 @@ def gen_html_data(config, outdir, subject, reportdir, logger=None, extra_funcs=N
         data["plt_parc_corr"] = f"{subject}/parc_corr.png"
         copy("{}/{}".format(outdir, data["parc_corr_plot"]), "{}/{}/parc_corr.png".format(reportdir, subject))
 
-    if "parc_freqbands_plot" in data:
+    if "parc_freqbands_plot" in data and data["parc_freqbands_plot"] is not None:
         data["plt_parc_freqbands"] = f"{subject}/parc_freqbands.png"
         copy("{}/{}".format(outdir, data["parc_freqbands_plot"]), "{}/{}/parc_freqbands.png".format(reportdir, subject))
 
@@ -288,8 +292,8 @@ def gen_html_summary(reportdir, logsdir=None):
     if logsdir is None:
         logsdir = reportdir._str.replace('src_report', 'logs')
         
-    if os.path.exists(os.path.join(logsdir, 'osl_batch.log')):
-        with open(os.path.join(logsdir, 'osl_batch.log'), 'r') as log_file:
+    if os.path.exists(os.path.join(logsdir, 'batch_src.log')):
+        with open(os.path.join(logsdir, 'batch_src.log'), 'r') as log_file:
             data['batchlog'] = log_file.read()
     
     g = glob(os.path.join(logsdir, '*.error.log'))    
@@ -484,6 +488,8 @@ def update_config(old_config, new_config):
     config : dict
         Merge/updated config.
     """
+    if not isinstance(old_config, dict):
+        old_config = batch.load_config(old_config)
     old_stages = []
     for stage in old_config["source_recon"]:
         for k, v in stage.items():

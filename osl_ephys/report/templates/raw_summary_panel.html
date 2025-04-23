@@ -20,13 +20,25 @@
         <h3>Config</h3>
         <img src="{{ data.plt_config }}" alt="" style='max-width: 60%'/>
         {% if data.extra_funcs is defined %}
-            <h3>Extra functions</h3>
+            <h3>Extra functions
+                <span style="margin-right: 10px;"></span>
+                <button style="cursor: help; border: 1px solid; background-color: lightblue; color: black; padding: 2px 5px; font-size: 12px;" 
+                        title="This is the list of extra functions that were used in the preprocessing.">
+                    ?
+                </button>
+            </h3>
             <textarea id="log" rows="20" style="width: 80%;" readonly>{{ data.extra_funcs }}</textarea>
         {% endif %}
     </div>
 
     <div class="tabpage" style='width: 90%' id='tbl'>
-        <h3>Preproc Summary</h3>
+        <h3>Preproc Summary
+            <span style="margin-right: 10px;"></span>
+            <button style="cursor: help; border: 1px solid; background-color: lightblue; color: black; padding: 2px 5px; font-size: 12px;" 
+                    title="This table is interactive and can be used to guide quality assurance. For example, sort the table by different columns. Which recordings have the most bad channels? Which recordings have the most bad trials? Which recordings have no bad ICA components? These subjects are good candidates for further inspection in the subject report.">
+                ?
+            </button>
+        </h3>
         <div style="max-width: 100%; overflow-x: auto;">
         {{ data.tbl | safe }}
         </div>

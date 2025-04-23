@@ -259,7 +259,7 @@ def setup_volume_source_space(subjects_dir, subject, gridstep=5, mindist=5.0, ex
     # - outer_skull
     # - outer_skin
     #
-    # This means that for single shell model, i.e. with conductivities set to length one, the surface used by MNE willalways be the inner_skull,
+    # This means that for single shell model, i.e. with conductivities set to length one, the surface used by MNE will always be the inner_skull,
     # i.e. it actually corresponds to the brain/cortex surface!! Not sure that is correct/optimal.
     #
     # Note that this is done in Fieldtrip too!, see the "Realistic single-shell model, using brain surface from segmented mri" section at:

@@ -212,7 +212,7 @@ def main(argv=None):
             subject = [f.split('/')[-2] for f in g]
             # batch log
             logs_dir = os.path.join(data_dir, 'logs')
-            logfile = os.path.join(logs_dir, 'osl_batch.log')
+            logfile = os.path.join(logs_dir, 'batch_preproc.log')
             osl_logger.set_up(log_file=logfile, level="INFO", startup=False)
             logger.info('Starting osl-ephys ICA Batch Processing')
             logger.info('Running osl_ica_label on {0} subjects with reject={1}'.format(len(subject), str(reject)))
@@ -277,7 +277,7 @@ def apply(argv=None):
         
         # batch log
         logs_dir = os.path.join(data_dir, 'logs')
-        logfile = os.path.join(logs_dir, 'osl_batch.log')
+        logfile = os.path.join(logs_dir, 'batch_preproc.log')
         osl_logger.set_up(log_file=logfile, level="INFO", startup=False)
         logger.info('Starting osl-ephys ICA Batch Processing')
         logger.info('Running osl_ica_apply on {0} subjects'.format(len(subject)))

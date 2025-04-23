@@ -57,32 +57,68 @@
     
     <div class="tabpage" style="width: 100%; display: none" id={{ data.fif_id }}_timeseries>
         <div style="width: 100%">
-            <h4>Raw data</h4>
+            <h4>Raw data
+                <span style="margin-right: 10px;"></span>
+                <button style="cursor: help; border: 1px solid; background-color: lightblue; color: black; padding: 2px 5px; font-size: 12px;" 
+                        title="This plot shows all electrophys data at once. It is particularly useful to check MaxFilter results (if applied). In particular, MaxFilter sometimes zeroes out the data when using temporal extension (tsss), because there are not enough useable HPI coils to use. If that's the case, you would see flat lines throughout the data, and you might want to turn off the temporal extension.">
+                    ?
+                </button>
+            </h4>
             <img src="{{ data.plt_rawdata }}" alt="" style='max-width: 60%'/>
         </div>
         {% if data.bad_seg != [] %}
             <div style="width: 100%">
-                <h4>Bad segments</h4>
+                <h4>Bad segments
+                    <span style="margin-right: 10px;"></span>
+                    <button style="cursor: help; border: 1px solid; background-color: lightblue; color: black; padding: 2px 5px; font-size: 12px;" 
+                            title="Depending on how conservative you want to be, you can increase or decrease the significance level of your bad segment detection.">
+                        ?
+                    </button>
+                </h4>
                 <span>{{ '<br/>'.join(data.bad_seg[::-1]) }}</span>
             </div>
         {% endif %}
         <div style="width: 100%">
-            <h4>Variance Across Sensors</h4>
+            <h4>Variance Across Sensors
+                <span style="margin-right: 10px;"></span>
+                <button style="cursor: help; border: 1px solid; background-color: lightblue; color: black; padding: 2px 5px; font-size: 12px;" 
+                        title="Do the identified bad segments (red) overlap with the peak of the variance? If not, you might want to play with the significance level, segment length, or metric used in bad segment detection. You can also try to add an extra bad segment detection with different settings (e.g., mode='diff' will run bad segment detection on the temporal derivative.)">
+                    ?
+                </button>
+            </h4>
             <img src="{{ data.plt_temporalsumsq }}" alt="" style='max-width: 100%'/>
         </div>
         <div style="width: 100%">
-            <h4>Variance Across Sensors Excluding Bad Chans and Segs</h4>
+            <h4>Variance Across Sensors Excluding Bad Chans and Segs
+                <span style="margin-right: 10px;"></span>
+                <button style="cursor: help; border: 1px solid; background-color: lightblue; color: black; padding: 2px 5px; font-size: 12px;" 
+                        title="This should have a most large peaks in the variance removed.">
+                    ?
+                </button>
+            </h4>
             <img src="{{ data.plt_temporalsumsq_exclude_bads }}" alt="" style='max-width: 100%'/>
         </div>
         {% if data.plt_artefacts_eog is not none %}
             <div style="width: 100%">
-                <h4>EOG Recording</h4>
+                <h4>EOG Recording
+                    <span style="margin-right: 10px;"></span>
+                    <button style="cursor: help; border: 1px solid; background-color: lightblue; color: black; padding: 2px 5px; font-size: 12px;" 
+                            title="Particularly noisy EOG channels will be less reliable for automatic detection of bad independent components.">
+                        ?
+                    </button>
+                </h4>
                 <img src="{{ data.plt_artefacts_eog }}" alt="" style='max-width: 100%'/>
             </div>
         {% endif %}
         {% if data.plt_artefacts_ecg is not none %}
             <div style="width: 100%">
-                <h4>ECG Recording</h4>
+                <h4>ECG Recording
+                    <span style="margin-right: 10px;"></span>
+                    <button style="cursor: help; border: 1px solid; background-color: lightblue; color: black; padding: 2px 5px; font-size: 12px;" 
+                            title="A noisy ECG signal will be less reliable for automatic detection of bad independent components.">
+                        ?
+                    </button>
+                </h4>
                 <img src="{{ data.plt_artefacts_ecg }}" alt="" style='max-width: 100%'/>
             </div>
         {% endif %}
@@ -90,11 +126,23 @@
         
     <div class="tabpage" style="width: 100%; display: none" id={{ data.fif_id }}_channels>
         <div style="width: 75%; margin:0 auto">
-            <h4>Distribution of Per-Sensor Variance</h4>
+            <h4>Distribution of Per-Sensor Variance
+                <span style="margin-right: 10px;"></span>
+                <button style="cursor: help; border: 1px solid; background-color: lightblue; color: black; padding: 2px 5px; font-size: 12px;" 
+                        title="If there are big autliers in the variance, you might want to remove those channels.">
+                    ?
+                </button>
+            </h4>
             <img src="{{ data.plt_channeldev }}" alt="" style='max-width: 100%'/>
         </div>
         <div style="width: 75%; margin:0 auto">
-            <h4>Distribution of Per-Sensor Variance Excluding Bad Chans and Segs</h4>
+            <h4>Distribution of Per-Sensor Variance Excluding Bad Chans and Segs
+                <span style="margin-right: 10px;"></span>
+                <button style="cursor: help; border: 1px solid; background-color: lightblue; color: black; padding: 2px 5px; font-size: 12px;" 
+                        title="This distribution should have less outliers than the previous one.">
+                    ?
+                </button>
+            </h4>
             <img src="{{ data.plt_channeldev_exclude_bads }}" alt="" style='max-width: 100%'/>
         </div>
         <div style="width: 100%">
@@ -110,24 +158,48 @@
         <div style="width: 100%; display: table; table-layout: fixed;">
             <div style="display: table-row; height: 100px;">
                 <div class='figbox' style="display: table-cell; width: 50%; vertical-align: top;">
-                    <h4>Full Power Spectra Excluding Bad Chans and Segs</h4>
+                    <h4>Full Power Spectra Excluding Bad Chans and Segs
+                        <span style="margin-right: 10px;"></span>
+                        <button style="cursor: help; border: 1px solid; background-color: lightblue; color: black; padding: 2px 5px; font-size: 12px;" 
+                                title="Check that the filter cutoffs are correct. If you see a lot of power in the 50Hz region (and harmonics), you might want to check that the notch filter was applied correctly.">
+                            ?
+                        </button>
+                    </h4>
                     <img src="{{ data.plt_spectra }}" alt="" style='max-width: 100%'/>
                 </div>
                 <div class='figbox' style="display: table-cell; width: 50%; vertical-align: top;">
-                    <h4>1-48Hz Power Spectra Excluding Bad Chans and Segs</h4>
+                    <h4>1-48Hz Power Spectra Excluding Bad Chans and Segs
+                        <span style="margin-right: 10px;"></span>
+                        <button style="cursor: help; border: 1px solid; background-color: lightblue; color: black; padding: 2px 5px; font-size: 12px;" 
+                                title="Does this look like a typical power spectrum? i.e., with a 1/f slope, a prominent alpha peak (8-13 Hz) (not always present in each individual), a beta (13-30 Hz) bump, and no very sharp peaks (i.e., indicating artefacts)">
+                            ?
+                        </button>
+                    </h4>
                     <img src="{{ data.plt_zoomspectra }}" alt="" style='max-width: 100%'/>
                 </div>
             </div>
         </div>
         <div style="width: 100%; margin:0 auto">
-            <h4>Topographies of Band-limited Power Excluding Bad Chans and Segs</h4>
+            <h4>Topographies of Band-limited Power Excluding Bad Chans and Segs
+                <span style="margin-right: 10px;"></span>
+                <button style="cursor: help; border: 1px solid; background-color: lightblue; color: black; padding: 2px 5px; font-size: 12px;" 
+                        title="Do the topographies look like you expect? i.e., alpha typically in posterior sensors, beta in central sensors, etc.">
+                    ?
+                </button>
+            </h4>
             <img src="{{ data.plt_freqbands }}" alt="" style='max-width: 100%'/>
         </div>
     </div>
     
     <div class="tabpage" style="width: 100%; display: none" id={{ data.fif_id }}_digitisation>
         <div style="width: 100%">
-            <h4>Digitisation and Headshape</h4>
+            <h4>Digitisation and Headshape
+                <span style="margin-right: 10px;"></span>
+                <button style="cursor: help; border: 1px solid; background-color: lightblue; color: black; padding: 2px 5px; font-size: 12px;" 
+                        title="Do the digitisation points look sensible? i.e., are they in the right place? Are all points in the same point cloud or are there big outliers?">
+                    ?
+                </button>
+            </h4>
             <img src="{{ data.plt_digitisation }}" alt="" style='max-width: 100%'/>
         </div>
     </div>
@@ -135,7 +207,13 @@
     {% if data.plt_ica is defined %}
         <div class="tabpage" style="width: 100%; display: none" id={{ data.fif_id }}_ica>
             <div style="width: 100%">
-                <h4>ICA</h4>
+                <h4>ICA
+                    <span style="margin-right: 10px;"></span>
+                    <button style="cursor: help; border: 1px solid; background-color: lightblue; color: black; padding: 2px 5px; font-size: 12px;" 
+                            title="Is each component physiologically interpretable? e.g., ECG components typically have strong weights close to the edge of the sensor array., EOG components have strong weights in frontal sensors.">
+                        ?
+                    </button>
+                </h4>
                 <img src="{{ data.plt_ica }}" alt="" style='max-width: 100%'/>
             </div>
         </div>

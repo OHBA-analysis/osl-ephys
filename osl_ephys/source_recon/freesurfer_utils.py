@@ -6,8 +6,10 @@
 #          Chetan Gohil <chetan.gohil@psych.ox.ac.uk>
 
 import os
-import subprocess
 import os.path as op
+import shutil
+import subprocess
+
 
 from mne import setup_source_space, write_source_spaces, read_source_spaces, bem
 from osl_ephys.utils.logger import log_or_print
@@ -83,7 +85,7 @@ def get_freesurfer_filenames(subjects_dir, subject):
     surfaces_dir = op.join(fs_dir, "surfaces")
     os.makedirs(surfaces_dir, exist_ok=True)
     surf_files = {
-        "basedir": fs_dir,
+        "basedir": surfaces_dir,
         "smri_file": op.join(surfaces_dir, f"{subject.split('-')[-1]}.mgz"), # TODO: make more robust
         "talairach_xform": op.join(surfaces_dir,  "tranforms", "talairach.xfm"),
         "bem_brain_surf_file": op.join(surfaces_dir,  "bem", "brain.surf"),
@@ -106,6 +108,7 @@ def get_freesurfer_filenames(subjects_dir, subject):
         "basedir": coreg_dir,
         "info_fif_file": op.join(coreg_dir, "info-raw.fif"),
         "source_space": op.join(coreg_dir, "space-src.fif"),
+        "source_space-morph": op.join(coreg_dir, "space-src-morph.fif"),
         "coreg_trans": op.join(coreg_dir, "coreg-trans.fif"),
         "coreg_html": op.join(coreg_dir, "coreg.html"),
     }
@@ -145,7 +148,7 @@ def recon_all(smri_file, subjects_dir, subject):
     os.environ["SUBJECTS_DIR"] = subjects_dir
     
     move_flag = False
-    if os.path.exists(os.path.join(subjects_dir, subject)):
+    if op.exists(op.join(subjects_dir, subject)):
         log_or_print(f'Temporarily saving data to {op.join(subjects_dir, subject + "_freesurfer_temp")} because subject {subject} already exists')
         cmd =  ['recon-all', '-i', smri_file, '-s', subject + '_freesurfer_temp', '-all'] 
         move_flag = True
@@ -181,6 +184,10 @@ def make_fsaverage_src(subjects_dir, spacing='oct6'):
     src_fname = get_coreg_filenames(subjects_dir, subject)['source_space']
     
     if not op.exists(src_fname):
+        # need to copy fsaverage from the freesurfer directory to the subjects_dir, because we can't write in the FS dir.
+        os.makedirs(op.join(subjects_dir, subject), exist_ok=True)
+        shutil.copytree(op.join(os.environ["FREESURFERDIR"], 'subjects', 'fsaverage'), op.join(subjects_dir, subject), dirs_exist_ok=True)
+        
         src = setup_source_space(
             subjects_dir=subjects_dir,
             subject=subject,

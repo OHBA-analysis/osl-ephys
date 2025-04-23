@@ -20,7 +20,7 @@ import numpy as np
 import yaml
 import mne
 
-from . import rhino, wrappers
+from . import rhino, wrappers, freesurfer_utils
 from ..report import src_report
 from ..utils import logger as osl_logger
 from ..utils import validate_outdir, find_run_id, parallel
@@ -100,6 +100,7 @@ def run_src_chain(
     preproc_file=None,
     smri_file=None,
     epoch_file=None,
+    surface_extraction_method='fsl',
     logsdir=None,
     reportdir=None,
     gen_report=True,
@@ -118,6 +119,8 @@ def run_src_chain(
         Source reconstruction directory.
     subject : str
         Subject name.
+    surface_extraction_method : str
+        Can be 'fsl' or 'freesurfer'.
     preproc_file : str
         Preprocessed fif file.
     smri_file : str
@@ -145,7 +148,10 @@ def run_src_chain(
     flag : bool
         Flag indicating whether source reconstruction was successful.
     """
-    rhino.fsl_utils.check_fsl()
+    if surface_extraction_method == 'fsl':
+        rhino.fsl_utils.check_fsl()
+    elif surface_extraction_method == 'freesurfer':
+        freesurfer_utils.check_freesurfer()
 
     # Directories
     outdir = validate_outdir(outdir)
@@ -243,6 +249,7 @@ def run_src_chain(
             wrapped_func(
                 outdir=outdir,
                 subject=subject,
+                surface_extraction_method=surface_extraction_method,
                 preproc_file=preproc_file,
                 smri_file=smri_file,
                 epoch_file=epoch_file,
@@ -291,6 +298,7 @@ def run_src_batch(
     preproc_files=None,
     smri_files=None,
     epoch_files=None,
+    surface_extraction_method='fsl',
     logsdir=None,
     reportdir=None,
     gen_report=True,
@@ -310,6 +318,8 @@ def run_src_batch(
         Source reconstruction directory.
     subjects : list of str
         Subject names.
+    surface_extraction_method : str
+        Can be 'fsl' or 'freesurfer'.
     preproc_files : list of str
         Preprocessed fif files.
     smri_files : list of str or str
@@ -340,7 +350,10 @@ def run_src_batch(
     flags : list of bool
         Flags indicating whether coregistration was successful.
     """
-    rhino.fsl_utils.check_fsl()
+    if surface_extraction_method == 'fsl':
+        rhino.fsl_utils.check_fsl()
+    elif surface_extraction_method == 'freesurfer':
+        freesurfer_utils.check_freesurfer()
 
     # Directories
     outdir = validate_outdir(outdir)
@@ -430,6 +443,7 @@ def run_src_batch(
     # Create partial function with fixed options
     pool_func = partial(
         run_src_chain,
+        surface_extraction_method=surface_extraction_method,
         logsdir=logsdir,
         reportdir=reportdir,
         gen_report=gen_report,

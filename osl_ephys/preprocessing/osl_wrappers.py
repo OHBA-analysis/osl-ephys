@@ -385,7 +385,7 @@ def detect_maxfilt_zeros(raw):
         return None
 
 
-def detect_badsegments(
+def bad_segments(
     raw,
     picks,
     segment_len=1000,
@@ -398,7 +398,9 @@ def detect_badsegments(
     channel_axis = 0,
     channel_threshold = 0.05,
 ):
-    """Set bad segments in an MNE :py:class:`Raw <mne.io.Raw>` object as defined by the Generalized ESD test in :py:func:`osl_ephys.preprocessing.osl_wrappers.gesd <osl_ephys.preprocessing.osl_wrappers.gesd>`.
+    """Set bad segments in an MNE :py:class:`Raw <mne.io.Raw>` object as defined by the Generalized ESD test 
+    in :py:func:`osl_ephys.preprocessing.osl_wrappers.gesd <osl_ephys.preprocessing.osl_wrappers.gesd>`.
+    This function is typically used by calling :py:func:`run_osl_bad_segments <osl_ephys.preprocessing.osl_wrappers.run_osl_bad_segments>`.
 
 
     Parameters
@@ -543,7 +545,7 @@ def detect_badsegments(
     return raw
 
 
-def detect_badchannels(raw, picks, ref_meg="auto", significance_level=0.05):
+def bad_channels(raw, picks, ref_meg="auto", significance_level=0.05):
     """Set bad channels in an MNE :py:class:`Raw <mne.io.Raw>` object as defined by the Generalized ESD test in :py:func:`osl_ephys.preprocessing.osl_wrappers.gesd <osl_ephys.preprocessing.osl_wrappers.gesd>`.
 
     Parameters
@@ -818,14 +820,14 @@ def run_osl_read_dataset(dataset, userargs):
     return dataset
 
 def run_osl_bad_segments(dataset, userargs):
-    """osl-ephys Batch wrapper for :py:meth:`detect_badsegments <osl_ephys.preprocessing.osl_wrappers.detect_badsegments>`.
+    """osl-ephys Batch wrapper for :py:meth:`bad_segments <osl_ephys.preprocessing.osl_wrappers.bad_segments>`.
     
     Parameters
     ----------
     dataset: dict
         Dictionary containing at least an MNE object with the key ``raw``.
     userargs: dict
-        Dictionary of additional arguments to be passed to :py:meth:`detect_badsegments <osl_ephys.preprocessing.osl_wrappers.detect_badsegments>`.
+        Dictionary of additional arguments to be passed to :py:meth:`bad_segments <osl_ephys.preprocessing.osl_wrappers.bad_segments>`.
 
     Returns
     -------
@@ -833,21 +835,21 @@ def run_osl_bad_segments(dataset, userargs):
         Input dictionary containing MNE objects that have been modified in place.
     """    
     target = userargs.pop("target", "raw")
-    logger.info("osl-ephys Stage - {0} : {1}".format(target, "detect_badsegments"))
+    logger.info("osl-ephys Stage - {0} : {1}".format(target, "bad_segments"))
     logger.info("userargs: {0}".format(str(userargs)))
-    dataset["raw"] = detect_badsegments(dataset["raw"], **userargs)
+    dataset["raw"] = bad_segments(dataset["raw"], **userargs)
     return dataset
 
 
 def run_osl_bad_channels(dataset, userargs):
-    """osl-ephys Batch wrapper for :py:func:`detect_badchannels <osl_ephys.preprocessing.osl_wrappers.detect_badchannels>`.
+    """osl-ephys Batch wrapper for :py:func:`bad_channels <osl_ephys.preprocessing.osl_wrappers.bad_channels>`.
     
     Parameters
     ----------
     dataset: dict
         Dictionary containing at least an MNE object with the key ``raw``.
     userargs: dict
-        Dictionary of additional arguments to be passed to :py:meth:`detect_badchannels <osl_ephys.preprocessing.osl_wrappers.detect_badchannels>`.
+        Dictionary of additional arguments to be passed to :py:meth:`bad_channels <osl_ephys.preprocessing.osl_wrappers.bad_channels>`.
 
     Returns
     -------
@@ -862,9 +864,9 @@ def run_osl_bad_channels(dataset, userargs):
     """
 
     target = userargs.pop("target", "raw")
-    logger.info("osl-ephys Stage - {0} : {1}".format(target, "detect_badchannels"))
+    logger.info("osl-ephys Stage - {0} : {1}".format(target, "bad_channels"))
     logger.info("userargs: {0}".format(str(userargs)))
-    dataset["raw"] = detect_badchannels(dataset["raw"], **userargs)
+    dataset["raw"] = bad_channels(dataset["raw"], **userargs)
     return dataset
 
 
@@ -884,47 +886,13 @@ def run_osl_drop_bad_epochs(dataset, userargs):
         Input dictionary containing MNE objects that have been modified in place.
     """    
     target = userargs.pop("target", "raw")
-    logger.info("osl-ephys Stage - {0} : {1}".format(target, "detect_bad_epochs"))
+    logger.info("osl-ephys Stage - {0} : {1}".format(target, "drop_bad_epochs"))
     logger.info("userargs: {0}".format(str(userargs)))
     if dataset["epochs"] is None:
         logger.info("no epoch object found! skipping..")
     dataset["epochs"] = drop_bad_epochs(dataset["epochs"], **userargs)
     return dataset
 
-
-def run_osl_ica_manualreject(dataset, userargs):
-    """osl-ephys Batch wrapper for :py:func:`osl_ephys.preprocessing.plot_ica <osl_ephys.preprocessing.plot_ica.plot_ica>`, and optionally :py:meth:`ICA.apply <mne.preprocessing.ICA.apply>`.
-
-    This function opens an interactive window to allow the user to manually reject ICA components. Note that this function will modify the input MNE object in place. 
-    The interactive plotting function might not work on all systems depending on the backend in use. It will most likely work when using an IDE (e.g. Spyder, 
-    Pycharm, VS Cose) but not in a Jupyter Notebook.
-
-    Parameters
-    ----------
-    dataset: dict
-        Dictionary containing at least an MNE object with the keys ``raw`` and ``ica``.
-    userargs: dict
-        Dictionary of additional arguments to be passed to :py:func:`plot_ica <osl_ephys.preprocessing.plot_ica>`.
-
-    Returns
-    -------
-    dataset: dict
-        Input dictionary containing MNE objects that have been modified in place.
-    """    
-    target = userargs.pop("target", "raw")
-    logger.info("osl-ephys Stage - {0}".format("ICA Manual Reject"))
-    logger.info("userargs: {0}".format(str(userargs)))
-
-    from .plot_ica import plot_ica
-
-    plot_ica(dataset["ica"], dataset["raw"], block=True)
-    logger.info("Removing {0} IC".format(len(dataset["ica"].exclude)))
-    if np.logical_or("apply" not in userargs, userargs["apply"] is True):
-        logger.info("Removing selected components from raw data")
-        dataset["ica"].apply(dataset["raw"])
-    else:
-        logger.info("Components were not removed from raw data")
-    return dataset
 
 #%% GLM wrappers
 

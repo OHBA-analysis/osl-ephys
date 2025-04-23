@@ -613,6 +613,7 @@ def glm_irasa(XX, method='modified', resample_factors=None, aperiodic_average='m
     -------
     :py:class:`SensorGLMSpectrum <osl_ephys.glm.glm_spectrum.SensorGLMSpectrum>`
         SensorGLMSpectrum instance containing the fitted GLM-Spectrum.
+        
     References
     ----------
     .. [1] Quinn, A. J., Atkinson, L., Gohil, C., Kohl, O., Pitt, J., Zich, C., Nobre,
@@ -989,7 +990,7 @@ def plot_joint_spectrum(xvect, psd, info, ax=None, freqs='auto', base=1,
 
         dat = psd[topo_freq_inds[idx], :]
         if np.any(['parcel' in ch for ch in info['ch_names']]): # source data
-            im = plot_source_topo(dat, axis=topo_ax, cmap=topo_cmap)
+            im = parcellation.plot_source_topo(dat, axis=topo_ax, cmap=topo_cmap)
         else:
             im, cn = mne.viz.plot_topomap(dat, info, axes=topo_ax, show=False, cmap=topo_cmap)
         topos.append(im)

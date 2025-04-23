@@ -166,6 +166,9 @@ def apply_inverse_operator_surf(
 
     if method == "eloreta":
         method = "eLORETA"
+        
+    if pick_ori == "None":
+        pick_ori = None
     
     log_or_print(f"*** Applying {method} surface inverse operator ***")
 
@@ -191,7 +194,7 @@ def apply_inverse_operator_surf(
         log_or_print(f"*** Morphing source estimate to {morph} ***")
         src_from = mne.read_source_spaces(coreg_files['source_space'])
         morph = morph_surface(outdir, subject, src_from, subject_to=morph)
-        morph.save(op.join(mne_dir, morph), overwrite=True)
+        morph.save(coreg_files['source_space-morph'], overwrite=True)
         stc = morph.apply(stc)
     
     if save:     
@@ -276,7 +279,7 @@ def apply_inverse_operator_vol(
         data,
         inverse_operator,
         lambda2=lambda2,
-        pick_ori="vector",
+        pick_ori=pick_ori,
         method=method,
         method_params={"eps": 1e-8, "max_iter": 100},
     )

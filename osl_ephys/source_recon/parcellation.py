@@ -64,8 +64,9 @@ def load_parcellation(parcellation_file, freesurfer=False, subject=None):
     
     # otherwise, load the nifti parcellation file
     parcellation_file = find_file(parcellation_file, freesurfer=freesurfer)
-
-    return nib.load(parcellation_file)
+    if parcellation_file is not None:
+        return nib.load(parcellation_file)
+    return None
 
 
 def _find_package_file(filename):
@@ -133,6 +134,11 @@ def guess_parcellation(data, return_path=False):
         nparc = data.shape[0]
         
     # print('Guessing parcellation from data with {} parcels'.format(nparc))
+    if nparc in [52,50,38,39,78]:
+        freesurfer=False
+    elif nparc in [68, 144, 16, 82, 10, 34, 14]:
+        freesurfer=True
+        
     if nparc==52:
         fname = "Glasser52_binary_space-MNI152NLin6_res-8x8x8.nii.gz"
     elif nparc==50:
@@ -170,9 +176,9 @@ def guess_parcellation(data, return_path=False):
         raise ValueError("Can't guess parcellation for {} channels".format(nparc))
     # print('Guessing parcellation is {}'.format(fname))
     if return_path:
-        return find_file(fname)
+        return find_file(fname, freesurfer=freesurfer)
     else:
-        return find_file(fname).split('/')[-1]
+        return fname
  
 
 def vol_parcellate_timeseries(parcellation_file, voxel_timeseries, voxel_coords, method, working_dir):
@@ -383,7 +389,7 @@ def _get_parcel_timeseries(voxel_timeseries, parcellation_asmatrix, method="spat
     return parcel_timeseries, voxel_weightings, voxel_assignments
 
 
-def surf_parcellate_timeseries(subject_dir, subject, stc, method, parc):
+def surf_parcellate_timeseries(subject_dir, subject, stc, method, parcellation_file):
     """Save parcellated data as a fif file.
     
     Parameters
@@ -396,12 +402,12 @@ def surf_parcellate_timeseries(subject_dir, subject, stc, method, parc):
         Source estimate.
     method : str
         Parcellation method. Can be 'pca_flip', 'max', 'mean', 'mean_flip', 'auto'
-    parc : str
+    parcellation_file : str
         Parcellation name.
     """
     fs_files = freesurfer_utils.get_freesurfer_filenames(subject_dir, subject)
 
-    labels = load_parcellation(parc, freesurfer=True, subject=subject)
+    labels = load_parcellation(parcellation_file, freesurfer=True, subject=subject)
 
     src = mne.read_source_spaces(fs_files['coreg']['source_space'])
     parcel_data = mne.extract_label_time_course(stc, labels, src, mode=method)
@@ -409,7 +415,7 @@ def surf_parcellate_timeseries(subject_dir, subject, stc, method, parc):
     return parcel_data
 
 
-def resample_parcellation(parcellation_file, voxel_coords, working_dir=None):
+def resample_parcellation(parcellation_file, voxel_coords, working_dir=None, freesurfer=False):
     """Resample parcellation so that its voxel coords correspond (using nearest neighbour) to passed in voxel_coords.
     Passed in voxel_coords and parcellation must be in the same space, e.g. MNI.
 
@@ -423,6 +429,8 @@ def resample_parcellation(parcellation_file, voxel_coords, working_dir=None):
         (nvoxels x 3) coordinates in mm in same space as parcellation.
     working_dir : str
         Dir to put temp file in. If None, attempt to use same dir as passed in parcellation.
+    freesurfer : bool
+        If True, parcellation_file is a freesurfer parcellation. Otherwise, it is a nifti file.
 
     Returns
     -------
@@ -432,7 +440,7 @@ def resample_parcellation(parcellation_file, voxel_coords, working_dir=None):
     gridstep = int(rhino_utils.get_gridstep(voxel_coords.T) / 1000)
     log_or_print(f"gridstep = {gridstep} mm")
 
-    parcellation_file = find_file(parcellation_file)
+    parcellation_file = find_file(parcellation_file, freesurfer=freesurfer)
     path, parcellation_name = op.split(op.splitext(op.splitext(parcellation_file)[0])[0])
 
     if working_dir is None:
@@ -560,20 +568,22 @@ def symmetric_orthogonalise(timeseries, maintain_magnitudes=False, compute_weigh
         return ortho_timeseries
 
 
-def parcel_centers(parcellation_file):
+def parcel_centers(parcellation_file, freesurfer=False):
     """Get coordinates of parcel centers.
 
     Parameters
     ----------
     parcellation_file : str
         Path to parcellation file.
+    freesurfer : bool
+        Is the parcellation a FreeSurfer parcellation?
 
     Returns
     -------
     coords : np.ndarray
         Coordinates of each parcel. Shape is (n_parcels, 3).
     """
-    parcellation = load_parcellation(parcellation_file)
+    parcellation = load_parcellation(parcellation_file, freesurfer=freesurfer)
     if isinstance(parcellation, nib.nifti1.Nifti1Image):
         n_parcels = parcellation.shape[3]
         data = parcellation.get_fdata()
@@ -603,7 +613,7 @@ def plot_parcellation(parcellation_file, **kwargs):
     return plot_markers(np.zeros(n_parcels), parc_centers, colorbar=False, node_cmap="binary_r", **kwargs)
 
 
-def plot_psd(parc_ts, fs, parcellation_file, filename, freq_range=None):
+def plot_psd(parc_ts, fs, parcellation_file, filename, freq_range=None, freesurfer=False):
     """Plot PSD of each parcel time course.
 
     Parameters
@@ -618,6 +628,8 @@ def plot_psd(parc_ts, fs, parcellation_file, filename, freq_range=None):
         Output filename.
     freq_range : list of len 2
         Low and high frequency in Hz.
+    freesurfer : bool
+        Is the parcellation a FreeSurfer parcellation?
     """
     if parc_ts.ndim == 3:
         # Calculate PSD for each epoch individually and average
@@ -636,7 +648,7 @@ def plot_psd(parc_ts, fs, parcellation_file, filename, freq_range=None):
         freq_range = [f[0], f[-1]]
 
     # Re-order to use colour to indicate anterior->posterior location
-    parc_centers = parcel_centers(parcellation_file)
+    parc_centers = parcel_centers(parcellation_file, freesurfer=freesurfer)
     order = np.argsort(parc_centers[:, 1])
     parc_centers = parc_centers[order]
     psd = psd[order]
@@ -707,6 +719,7 @@ def _parcel_timeseries2nii(
     working_dir=None,
     times=None,
     method="assignments",
+    freesurfer=False,
 ):
     """Outputs parcel_timeseries_data as a niftii file using passed in parcellation.
 
@@ -732,13 +745,15 @@ def _parcel_timeseries2nii(
         (ntpts,) times points in seconds. Will assume that time points are regularly spaced. Used to set nii file up correctly.
     method : str
         "weights" or "assignments"
+    freesurfer : bool
+        If True, parcellation_file is a freesurfer parcellation. Otherwise, it is a nifti file.
 
     Returns
     -------
     out_nii_fname : str
         Output nii filename, will be output at spatial resolution of parcel_timeseries['voxel_coords'].
     """
-    parcellation_file = find_file(parcellation_file)
+    parcellation_file = find_file(parcellation_file, freesurfer=freesurfer)
     path, parcellation_name = op.split(op.splitext(op.splitext(parcellation_file)[0])[0])
 
     if working_dir is None:
@@ -802,7 +817,7 @@ def _parcel_timeseries2nii(
     return out_nii_fname
 
 
-def convert2niftii(parc_data, parcellation_file, mask_file, tres=1, tmin=0):
+def convert2niftii(parc_data, parcellation_file, mask_file, tres=1, tmin=0, freesurfer=False):
     """Convert parcellation to NIfTI.
 
     Takes (nparcels) or (nvolumes x nparcels) parc_data and returns (xvoxels x yvoxels x zvoxels x nvolumes) niftii file containing parc_data on a volumetric grid.
@@ -819,6 +834,8 @@ def convert2niftii(parc_data, parcellation_file, mask_file, tres=1, tmin=0):
         Resolution of 4th dimension in secs
     tmin : float
         Value of first time point in secs
+    freesurfer : bool
+        If True, parcellation_file is a freesurfer parcellation. Otherwise, it is a nifti file.
 
     Returns
     -------
@@ -830,8 +847,8 @@ def convert2niftii(parc_data, parcellation_file, mask_file, tres=1, tmin=0):
         parc_data = np.reshape(parc_data, [1, -1])
 
     # Find files within the package
-    parcellation_file = find_file(parcellation_file)
-    mask_file = find_file(mask_file)
+    parcellation_file = find_file(parcellation_file, freesurfer=freesurfer)
+    mask_file = find_file(mask_file, freesurfer=freesurfer)
 
     # Load the mask
     mask = nib.load(mask_file)
@@ -907,12 +924,14 @@ def convert2mne_raw(parc_data, raw, parcel_names=None, extra_chans="stim"):
         extra_chans = [extra_chans]
     extra_chans = np.unique(["stim"] + extra_chans)
 
-    # parc_data is missing bad segments
-    # We insert these before creating the new MNE object
-    _, times = raw.get_data(reject_by_annotation="omit", return_times=True)
-    indices = raw.time_as_index(times, use_rounding=True)
-    data = np.zeros([parc_data.shape[0], len(raw.times)], dtype=np.float32)
-    data[:, indices] = parc_data
+    # parc_data is missing bad segments. For osl/rhino it's missing this data, for mne solutions it's only missing the annotations (data shape is conserved)
+    if raw.get_data().shape[1] != parc_data.shape[1]: # We insert bad segments before creating the new MNE object
+        _, times = raw.get_data(reject_by_annotation="omit", return_times=True)
+        indices = raw.time_as_index(times, use_rounding=True)
+        data = np.zeros([parc_data.shape[0], len(raw.times)], dtype=np.float32)
+        data[:, indices] = parc_data
+    else:
+        data = parc_data
 
     # Create Info object
     info = raw.info
@@ -1031,7 +1050,7 @@ def spatial_dist_adjacency(parcellation_file, dist, verbose=False):
     return adj_mat
 
 
-def parcel_vector_to_voxel_grid(mask_file, parcellation_file, vector):
+def parcel_vector_to_voxel_grid(mask_file, parcellation_file, vector, freesurfer=False):
     """Takes a vector of parcel values and return a 3D voxel grid.
 
     Parameters
@@ -1042,6 +1061,8 @@ def parcel_vector_to_voxel_grid(mask_file, parcellation_file, vector):
         Parcellation file. Must be a NIFTI file.
     vector : np.ndarray
         Value at each parcel. Shape must be (n_parcels,).
+    freesurfer : bool
+        If True, parcellation_file is a freesurfer parcellation. Otherwise, it is a nifti file.
 
     Returns
     -------
@@ -1050,8 +1071,8 @@ def parcel_vector_to_voxel_grid(mask_file, parcellation_file, vector):
         :code:`y` and :code:`z` correspond to 3D voxel locations.
     """
     # Validation
-    mask_file = find_file(mask_file)
-    parcellation_file = find_file(parcellation_file)
+    mask_file = find_file(mask_file, freesurfer=freesurfer)
+    parcellation_file = find_file(parcellation_file, freesurfer=freesurfer)
 
     # Load the mask
     mask = nib.load(mask_file)
@@ -1062,7 +1083,7 @@ def parcel_vector_to_voxel_grid(mask_file, parcellation_file, vector):
     non_zero_voxels = mask_grid != 0
 
     # Load the parcellation
-    parcellation = nib.load(parcellation_file)
+    parcellation = load_parcellation(parcellation_file)
     parcellation_grid = parcellation.get_fdata()
 
     # Make a 2D array of voxel weights for each parcel
@@ -1138,6 +1159,7 @@ def plot_source_topo(
     vmin=None,
     vmax=None,
     alpha=0.7,
+    freesurfer=False,
 ):
     """Plot a data map on a cortical surface. Wrapper for nilearn.plotting.plot_glass_brain.
     
@@ -1159,6 +1181,8 @@ def plot_source_topo(
         Maximum value for colormap (Default value = None)
     alpha : {None or float}
         Alpha value for colormap (Default value = None)
+    freesurfer : bool
+        If True, parcellation_file is a freesurfer parcellation. Otherwise, it is a nifti file.
 
     Returns
     -------
@@ -1168,8 +1192,8 @@ def plot_source_topo(
     
     if parcellation_file is None:
         parcellation_file = guess_parcellation(data_map)
-    parcellation_file = find_file(parcellation_file)
-    mask_file = find_file(mask_file)
+    parcellation_file = find_file(parcellation_file, freesurfer=freesurfer)
+    mask_file = find_file(mask_file, freesurfer=freesurfer)
     
     if vmin is None:
         vmin = data_map.min()

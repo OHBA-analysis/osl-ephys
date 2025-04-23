@@ -14,10 +14,10 @@
         {% if data.coregister %}
             <button class="button1" onclick="openTab(event, '{{ data.fif_id }}_coregistration', this.id)" style="border-top-style: solid">Coregistration</button>
         {% endif %}
-        {% if data.beamform or data.beamform_and_parcellate %}
+        {% if data.beamform or data.beamform_and_parcellate%}
             <button class="button1" onclick="openTab(event, '{{ data.fif_id }}_beamforming', this.id)" style="border-top-style: solid">Beamforming</button>
         {% endif %}
-        {% if data.beamform_and_parcellate %}
+        {% if data.beamform_and_parcellate or data.minimum_norm_and_parcellate %}
             <button class="button1" onclick="openTab(event, '{{ data.fif_id }}_parcellation', this.id)" style="border-top-style: solid">Parcellation</button>
         {% endif %}
         {% if data.log is defined %}
@@ -31,20 +31,48 @@
     {% if data.compute_surfaces %}
         <div class="tabpage" style='width: 100%' id={{ data.fif_id }}_compute_surfaces>
             <h3>Surfaces</h3>
-            <div>Inskull</div>
-            <div style="width: 70%; margin: auto">
-                <img src="{{ data.plt_surfaces_inskull }}" alt="" style='max-width: 100%'/>
-            </div>
+            <span style="margin-right: 10px;"></span>
+            <button style="cursor: help; border: 1px solid; background-color: lightblue; color: black; padding: 2px 5px; font-size: 12px;" 
+                    title="Are the extracted surfaces accurate? The surfaces are extracted from the structural MRI. The in-skull surface is the inner surface of the skull, the out-skull surface is the outer surface of the skull, and the out-skin surface is the outer surface of the skin. If not, you might have to tweak (or initially, re-run) your surface extraction (i.e., in FSL/FreeSurfer)">
+                ?
+            </button>
+            {% if data.plt_surfaces_inskull %}
+                <div>Inskull</div>
+                <div style="width: 70%; margin: auto">
+                    <img src="{{ data.plt_surfaces_inskull }}" alt="" style='max-width: 100%'/>
+                </div>
+            {% endif %}
+            {% if data.plt_surfaces_axial %}
+                <div>Axial</div>
+                <img src="{{ data.plt_surfaces_axial }}" alt="" style='max-width: 100%'/>
+                </div>
+            {% endif %}
             <br>
+            {% if data.plt_surfaces_outskull %}
             <div>Outskull</div>
             <div style="width: 70%; margin: auto">
                 <img src="{{ data.plt_surfaces_outskull }}" alt="" style='max-width: 100%'/>
             </div>
+            {% endif %}
+            {% if data.plt_surfaces_coronal %}
+            <div>Coronal</div>
+            <div style="width: 70%; margin: auto">
+                <img src="{{ data.plt_surfaces_coronal }}" alt="" style='max-width: 100%'/>
+            </div>
+            {% endif %}
             <br>
+            {% if data.plt_surfaces_outskin %}
             <div>Outskin</div>
             <div style="width: 70%; margin: auto">
                 <img src="{{ data.plt_surfaces_outskin }}" alt="" style='max-width: 100%'/>
             </div>
+            {% endif %}
+            {% if data.plt_surfaces_sagittal %}
+            <div>Sagittal</div>
+            <div style="width: 70%; margin: auto">
+                <img src="{{ data.plt_surfaces_sagittal }}" alt="" style='max-width: 100%'/>
+            </div>
+            {% endif %}
             {% if data.plt_surfaces_outskin_plus_nose %}
                 <br>
                 <div>Outskin plus nose</div>
@@ -57,14 +85,20 @@
 
     {% if data.coregister %}
         <div class="tabpage" style='width: 100%' id={{ data.fif_id }}_coregistration>
-            <h3>Coregistration</h3>
+            <h3>Coregistration
+                <span style="margin-right: 10px;"></span>
+                <button style="cursor: help; border: 1px solid; background-color: lightblue; color: black; padding: 2px 5px; font-size: 12px;" 
+                        title="Do the fiducials align, and do the headshape points lie near/on the scalp? Are there any stray (headshape) points? Does the head seem to be tilted down (as if the subject is looking down)? If so, it might be that you recorded headshape points (red) in the neck region. The neck is not used in coregistration, so the head will be tilted to try and bring the headshape points in the neck closer to the head surface. ">
+                    ?
+                </button>
+            </h3>
             <iframe data-src="{{ data.plt_coreg }}" width="525" height="525" id="{{ data.fif_id}}_coregistration_iframe"></iframe>
             <div>
                 Red dots are headshape points.</br>
                 Green blob is the scalp extracted from the structural MRI.</br>
                 Yellow diamonds are fiducials extracted from the structural MRI.</br>
                 Pink dots are polhemus fiducials.</br></br>
-                <b>We want the headshape points to lie on/near th scalp and the fiducials to align.</b></br></br>
+                <b>We want the headshape points to lie on/near the scalp and the fiducials to align.</b></br></br>
                 Click and drag to rotate and scroll to zoom.
             </div>
         </div>
@@ -73,6 +107,11 @@
     {% if data.beamform or data.beamform_and_parcellate %}
         <div class="tabpage" style='width: 100%; display: none' id={{ data.fif_id }}_beamforming>
             <h3>Beamforming</h3>
+            <span style="margin-right: 10px;"></span>
+            <button style="cursor: help; border: 1px solid; background-color: lightblue; color: black; padding: 2px 5px; font-size: 12px;" 
+                    title="Does the covariance look sensible (i.e., not dominated by a single channel pair)? Do the eigenvalues drop off gradually before suddenly dropping to zero? Is the rank what you'd expect?">
+                ?
+            </button>
             <div>LCMV Filter</div>
             <div style="width: 70%; margin: auto">
                 <img src="{{ data.plt_filters_cov }}" alt="" style='max-width: 100%'/>
@@ -81,9 +120,14 @@
         </div>
     {% endif %}
 
-    {% if data.beamform_and_parcellate %}
+    {% if data.beamform_and_parcellate or data.minimum_norm_and_parcellate %}
         <div class="tabpage" style='width: 100%; display: none' id={{ data.fif_id }}_parcellation>
             <h3>Parcellation</h3>
+            <span style="margin-right: 10px;"></span>
+            <button style="cursor: help; border: 1px solid; background-color: lightblue; color: black; padding: 2px 5px; font-size: 12px;" 
+                    title="Does the parcel spectrum look sensible? Typically, you'd see a 1/f slope, a prominent alpha peak (particularly in parietal/occipital lobe), a beta bump (in central regions)">
+                ?
+            </button>
             <div style="width: 50%; float: left">
                 <div>Power Spectral Density</div>
                 <img src="{{ data.plt_parc_psd }}" alt="" style='max-width: 100%'/>

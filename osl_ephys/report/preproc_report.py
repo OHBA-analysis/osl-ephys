@@ -392,12 +392,12 @@ def gen_html_summary(reportdir, logsdir=None):
     
     # log files
     if logsdir is None:
-        logsdir = reportdir._str.replace('preproc_report', 'logs')
+        logsdir = reportdir.__str__().replace('preproc_report', 'logs')
     elif type(logsdir)==pathlib.PosixPath:
-        logsdir = logsdir._str
+        logsdir = logsdir.__str__()
         
-    if os.path.exists(os.path.join(logsdir, 'osl_batch.log')):
-        with open(os.path.join(logsdir, 'osl_batch.log'), 'r') as log_file:
+    if os.path.exists(os.path.join(logsdir, 'batch_preproc.log')):
+        with open(os.path.join(logsdir, 'batch_preproc.log'), 'r') as log_file:
             data['batchlog'] = log_file.read()
     
     g = glob(os.path.join(logsdir, '*.error.log'))    
@@ -431,8 +431,8 @@ def gen_html_summary(reportdir, logsdir=None):
 
 def gen_summary_data(subject_data):
     df = pd.DataFrame()
-    column_headers = ['Session ID', 'Measurement month', 'Duration (s)', 'Bad segments (mag)', 
-                      'Bad segments (grad)', 'Bad segments (eeg)', 'Bad channels (#)', 
+    column_headers = ['Session ID', 'Measurement month', 'Duration (s)', 'Bad segments (%) - mag', 
+                      'Bad segments (%) - grad)', 'Bad segments (%) - eeg)', 'Bad channels (#)', 
                       'Bad channels (id)', 'Bad ICA (total)', 'Bad ICA (ECG)', 'Bad ICA (EOG)']
     fields = ['fif_id', 'meas_date', 'acq_duration', 'bad_seg_pc_mag', 'bad_seg_pc_grad', 
               'bad_seg_pc_eeg', 'bad_chan_num', 'bad_chans', 'ica_ncomps_rej', 
