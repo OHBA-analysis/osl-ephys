@@ -43,6 +43,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from pprint import pprint
 
+basedir = os.getcwd()
 
 def get_data(name):
     """Download a dataset from OSF."""
@@ -54,11 +55,10 @@ def get_data(name):
     return f"Data downloaded to: {name}"
 
 # Download the dataset (~2.2 GB)
-get_data("data")
+get_data(os.path.join(basedir, "data"))
 
 
 # prepare output directory
-basedir = os.getcwd()
 outdir = os.path.join(basedir, "preprocessed")
 # generate the output directory if it doesn't exist
 os.makedirs(outdir, exist_ok=True)
@@ -68,7 +68,7 @@ os.makedirs(outdir, exist_ok=True)
 # ^^^^^^^^^^^^^^^^
 # The original data contains multiple runs for each subject. We will first fetch all data using the osl-ephys ``Study`` utility.  study contains all files that match the pattern, where each '{...}' is replaced by a wildcard. 
 # We can use the ``get`` method to get a list of all matching files, optionally filtered by either of the wildcards. 
-study = osl_ephys.utils.Study(os.path.join('data', '{subj}_ses-meg_task-facerecognition_{run}_meg.fif'))
+study = osl_ephys.utils.Study(os.path.join(basedir, 'data', '{subj}_ses-meg_task-facerecognition_{run}_meg.fif'))
 
 # view a list of all matching files:
 all_files = study.get()
@@ -146,15 +146,21 @@ def plot_var(raw):
 
     fig, ax = plt.subplots(2,2)
     plt.axes(ax[0,0])
-    plt.plot(raw.times, np.nanvar(grad, axis=0)), plt.title('GRAD'),  plt.xlabel('Time (s)'), plt.ylabel('Variance')
+    plt.plot(raw.times, np.nanvar(grad, axis=0)), plt.title('Variance over time (GRAD)'),  plt.xlabel('Time (s)'), plt.ylabel('Variance (T/m)')
     plt.axes(ax[1,0])
-    plt.plot(raw.times, np.nanvar(mag, axis=0)), plt.title('MAG'), plt.xlabel('Time (s)'), plt.ylabel('Variance')
+    plt.plot(raw.times, np.nanvar(mag, axis=0)), plt.title('Variance over time (MAG)'), plt.xlabel('Time (s)'), plt.ylabel('Variance (T)')
 
-    plt.axes(ax[0,1])
-    plt.hist(np.nanvar(grad, axis=1), bins=24, histtype='step'), plt.title('GRAD'), plt.xlabel('Variance')
-    plt.axes(ax[1,1])
-    plt.hist(np.nanvar(mag, axis=1), bins=24, histtype='step'), plt.title('MAG'), plt.xlabel('Variance')
 
+    im,_ = mne.viz.plot_topomap(np.nanvar(grad, axis=1), raw.copy().pick('grad').info, axes=ax[0,1], show=False)
+    ax[0,1].set_title('Variance over gradiometers')
+    cax =  ax[0,1].inset_axes([1.1, 0, 0.05, 0.8])
+    plt.colorbar(im, cax=cax, label='Variance (T/m)', orientation='vertical')
+    
+    im,_ = mne.viz.plot_topomap(np.nanvar(mag, axis=1), raw.copy().pick('mag').info, axes=ax[1,1], show=False)
+    ax[1,1].set_title('Variance over magnetometers')
+    cax =  ax[1,1].inset_axes([1.1, 0, 0.05, 0.8])
+    plt.colorbar(im, cax=cax, label='Variance (T/m)', orientation='vertical')
+    
     plt.tight_layout()
     plt.show()
     return fig, ax 
@@ -246,37 +252,39 @@ fig, ax = plot_var(raw_notch)
 #%%
 # Automated bad segment/channel detection
 # ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-# Even after filtering there can be large artefacts left in the data, for example resulting from head and eye movements, muscle twitches, and other (unknown) physiological sources. Hence, we next perform bad segment/channel detection. This can be done manually, i.e., by going through the data and manually selecting bad segments/channels (e.g., the gradiometer segment right after the start of the recording in the top left plot above). Alternatively, we can use automatic detection using osl-ephys tools (``osl_ephys.preprocessing.osl_wrappers.detect_badsegments``, ``osl_ephys.preprocessing.osl_wrappers.detect_badchannels``). These tools use a `Generalized ESD test (Rosner, 1983) <https://www.jstor.org/stable/1268549>`_ - a procedure for removing outliers in univariate data that approximately follows a normal distribution. 
-# In the plot above the variance in magnetometers already looks well distributed over time, but the gradiometers contain some events with particularly high variance (at ~20s and ~500s).
+# Even after filtering there can be large artefacts left in the data, for example resulting from head and eye movements, muscle twitches, and other (unknown) physiological sources. Hence, we next perform bad segment/channel detection. This can be done manually, i.e., by going through the data and manually selecting bad segments/channels (e.g., the gradiometer segment right after the start of the recording in the top left plot above). Alternatively, we can use automatic detection using osl-ephys tools (``osl_ephys.preprocessing.osl_wrappers.bad_segments``, ``osl_ephys.preprocessing.osl_wrappers.bad_channels``). These tools use a `Generalized ESD test (Rosner, 1983) <https://www.jstor.org/stable/1268549>`_ - a procedure for removing outliers in univariate data that approximately follows a normal distribution. 
 
 #%%
 # Bad segments
 # ************
-raw_badseg = osl_ephys.preprocessing.osl_wrappers.detect_badsegments(raw_notch.copy(), picks='grad')
-raw_badseg = osl_ephys.preprocessing.osl_wrappers.detect_badsegments(raw_badseg, picks='mag')
+raw_badseg = osl_ephys.preprocessing.osl_wrappers.bad_segments(raw_notch.copy(), picks='grad')
+raw_badseg = osl_ephys.preprocessing.osl_wrappers.bad_segments(raw_badseg, picks='mag')
 fig, ax = plot_var(raw_badseg)
 
 #%%
-# In the bad segment detection above we used the default parameters. It has removed the high variance event in gradiometers at the end of the recording (see top left plot), but not the one at the start of the recording. This shows that different datasets and artefact types might require different settings, or even running bad segment detection multiple times with different settings. 
-# By default, bad segment detection is run on 1000 sample segments, and with a significance level of 0.05. Let's keep the latter setting the same, but run bad segment detection on shorter segments. The setting for magnetometers already looked fine so we can keep that as it is. Doing these steps on multiple datasets will guide us to find the best general settings.
+# In the bad segment detection above we used the default parameters. This is a good start: it has removed the high variance event in gradiometers at the end of the recording (see top left plot), but there are still some time points with high variance. This illustrates that different datasets and artefact types might require different settings, or even running bad segment detection multiple times with different settings. 
+# By default, bad segment detection is run on 1000 sample segments, and with a significance level of 0.05. 
+# :Excercise Try running the bad segment detection with different settings. For example, try a smaller segment length (e.g., 50, 100, 500, 2000 samples) and a higher significance level (e.g., 0.1). Play around with this until you are satisfied with the results before continueing (i.e., the variance looks equally distributed over time). Often it can also help to run the bad segment detection on the temporal derivative of the data (use mode='diff'), or on the variance or kurtosis, rather than the standard deviation (metric=...)):
 
-raw_badseg = osl_ephys.preprocessing.osl_wrappers.detect_badsegments(raw_notch.copy(), picks='grad', segment_len=100)
-raw_badseg = osl_ephys.preprocessing.osl_wrappers.detect_badsegments(raw_badseg, picks='mag')
-fig, ax = plot_var(raw_badseg)
 
 #%%
-# The variance looks a lot more equally distributed over time now. Next, let's do the bad channel detection. In the channel variance plots, we're showing a histogram, and we can see that the variance range is small and there are no clear outliers (e.g., in the top-right plot, a channel with a variance of e.g. 4). In other datasets there might be, so we'll build bad channel detection into our pipeline anyway.
+# We found that using a segment length of 100, and a significance of 0.05 does a reasonable job. Keep in mind that there is not neccessarily one correct answer, and in any case we'll have to see how well these settings generalise to other datasets later. Doing these steps on multiple datasets will guide us to find the best general settings for this dataset.
+raw_badseg = osl_ephys.preprocessing.osl_wrappers.bad_segments(raw_notch.copy(), picks='grad', segment_len=100)
+raw_badseg = osl_ephys.preprocessing.osl_wrappers.bad_segments(raw_badseg, picks='mag', segment_len=100)
+
+#%%
+# The variance looks a lot more equally distributed over time now. Next, let's do the bad channel detection. In the variance topography plots we can see that the variance range is small and there are no clear outliers. In other datasets there might be, so we'll build bad channel detection into our pipeline anyway.
 
 #%%
 # Bad channels
 # ************
-raw_badchan = osl_ephys.preprocessing.osl_wrappers.detect_badchannels(raw_badseg.copy(), picks='grad')
-raw_badchan = osl_ephys.preprocessing.osl_wrappers.detect_badchannels(raw_badchan, picks='mag')
+raw_badchan = osl_ephys.preprocessing.osl_wrappers.bad_channels(raw_badseg.copy(), picks='grad')
+raw_badchan = osl_ephys.preprocessing.osl_wrappers.bad_channels(raw_badchan, picks='mag')
 print(f"These channels were marked as bad: {raw_badchan.info['bads']}")
 fig, ax = plot_var(raw_badchan)
 
 #%%
-# Indeed, the bad channel detection has marked no channels as bad. This is quite normal in MEG data, because we don't expect individual channels to misbehave. This is different in EEG, where the conductance of certain channels might be particularly bad.
+# The bad channel detection still has marked a few channels as bad. Usually the amount of bad channels in MEG data is quite limited, because we don't expect individual channels to misbehave. This is different in EEG, where the conductance of certain channels might be particularly bad.
 # Let's visualize the data again. The segments that we detected before are annotated as bad. This means they are not removed from the data, but an annotation is saved as meta info. Further MNE/osl-ephys-functions have different ways of handling this, e.g. by replacing those segments with NaN's, omitting the data, etc. In the plot below, the bad segments are annotated in red, bad channels are gray.
 # We can interact with this figure for manually annotating segments (draggin a window over a time period) or channels (clicking on a channel).
     
@@ -285,9 +293,9 @@ fig = raw_badchan.plot(duration=100, n_channels=50)
 #%%
 # Removing cardiac and occular artifacts with ICA
 # ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-# As we can see in the data browser above, there are still some sources of high variance present in the data. Channel MEG0143 has a strong rhythmic spiking present, and there are other high variance transient events. The former is due to cardiac activity (the heart contains an electrical pacemaker, and is also a muscle), which has a strong effect on the MEG signal (less so on EEG). Since this is a regular signal that is present in many channels, removing it with bad segment/channel detection is unfeasible. Instead, Independent Component Analysis is a common technique for removing this type of noise.
+# As we can see in the data browser, there are still some sources of high variance present in the data. Channel MEG0143 has a strong rhythmic spiking present, and there are other high variance transient events. The former is most likely due to cardiac activity (the heart contains an electrical pacemaker, and is also a muscle), which has a strong effect on the MEG signal (less so in EEG). Since this is a regular signal that is present in many channels, removing it with bad segment/channel detection is unfeasible. Instead, Independent Component Analysis is a common technique for removing this type of noise.
 # Similarly, eye blink and saccades have a big influence on the MEG (and EEG) data. Again due to eye muscle activity, but also because the eye itself is polarized (the cornea is net positive, and the retina net negative), and thus moving the eye changes the magnetic field.
-# When running ICA, it is recommended to have a high pass filter beforehand, because ICA doesn't work well when there are slow drifts in the signal. A 1 Hz high pass is thus used below (see here fore more info). Further, we have to specify the amount of components. MaxFilter effectively reduces the rank of our data from 306 (i.e. all MEG channels) to about 64 (when we used the default options). It doesn't make sense to look at more components than that.
+# When running ICA, it is recommended to have a high pass filter beforehand, because ICA doesn't work well when there are slow drifts in the signal. A 1 Hz high pass is thus used below (see here fore more info). Further, we have to specify the amount of components. MaxFilter effectively reduces the rank of our data from 306 (i.e. all MEG channels) to about ~70 (when we used the default options). It doesn't make sense to look at more components than that.
 # We can fit ICA using the following two lines (This takes a couple of minutes to run though (of course ``random_state=42`` is not essential!).
 
 ica = mne.preprocessing.ICA(n_components=64, random_state=42)
@@ -309,18 +317,12 @@ ica = mne.preprocessing.read_ica('ica.fif')
 
 
 # Correlating component time courses with the recorded ECG and EOG data
-ecg_indices, ecg_scores = ica.find_bads_ecg(raw, ch_name='EEG063', method='ctps', threshold='auto')
+ecg_indices, ecg_scores = ica.find_bads_ecg(raw, ch_name='EEG063', method='correlation', threshold='auto')
 print(ecg_indices)
 
 #%%
-# The automatic detection finds a lot of bad components - while typically we only find 1-3 corresponding to ECG activity. This shows that the automatic detection (with default settings) is not doing such a good job. Let's run it again with a high threshold, so when we manually check the components later, we can see which ones have the strongest correlation with the ECG.
-
-# EEG063 corresponds to the ECG
-ecg_indices, ecg_scores = ica.find_bads_ecg(raw, ch_name='EEG063', method='ctps', threshold=0.93)
-print(ecg_indices)
-
-# Add these to ica.exclude
-ica.exclude = []
+# The automatic detection found 2 components that are likely to be related to the ECG. It is typical in MEG data to have 1-3 components related to the ECG, and 1-2 components related to EOG. Note that this is only a rule of thumb. In EEG data, it is not uncommon to not find any components related to the ECG.
+# Add the components indices to ica.exclude
 ica.exclude = ecg_indices
 
 #%%
@@ -337,33 +339,45 @@ print(ica.exclude)
 #%%
 # Let's use osl-ephys's ICA databrowser to make corrections where needed. The browser will show the topographies on the left (seperate for each channel type), and the time course on the right. We can click on a time course if we want to label a component as bad (another click unlabels the component). After clicking, we can optionally use numbers 1-5 to specify what type of artefact we're labeling. This is currently not used for anything, but can aid later analyses of ICA (it is saved in ``ica.labels_``).
 #
-# :note: Interacting with the figure in Jupyter Notebook might not work or might be very slow. This is recommended to do outside of Jupyter Notebook (e.g. using an IDE like Spyder or Pycharm). In the `preprocessing using the osl-ephys config API tutorial <https://osl-ephys.readthedocs.io/en/latest/tutorials_build/preprocessing_automatic.html#manually-checking-ica>_` we'll show a way to do this using a command line function. Also see `How do I select which components to remove in ICA <https://osl-ephys.readthedocs.io/en/latest/faq.html#how-do-i-select-which-components-to-remove-in-ica>`_
+# :note: Interacting with the figure in Jupyter Notebook does not work well. In the `preprocessing using the osl-ephys config API tutorial <https://osl-ephys.readthedocs.io/en/latest/tutorials_build/preprocessing_automatic.html#manually-checking-ica>_` we'll show a way to do this using a command line function. Also see `How do I select which components to remove in ICA <https://osl-ephys.readthedocs.io/en/latest/faq.html#how-do-i-select-which-components-to-remove-in-ica>`_. For now, we will create a simple python script that will be launched from the terminal. We may have to browse through time/space for the figure to render correctly.
 #
-# When we're done, we can close the window. ica.exclude is then updated. Once we're happy with the labeled components, we can remove them from the data using ``ica.apply()``.
+# When we're done, we can close the window. ica.exclude is then updated and saved. We will load the edited ICA data, and then remove the identified bad components from the data using ``ica.apply()``.
 #
 # :note: The components are only removed from the data after calling ``ica.apply(raw)``. When we are happy with our preprocessing and are ready to save the clean data, we can do so with ``clean.save(filepath)`` (see `here <https://mne.tools/stable/generated/mne.io.Raw.html#mne.io.Raw.save>`_)
 
-# Use osl-ephys's ICA databrowser to make corrections where needed
-from osl_ephys.preprocessing.plot_ica import plot_ica
-fig = plot_ica(ica, raw)
-fig.set_size_inches(10,8)
+# Use osl-ephys's ICA databrowser to make corrections where needed. We'll write a python script for this and execute it from the terminal.
+# temporarily save the raw and ica data
+fname_data = sub1run1.replace('data', 'preprocessed').replace('.fif', '_preproc_raw.fif')
+fname_ica = sub1run1.replace('data', 'preprocessed').replace('.fif', '_ica.fif')
+raw.save(fname_data)
+ica.save(fname_ica)
 
-# Run this cell when you're done in the interactive figure.
-fig._close(1)
-
+import os
+with open("plot_ica_from_terminal.py", "w") as f:
+    f.write(f"""\
+        import mne
+        from osl_ephys.preprocessing.plot_ica import plot_ica
+        ica = mne.preprocessing.read_ica('{fname_ica}')
+        raw = mne.io.read_raw_fif('{fname_data}', preload=True)
+        fig = plot_ica(ica, raw)
+        ica.save('{fname_ica}', overwrite=True)
+        """)
+    
+# Run the script from the terminal
+import subprocess
+proc = subprocess.Popen('python plot_ica_from_terminal.py', stdout=subprocess.PIPE, shell=True, executable='/bin/bash')
+output, _ = proc.communicate()
+    
+# Once we're done with the interactive figure, we can close it. This will save the ICA object with the updated exclude list, which we will reload here.
+ica = mne.preprocessing.read_ica(fname_ica)
 print(f'The following components were labeled as bad: {ica.exclude}')
 print(f'These are the contents of ica.labels_: {ica.labels_}')
 
 # Remove bad components from the data
 clean = ica.apply(raw_badchan.copy())
 
-# Save the updated ICA object
-fname_ica = sub1run1.replace('data', 'preprocessed').replace('.fif', '_ica.fif')
-ica.save(fname_ica)
-
 # Save the clean data
-fname_data = sub1run1.replace('data', 'preprocessed').replace('.fif', '_preproc_raw.fif')
-clean.save(fname_data)
+clean.save(fname_data, overwrite=True)
 
 #%%
 # Creating Epochs
@@ -381,9 +395,9 @@ epochs['famous']
 
 #%%
 # Lastly, we'll remove epochs with particularly high peak-to-peak amplitudes, as this indicates there might still be segments in the data with high variance, that we didn't find earlier. We also include EOG peak-to-peak amplitude, as high amplitudes indicate sacades.
+# Note that we have to specify the peak-to-peak amplitude in SI units for each channel type
 
-epochs = mne.Epochs(clean, events, tmin=-0.5, tmax=1.5, event_id=event_dict)
-epochs.drop_bad({"eog": 6e-4, "mag": 4e-11, "grad": 4e-10})
+epochs.drop_bad({"eog": 6e-4, "mag": 4e-11, "grad": 4e-10}) # units: V, T, T/m 
 
 fname_epochs = sub1run1.replace('data', 'preprocessed').replace('.fif', '_epo.fif')
 epochs.save(fname_epochs)
@@ -391,5 +405,5 @@ epochs.save(fname_epochs)
 #%%
 # Concluding remarks
 # ^^^^^^^^^^^^^^^^^^
-# In this tutorial we have built a preprocessing pipeline by manipulating the data step by step. We have used quite a few techniques for cleaning up the data, but note that this is not exhaustive. For example, if we expect some bad channels in every subject (as in EEG), we might want to interpolate bad channels. Or, you might have artifacts that are specific to your environment (e.g. interference from air conditioning) or study population (e.g. subjects containing metal artefacts). Thus, always think about the sources of noise you expect in your data, an whatever preprocessing option this requires. Then, keep interacting with your data to find a pipeline that cleans up to data satisfactorily.
+# In this tutorial we have built a preprocessing pipeline by manipulating the data step by step. We have used quite a few techniques for cleaning up the data, but note that this is not exhaustive. For example, if we expect some bad channels in every subject (as in EEG), we might want to interpolate bad channels. Or, you might have artifacts that are specific to your environment (e.g. interference from air conditioning) or study population (e.g. subjects containing metal artefacts). Thus, always think about the sources of noise you expect in your data, and what preprocessing option this requires. Then, keep interacting with your data to find a pipeline that cleans up the data satisfactorily.
 # In the next tutorial, we will make a config dictionary that contains all these preprocessing steps in one place, and then apply all steps in sequence using a single function call to osl-ephys.
