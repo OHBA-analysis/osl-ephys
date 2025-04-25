@@ -158,17 +158,6 @@ def run_src_chain(
     logsdir = validate_outdir(logsdir or outdir / "logs")
     reportdir = validate_outdir(reportdir or outdir / "src_report")
 
-    # initialise the report data.pkl here, containing 'filename'. If we don't do this,
-    # gen_html_page might fail because not all data.pkl files in the report directory
-    # will have the filename yet.
-    if reportdir is not None: 
-        src_report.add_to_data(
-            f"{reportdir}/{subject}/data.pkl",
-            {
-                "filename": subject,
-            },
-        )
-    
     # Use the subject ID for the run ID
     run_id = subject
 
