@@ -111,7 +111,11 @@ def schedule_or_execute_task(id, func, *args, **kwargs):
         osl_logger.info(f"Delaying task <{func.__name__}> for subject '{id}' to be run on the main thread.")
         queue.put(task)  # Add task to queue
     else:
-        func(*args, **kwargs)
+        try:
+            func(*args, **kwargs)
+        except:
+            osl_logger.error(f"Error executing task <{func.__name__}> for subject '{id}' on main thread. Possibly your setup doesn't allow for headless rendering")
+            raise
 
 def execute_main_thread_tasks(queue_name="MAIN_THREAD_TASKS"):
     """Execute all tasks stored in the shared queue."""
@@ -119,4 +123,7 @@ def execute_main_thread_tasks(queue_name="MAIN_THREAD_TASKS"):
     while queue.qsize() > 0:
         id, func, args, kwargs = queue.get()  # Retrieve task from queue
         osl_logger.info(f"Executing task <{func.__name__}> for subject '{id}' on main thread")
-        func(*args, **kwargs)  # Execute task on main thread
+        try:
+            func(*args, **kwargs)  # Execute task on main thread
+        except:
+            osl_logger.error(f"Error executing task <{func.__name__}> for subject '{id}' on main thread. Possibly your setup doesn't allow for headless rendering")
