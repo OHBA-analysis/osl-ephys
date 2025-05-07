@@ -31,8 +31,19 @@ Building a preprocessing pipeline with functions from MNE-Python and osl-ephys.
 
 Download the dataset
 ====================
-We will download example data hosted on `OSF <https://osf.io/zxb6c/>`_
+We will download example data hosted on `OSF <https://osf.io/zxb6c/files>`_
 
+
+Note on figures
+===============
+Figures can either be shown in a pop-up window or inline in the notebook. Especially the interactive figures are better shown in a pop-up window.
+You can switch between the two by running either of the following command in a code cell:
+
+For inline:
+%matplotlib inline
+
+For pop-up:
+%matplotlib qt
 """
 
 
@@ -48,11 +59,11 @@ basedir = os.getcwd()
 def get_data(name):
     """Download a dataset from OSF."""
     if os.path.exists(name):
-        return f"{name} already downloaded. Skipping.."
-    os.system(f"osf -p zxb6c fetch '1. Preprocessing/{name}.zip'")
+        return print(f"{name} already downloaded. Skipping..")
+    os.system(f"osf -p zxb6c fetch '1.Preprocessing/data/{name}.zip'")
     os.system(f"unzip -o {name}.zip")
     os.remove(f"{name}.zip")
-    return f"Data downloaded to: {name}"
+    return print(f"Data downloaded to: {name}")
 
 # Download the dataset (~2.2 GB)
 get_data(os.path.join(basedir, "data"))
