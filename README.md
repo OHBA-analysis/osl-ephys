@@ -10,36 +10,28 @@ See the [official documentation](https://osl-ephys.readthedocs.io/en/latest/inst
 
 Alternatively, osl-ephys can be installed from source code within a [Miniconda](https://docs.conda.io/projects/miniconda/en/latest/miniconda-install.html) (or [Anaconda](https://docs.anaconda.com/free/anaconda/install/index.html)) environment using the following.
 
-### Linux
-
 ```
 git clone https://github.com/OHBA-analysis/osl-ephys.git
 cd osl-ephys
-conda env create -f envs/linux.yml
+conda env create -f envs/osle.yml
 conda activate osle
 pip install -e .
 ```
 
-### Mac
-
+Note, on a headless server you may need to set the following environment variable:
 ```
-git clone https://github.com/OHBA-analysis/osl-ephys.git
-cd osl-ephys
-conda env create -f envs/mac.yml
-conda activate osle
-pip install -e .
+export PYVISTA_OFF_SCREEN=true
 ```
 
 ### Oxford-specific computers
 
-If you are installing on an OHBA workstation computer (HBAWS) use:
+If you are installing on an OHBA workstation computer (hbaws) use:
 ```
 git clone https://github.com/OHBA-analysis/osl-ephys.git
 cd osl-ephys
 conda env create -f envs/hbaws.yml
 conda activate osle
 pip install -e .
-pip install spyder==5.1.5
 ```
 
 Or on the BMRC cluster:
@@ -49,6 +41,11 @@ cd osl-ephys
 conda env create -f envs/bmrc.yml
 conda activate osle
 pip install -e .
+```
+
+Remember to set the following environment variable:
+```
+export PYVISTA_OFF_SCREEN=true
 ```
 
 ## Removing OSL
