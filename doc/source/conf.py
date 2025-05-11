@@ -128,6 +128,7 @@ html_theme = "pydata_sphinx_theme"
 # documentation.
 html_theme_options = {
     "gitlab_url": "https://github.com/OHBA-analysis/osl-ephys",
+    "logo": {"text": "osl-ephys"},
 }
 
 # Add any paths that contain custom themes here, relative to this directory.
