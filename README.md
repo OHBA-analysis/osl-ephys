@@ -1,65 +1,83 @@
-# The OHBA Software Library for the analysis of electrophysiological data (osl-ephys)
+# OSL: Electrophysiological Data Analysis Toolbox
 
-Tools for MEG/EEG analysis.
+Tools for analysing electrophysiological (M/EEG) data.
 
 Documentation: https://osl-ephys.readthedocs.io/en/latest/.
 
 ## Installation
 
-See the [official documentation](https://osl-ephys.readthedocs.io/en/latest/install.html) for recommended installation instructions.
+We recommend installing osl-ephys in a conda environment.
 
-Alternatively, osl-ephys can be installed from source code within a [Miniconda](https://docs.conda.io/projects/miniconda/en/latest/miniconda-install.html) (or [Anaconda](https://docs.anaconda.com/free/anaconda/install/index.html)) environment using the following.
+### Conda / mamba
 
-### Linux
+Miniforge (`conda`) can be installed with:
+```
+wget "https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-$(uname)-$(uname -m).sh"
+bash Miniforge3-$(uname)-$(uname -m).sh
+rm Miniforge3-$(uname)-$(uname -m).sh
+```
+
+Mamba (`mamba`) can be installed with:
+```
+conda install -n base -c conda-forge mamba
+```
+
+### osl-ephys
+
+osl-ephys can be installed from source code in a conda environment using the following.
 
 ```
 git clone https://github.com/OHBA-analysis/osl-ephys.git
 cd osl-ephys
-conda env create -f envs/linux.yml
+mamba env create -f envs/osle.yml
 conda activate osle
 pip install -e .
 ```
 
-### Mac
-
+Note, on a headless server you may need to set the following environment variable:
 ```
-git clone https://github.com/OHBA-analysis/osl-ephys.git
-cd osl-ephys
-conda env create -f envs/mac.yml
-conda activate osle
-pip install -e .
+export PYVISTA_OFF_SCREEN=true
 ```
 
 ### Oxford-specific computers
 
-If you are installing on an OHBA workstation computer (HBAWS) use:
+If you are installing on an OHBA workstation computer (hbaws) use:
 ```
 git clone https://github.com/OHBA-analysis/osl-ephys.git
 cd osl-ephys
-conda env create -f envs/hbaws.yml
+mamba env create -f envs/hbaws.yml
 conda activate osle
 pip install -e .
-pip install spyder==5.1.5
 ```
 
 Or on the BMRC cluster:
 ```
 git clone https://github.com/OHBA-analysis/osl-ephys.git
 cd osl-ephys
-conda env create -f envs/bmrc.yml
+mamba env create -f envs/bmrc.yml
 conda activate osle
 pip install -e .
 ```
 
-## Removing OSL
+Remember to set the following environment variable:
+```
+export PYVISTA_OFF_SCREEN=true
+```
 
-Simply removing the conda environment and delete the repository:
+## Removing osl-ephys
+
+Simply remove the conda environment and delete the repository:
 ```
 conda env remove -n osle
 rm -rf osl-ephys
 ```
 
-## For Developers
+## For developers
+
+Install all the requirements:
+```
+pip install -r requirements.txt
+```
 
 Run tests:
 ```
@@ -72,8 +90,8 @@ cd osl_ephys/tests
 pytest test_file_handling.py
 ```
 
-Build documentation (if `build_sphinx` is not recognised, first try `pip install sphinx==5.3.0`):
+Build documentation locally:
 ```
-python setup.py build_sphinx
+sphinx-build -b html doc/source build
 ```
 Compiled docs can be found in `doc/build/html/index.html`.

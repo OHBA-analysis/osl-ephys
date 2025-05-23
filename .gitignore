@@ -9,4 +9,6 @@ __pycache__
 dist
 build
 doc/build
-doc/source/build_tutorials/
+doc/source/tutorials_build
+doc/source/autoapi
+doc/source/sg_execution_times.rst

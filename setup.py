@@ -9,17 +9,17 @@ HERE = pathlib.Path(__file__).parent
 README = (HERE / "README.md").read_text()
 
 # Requirement categories
-reqs = ['numpy', 'scipy', 'matplotlib', 'mne~=1.3.1', 'scikit-learn', 'fslpy',
-        'sails', 'tabulate', 'pyyaml>=5.1', 'neurokit2', 'jinja2==3.0.3',
+reqs = ['numpy', 'scipy', 'matplotlib', 'mne', 'scikit-learn', 'fslpy',
+        'sails', 'tabulate', 'pyyaml', 'neurokit2', 'jinja2',
         'glmtools', 'numba', 'nilearn', 'dask', 'distributed', 'parse',
         'opencv-python', 'panel', 'h5io']
-doc_reqs = ['sphinx==5.3.0', 'numpydoc', 'sphinx_gallery', 'pydata-sphinx-theme']
-dev_reqs = ['setuptools>=41.0.1', 'pytest', 'pytest-cov', 'coverage', 'flake8']
+doc_reqs = ['sphinx', 'numpydoc', 'sphinx_gallery', 'pydata-sphinx-theme']
+dev_reqs = ['setuptools', 'pytest', 'pytest-cov', 'coverage', 'flake8']
 
 name = 'osl-ephys'
 
 setup(name=name,
-      version='2.3.dev0',
+      version='2.4.dev0',
       description='OHBA Software Library for the analysis of electrophysiological data',
       long_description=README,
       long_description_content_type="text/markdown",
@@ -44,6 +44,8 @@ setup(name=name,
           'Programming Language :: Python :: 3.8',
           'Programming Language :: Python :: 3.9',
           'Programming Language :: Python :: 3.10',
+          'Programming Language :: Python :: 3.11',
+          'Programming Language :: Python :: 3.12',
       ],
 
       python_requires='>=3.7',

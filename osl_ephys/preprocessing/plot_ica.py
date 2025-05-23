@@ -6,7 +6,7 @@
 import logging
 import numpy as np
 import matplotlib.pyplot as plt
-from mne.io.pick import channel_type
+from mne import channel_type
 
 import matplotlib
 

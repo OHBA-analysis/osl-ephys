@@ -1,0 +1,44 @@
+name: osle
+channels:
+- conda-forge
+dependencies:
+- python=3.12
+- pip
+- vtk
+- pyvistaqt
+- pip:
+  - jupyter
+  - ipympl
+  - ipywidgets
+  - ipyevents
+  - ipyvtklink
+  - jupyter-client
+  - numpy
+  - scipy
+  - matplotlib
+  - mne
+  - scikit-learn
+  - fslpy
+  - sails
+  - tabulate
+  - pyyaml
+  - neurokit2
+  - jinja2
+  - glmtools
+  - numba
+  - nilearn
+  - dask
+  - distributed
+  - parse
+  - opencv-python
+  - h5io
+  - mat73
+  - nibabel
+  - pandas
+  - panel
+  - pqdm
+  - seaborn
+  - tqdm
+  - osfclient
+  - pyvista[jupyter]
+  - osl-ephys
