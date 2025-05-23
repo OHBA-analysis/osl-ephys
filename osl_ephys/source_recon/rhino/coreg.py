@@ -337,6 +337,7 @@ def coreg(
         else:
             # No refinement by ICP:
             xform_icp = np.eye(4)
+            err = [0]
 
         # Create refined xforms using result from ICP
         xform_scalednative2polhemus_refined = np.linalg.inv(xform_icp) @ xform_scalednative2polhemus
