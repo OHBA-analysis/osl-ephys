@@ -720,12 +720,12 @@ def plot_psd(parc_ts, fs, parcellation_file, filename, freq_range=None, freesurf
         # Calculate PSD for each epoch individually and average
         psd = []
         for i in range(parc_ts.shape[-1]):
-            f, p = welch(parc_ts[..., i], fs=fs, nfft=fs*2)
+            f, p = welch(parc_ts[..., i], fs=fs, nperseg=fs, nfft=fs*2)
             psd.append(p)
         psd = np.mean(psd, axis=0)
     else:
         # Calcualte PSD of continuous data
-        f, psd = welch(parc_ts, fs=fs, nfft=fs*2)
+        f, psd = welch(parc_ts, fs=fs, nperseg=fs, nfft=fs*2)
 
     n_parcels = psd.shape[0]
 
