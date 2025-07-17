@@ -728,7 +728,7 @@ class osl_MNEBrowseFigure(MNEBrowseFigure):
                       if self.mne.butterfly and self.mne.ch_selections is None
                       else slice(None))
         offsets = self.mne.trace_offsets[offset_ixs]
-        bad_bool = np.in1d(ch_names, self.mne.info["bads"])
+        bad_bool = np.isin(ch_names, self.mne.info["bads"])
         # OSL ADDITION
         bad_int = list(np.ones(len(picks))*-1)
         extra_chans = [picks[k]  for k, ch_type in enumerate(ch_types) if ch_type == 'eog' or ch_type=='ecg']
@@ -1231,9 +1231,11 @@ class osl_MNEBrowseFigure(MNEBrowseFigure):
                         tmp = self.mne.ica.labels_[k]
                         if type(tmp) is list and tmp:
                             tmp = tmp[0]
-                        self.mne.ica.labels_["eog"].append(tmp)       
-                self.mne.ica.labels_["ecg"] = [v for v in self.mne.ica.labels_["ecg"] if v!= []]
-                self.mne.ica.labels_["eog"] = [v for v in self.mne.ica.labels_["eog"] if v!= []]
+                        self.mne.ica.labels_["eog"].append(tmp)  
+                
+                # make sure that the labels are unique and not empty               
+                self.mne.ica.labels_["ecg"] = [int(v) for v in self.mne.ica.labels_["ecg"] if not isinstance(v, list)]
+                self.mne.ica.labels_["eog"] = [int(v) for v in self.mne.ica.labels_["eog"] if not isinstance(v, list)]
                 self.mne.ica.labels_["ecg"] = np.unique(self.mne.ica.labels_["ecg"]).tolist()
                 self.mne.ica.labels_["eog"] = np.unique(self.mne.ica.labels_["eog"]).tolist()
                 for key in self.mne.ica.labels_.keys():
