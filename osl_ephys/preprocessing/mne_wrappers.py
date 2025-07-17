@@ -260,6 +260,37 @@ def run_mne_set_channel_types(dataset, userargs):
     return dataset
 
 
+def run_mne_interpolate_bads(dataset, userargs):
+    """OSL-Batch wrapper for :py:meth:`mne.io.Raw.interpolate_bads <mne.io.Raw.interpolate_bads>`.
+
+    This function calls :py:meth:`interpolate_bads <mne.io.Raw.interpolate_bads>` on
+    an MNE object in ``dataset``. Importantly, it sets ``reset_bads`` to False by default.
+    Additional arguments on the MNE function can be specified as a dictonary.
+
+    Parameters
+    ----------
+    dataset: dict
+        Dictionary containing at least an MNE object with the key ``raw``.
+    userargs: dict
+        Dictionary of additional arguments to be passed to :py:meth:`mne.io.Raw.set_channel_types <mne.io.Raw.set_channel_types>`.
+
+    Returns
+    -------
+    dataset: dict
+        Input dictionary containing MNE objects that have been modified in place.
+    """    
+    target = userargs.pop("target", "raw")
+    logger.info("MNE Stage - {0}.{1}".format(target, "interpolate_bads"))
+    logger.info("userargs: {0}".format(str(userargs)))
+    
+    if 'reset_bads' not in userargs:
+        logger.info("Setting 'reset_bads' to False by default.")
+        userargs["reset_bads"] = False
+    
+    dataset[target].interpolate_bads(**userargs)
+    return dataset
+
+
 # Epochs Functions
 
 
