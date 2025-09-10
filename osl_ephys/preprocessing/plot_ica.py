@@ -423,7 +423,9 @@ class osl_MNEBrowseFigure(MNEBrowseFigure):
 
         BrowserBase.__init__(self, **kwargs)
         MNEFigure.__init__(self, **kwargs)
-
+        # hook up a mouse press event
+        self.canvas.mpl_connect("button_press_event", self._on_mouse_press)
+        
         # MAIN AXES: default sizes (inches)
         # XXX simpler with constrained_layout? (when it's no longer "beta")
         l_margin = 0.8#1.0
@@ -927,58 +929,122 @@ class osl_MNEBrowseFigure(MNEBrowseFigure):
 
         self._update_vscroll() # takes care of the vsel_patch, because it's too big when there's extra chans
 
-    def plot_topos(self, ica, ax_topo, picks):  # OSL ADDITION FOR TOPOS
+    # def plot_topos(self, ica, ax_topo, picks):  # OSL ADDITION FOR TOPOS
+    #     import mne
+    #     from mne.viz.topomap import _plot_ica_topomap
+
+    #     extra_chans = [k for k, ch_type in enumerate(self.mne.ch_types[picks]) if ch_type == 'eog' or ch_type == 'ecg']
+    #     exist_meg = any(ct in np.unique(ica.get_channel_types()) for ct in ['mag', 'grad'])
+    #     exist_eeg = 'eeg' in np.unique(ica.get_channel_types())
+    #     n_topos = len(picks)
+    #     ica_tmp = ica.copy()
+    #     ica_tmp._ica_names = ["" for i in ica_tmp._ica_names]
+    #     nchans, ncomps = ica_tmp.get_components().shape
+    #     chtype = np.unique(
+    #         [
+    #             channel_type(ica.info, ch)
+    #             for ch in mne.pick_types(ica.info, meg=exist_meg, eeg=exist_eeg)
+    #         ]
+    #     )
+    #     n_chtype = len(chtype)
+    #     for i in range(n_chtype):
+    #         for j in range(n_topos):
+    #             if picks[j]<len(extra_chans):
+    #                 ax_topo[i, j].clear()
+    #                 ax_topo[i, j].set_axis_off()
+    #             else:
+            
+    #                 _plot_ica_topomap(
+    #                     ica_tmp,
+    #                     idx=picks[j]-len(extra_chans),
+    #                     ch_type=chtype[i],
+    #                     axes=ax_topo[i, j],
+    #                     vmin=None,
+    #                     vmax=None,
+    #                     cmap="RdBu_r",
+    #                     colorbar=False,
+    #                     title=None,
+    #                     show=True,
+    #                     outlines="head",
+    #                     contours=0,
+    #                     image_interp="cubic",
+    #                     res=64,
+    #                     sensors=False,
+    #                     allow_ref_meg=False,
+    #                     sphere=None,
+    #                 )
+    #             if j==0:
+    #                     ax_topo[i, j].set_title(f"{chtype[i]}")
+    #             else:
+    #                 ax_topo[i, j].set_title('')
+
+    def plot_topos(self, ica, ax_topo, picks):  # OSL: robust topo plotting
         import mne
         from mne.viz.topomap import _plot_ica_topomap
 
-        extra_chans = [k for k, ch_type in enumerate(self.mne.ch_types[picks]) if ch_type == 'eog' or ch_type == 'ecg']
-        exist_meg = any(ct in np.unique(ica.get_channel_types()) for ct in ['mag', 'grad'])
-        exist_eeg = 'eeg' in np.unique(ica.get_channel_types())
+        # which channel types are topo-able? (skip EOG/ECG header rows)
+        def _is_extra(idx):
+            return self.mne.ch_types[idx] in ("eog", "ecg")
+
+        exist_meg = any(ct in np.unique(ica.get_channel_types()) for ct in ("mag", "grad"))
+        exist_eeg = "eeg" in np.unique(ica.get_channel_types())
+        chtypes = np.unique([
+            channel_type(ica.info, ch)
+            for ch in mne.pick_types(ica.info, meg=exist_meg, eeg=exist_eeg)
+        ])
+        n_chtype = len(chtypes)
         n_topos = len(picks)
-        ica_tmp = ica.copy()
-        ica_tmp._ica_names = ["" for i in ica_tmp._ica_names]
-        nchans, ncomps = ica_tmp.get_components().shape
-        chtype = np.unique(
-            [
-                channel_type(ica.info, ch)
-                for ch in mne.pick_types(ica.info, meg=exist_meg, eeg=exist_eeg)
-            ]
-        )
-        n_chtype = len(chtype)
-        for i in range(n_chtype):
+
+        for i, ch_type in enumerate(chtypes):
             for j in range(n_topos):
-                if picks[j]<len(extra_chans):
-                    ax_topo[i, j].clear()
-                    ax_topo[i, j].set_axis_off()
+                ax = ax_topo[i, j]
+                ax.clear()
+                ax.set_axis_off()
+
+                row_idx = picks[j]
+                # skip the EOG/ECG rows reliably
+                if _is_extra(row_idx):
+                    if j == 0:
+                        ax.set_title(f"{ch_type}")
+                    continue
+
+                # map displayed row -> component index via name
+                ch_name = self.mne.ch_names[row_idx]
+                try:
+                    comp_idx = self.mne.ica._ica_names.index(ch_name)
+                except ValueError:
+                    # not an ICA component (defensive)
+                    if j == 0:
+                        ax.set_title(f"{ch_type}")
+                    continue
+
+                _plot_ica_topomap(
+                    ica,
+                    idx=comp_idx,
+                    ch_type=ch_type,
+                    axes=ax,
+                    vmin=None,
+                    vmax=None,
+                    cmap="RdBu_r",
+                    colorbar=False,
+                    title=None,
+                    show=True,
+                    outlines="head",
+                    contours=0,
+                    image_interp="cubic",
+                    res=64,
+                    sensors=False,
+                    allow_ref_meg=False,
+                    sphere=None,
+                )
+                if j == 0:
+                    ax.set_title(f"{ch_type}")
                 else:
-            
-                    _plot_ica_topomap(
-                        ica_tmp,
-                        idx=picks[j]-len(extra_chans),
-                        ch_type=chtype[i],
-                        axes=ax_topo[i, j],
-                        vmin=None,
-                        vmax=None,
-                        cmap="RdBu_r",
-                        colorbar=False,
-                        title=None,
-                        show=True,
-                        outlines="head",
-                        contours=0,
-                        image_interp="cubic",
-                        res=64,
-                        sensors=False,
-                        allow_ref_meg=False,
-                        sphere=None,
-                    )
-                if j==0:
-                        ax_topo[i, j].set_title(f"{chtype[i]}")
-                else:
-                    ax_topo[i, j].set_title('')
+                    ax.set_title("")
+
 
     def _keypress(self, event):
         from mne.viz.utils import _events_off
-
         """Handle keypress events."""
         key = event.key
         n_channels = self.mne.n_channels
@@ -1144,9 +1210,61 @@ class osl_MNEBrowseFigure(MNEBrowseFigure):
         else:  # check for close key / fullscreen toggle
             super()._keypress(event)
 
+    def _on_mouse_press(self, event):
+        """Handle mouse clicks for jumping the vertical scrollbar selection."""
+        # left click only
+        if event.button != 1:
+            return
+        # only react to clicks inside the vertical scrollbar
+        if event.inaxes is not self.mne.ax_vscroll:
+            return
+        # don't change anything in butterfly mode or when grouped selections UI is open
+        if self.mne.butterfly or self.mne.fig_selection is not None:
+            return
+        # self._vscroll_go_to(event.ydata)
+        event.key='down'
+        self._keypress(event)  # use same logic as keypress for consistency
+
+
+    # def _vscroll_go_to(self, y):
+    #     """Center the visible window on click y (data coords) with correct clamping."""
+    #     import numpy as np
+    #     if y is None:  # clicked outside axes
+    #         return
+    #     n_extra = int(np.sum([1 for _, t in enumerate(self.mne.ch_types) if t in ("eog", "ecg")]))
+    #     total_rows = len(self.mne.ch_order)           # rows that can scroll
+    #     n_vis = self.mne.n_channels - n_extra         # visible scrollable rows
+
+    #     if n_vis < 1 or total_rows <= n_extra:
+    #         return
+
+    #     # y is already in "row units" because ax_vscroll.set_ylim(total_rows-n_extra, 0).
+    #     # First clip the click to the drawable range:
+    #     y = float(np.clip(y, 0, total_rows - n_extra))
+
+    #     # Work in centers, not bottoms. The selection patch center should match y.
+    #     # Clamp the desired center so the selection can still fully fit in range.
+    #     half = n_vis / 2.0
+    #     desired_center = np.clip(y, half, (total_rows - n_extra) - half)
+
+    #     # Convert center -> start row (anchor = bottom), then re-add the extra header rows.
+    #     proposed_start = int(round(desired_center - half)) + n_extra
+
+    #     # Final guardrail identical to your keyboard logic.
+    #     ceiling = len(self.mne.ch_order) - n_vis
+    #     self.mne.ch_start = int(np.clip(proposed_start, n_extra, ceiling))
+
+    #     # Apply
+    #     self._update_picks()
+    #     self._update_vscroll()
+    #     self._redraw()
+
+    
     def _update_vscroll(self):
         """Update the vertical scrollbar (channel) selection indicator."""
         n_extra_chans = int(np.sum([1 for k, ch_type in enumerate(self.mne.ch_types) if ch_type == 'eog' or ch_type == 'ecg']))
+        ceiling = len(self.mne.ch_order) - (self.mne.n_channels - n_extra_chans)
+        self.mne.ch_start = np.clip(self.mne.ch_start, n_extra_chans, ceiling)
         self.mne.vsel_patch.set_xy((0, self.mne.ch_start - n_extra_chans))
         self.mne.vsel_patch.set_height(self.mne.n_channels - n_extra_chans)
         self._update_yaxis_labels()
