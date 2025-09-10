@@ -810,23 +810,26 @@ def run_mne_ica_autoreject(dataset, userargs):
     # User specified arguments and their defaults
     eogmeasure = userargs.pop("eogmeasure", "correlation")
     eogthreshold = userargs.pop("eogthreshold", 0.35)
+    eogmethod = userargs.pop("eogmethod", "default")
     ecgmethod = userargs.pop("ecgmethod", "ctps")
     ecgthreshold = userargs.pop("ecgthreshold", "auto")
     remove_components = userargs.pop("apply", True)
-
+    
     # Reject components based on the EOG channel
-    eog_indices, eog_scores = dataset["ica"].find_bads_eog(
-        dataset["raw"], threshold=eogthreshold, measure=eogmeasure,
-    )
-    dataset["ica"].exclude.extend(eog_indices)
-    logger.info("Marking {0} as EOG ICs".format(len(eog_indices)))
+    if not (eogmethod is None or eogmethod == "None"):
+        eog_indices, eog_scores = dataset["ica"].find_bads_eog(
+            dataset["raw"], threshold=eogthreshold, measure=eogmeasure,
+        )
+        dataset["ica"].exclude.extend(eog_indices)
+        logger.info("Marking {0} as EOG ICs".format(len(eog_indices)))
 
     # Reject components based on the ECG channel
-    ecg_indices, ecg_scores = dataset["ica"].find_bads_ecg(
-        dataset["raw"], threshold=ecgthreshold, method=ecgmethod
-    )
-    dataset["ica"].exclude.extend(ecg_indices)
-    logger.info("Marking {0} as ECG ICs".format(len(ecg_indices)))
+    if not (ecgmethod is None or ecgmethod == "None"):
+        ecg_indices, ecg_scores = dataset["ica"].find_bads_ecg(
+            dataset["raw"], threshold=ecgthreshold, method=ecgmethod
+        )
+        dataset["ica"].exclude.extend(ecg_indices)
+        logger.info("Marking {0} as ECG ICs".format(len(ecg_indices)))
 
     # Remove the components from the data if requested
     if remove_components:
