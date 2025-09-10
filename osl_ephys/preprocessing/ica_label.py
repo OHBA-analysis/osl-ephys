@@ -203,12 +203,17 @@ def main(argv=None):
     if reject == 'None':
         reject = None
     
-    if len(argv)<3:
+    print("ARGV", len(argv), argv)
+    
+    if len(argv)<3 or (len(argv)==3 and '*' in argv[-1]):
         data_dir = os.getcwd()
         if len(argv)==2:
             subject = argv[1]
         else:
-            g = sorted(glob(os.path.join(f"{data_dir}", '*', '*_ica.fif')))
+            if len(argv)==3: # allows you to specify e.g. osl_ica_label all . 'sub-01-ses-*'
+                g = sorted(glob(os.path.join(f"{data_dir}", argv[-1], '*_ica.fif')))
+            else:
+                g = sorted(glob(os.path.join(f"{data_dir}", '*', '*_ica.fif')))
             subject = [f.split('/')[-2] for f in g]
             # batch log
             logs_dir = os.path.join(data_dir, 'logs')
@@ -271,10 +276,12 @@ def apply(argv=None):
         if len(argv)==2:
             subject = argv[1]
 
-    if subject is None:
-        g = sorted(glob(os.path.join(f"{data_dir}", '*', '*_ica.fif')))
+    if subject is None or '*' in subject:
+        if subject is None:
+            g = sorted(glob(os.path.join(f"{data_dir}", '*', '*_ica.fif')))
+        else:
+            g = sorted(glob(os.path.join(f"{data_dir}", subject, '*_ica.fif')))
         subject = [f.split('/')[-2] for f in g]
-        
         # batch log
         logs_dir = os.path.join(data_dir, 'logs')
         logfile = os.path.join(logs_dir, 'batch_preproc.log')

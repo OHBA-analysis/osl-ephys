@@ -260,6 +260,39 @@ def run_mne_set_channel_types(dataset, userargs):
     return dataset
 
 
+def run_mne_interpolate_bads(dataset, userargs):
+    """OSL-Batch wrapper for :py:meth:`mne.io.Raw.interpolate_bads <mne.io.Raw.interpolate_bads>`.
+
+    This function calls :py:meth:`interpolate_bads <mne.io.Raw.interpolate_bads>` on
+    an MNE object in ``dataset``. Importantly, it sets ``reset_bads`` to False by default.
+    Additional arguments on the MNE function can be specified as a dictonary.
+
+    Parameters
+    ----------
+    dataset: dict
+        Dictionary containing at least an MNE object with the key ``raw``.
+    userargs: dict
+        Dictionary of additional arguments to be passed to :py:meth:`mne.io.Raw.set_channel_types <mne.io.Raw.set_channel_types>`.
+
+    Returns
+    -------
+    dataset: dict
+        Input dictionary containing MNE objects that have been modified in place.
+    """    
+    target = userargs.pop("target", "raw")
+    logger.info("MNE Stage - {0}.{1}".format(target, "interpolate_bads"))
+    logger.info("userargs: {0}".format(str(userargs)))
+    
+    # remember the bad channels 
+    original_bads = dataset[target].info['bads'].copy()
+    dataset[target].interpolate_bads(**userargs)
+    
+    # if the bad channels were reset, we want to keep a local copy for the report
+    if dataset[target].info['bads'] != original_bads:
+        dataset[target].info['temp'] = {'bads': original_bads}
+    return dataset
+
+
 # Epochs Functions
 
 
@@ -777,23 +810,26 @@ def run_mne_ica_autoreject(dataset, userargs):
     # User specified arguments and their defaults
     eogmeasure = userargs.pop("eogmeasure", "correlation")
     eogthreshold = userargs.pop("eogthreshold", 0.35)
+    eogmethod = userargs.pop("eogmethod", "default")
     ecgmethod = userargs.pop("ecgmethod", "ctps")
     ecgthreshold = userargs.pop("ecgthreshold", "auto")
     remove_components = userargs.pop("apply", True)
-
+    
     # Reject components based on the EOG channel
-    eog_indices, eog_scores = dataset["ica"].find_bads_eog(
-        dataset["raw"], threshold=eogthreshold, measure=eogmeasure,
-    )
-    dataset["ica"].exclude.extend(eog_indices)
-    logger.info("Marking {0} as EOG ICs".format(len(eog_indices)))
+    if not (eogmethod is None or eogmethod == "None"):
+        eog_indices, eog_scores = dataset["ica"].find_bads_eog(
+            dataset["raw"], threshold=eogthreshold, measure=eogmeasure,
+        )
+        dataset["ica"].exclude.extend(eog_indices)
+        logger.info("Marking {0} as EOG ICs".format(len(eog_indices)))
 
     # Reject components based on the ECG channel
-    ecg_indices, ecg_scores = dataset["ica"].find_bads_ecg(
-        dataset["raw"], threshold=ecgthreshold, method=ecgmethod
-    )
-    dataset["ica"].exclude.extend(ecg_indices)
-    logger.info("Marking {0} as ECG ICs".format(len(ecg_indices)))
+    if not (ecgmethod is None or ecgmethod == "None"):
+        ecg_indices, ecg_scores = dataset["ica"].find_bads_ecg(
+            dataset["raw"], threshold=ecgthreshold, method=ecgmethod
+        )
+        dataset["ica"].exclude.extend(ecg_indices)
+        logger.info("Marking {0} as ECG ICs".format(len(ecg_indices)))
 
     # Remove the components from the data if requested
     if remove_components:
