@@ -201,7 +201,12 @@ def gen_html_data(
     # Bad channels
     bad_chans = raw.info['bads']
     if len(bad_chans) == 0:
-        data['bad_chans'] = 'No bad channels.'
+        try: # check if the bad channels were saved elsewhere because of interpolation
+            data['bad_chans'] = 'Bad channels: {}'.format(', '.join(raw.info['temp']['bads']))
+            bad_chans = raw.info['temp']['bads']
+            raw.info['bads'] = bad_chans
+        except:
+            data['bad_chans'] = 'No bad channels.'
     else:
         data['bad_chans'] = 'Bad channels: {}'.format(', '.join(bad_chans))
     # For summary report:

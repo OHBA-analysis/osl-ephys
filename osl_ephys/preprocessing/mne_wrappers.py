@@ -283,11 +283,13 @@ def run_mne_interpolate_bads(dataset, userargs):
     logger.info("MNE Stage - {0}.{1}".format(target, "interpolate_bads"))
     logger.info("userargs: {0}".format(str(userargs)))
     
-    if 'reset_bads' not in userargs:
-        logger.info("Setting 'reset_bads' to False by default.")
-        userargs["reset_bads"] = False
-    
+    # remember the bad channels 
+    original_bads = dataset[target].info['bads'].copy()
     dataset[target].interpolate_bads(**userargs)
+    
+    # if the bad channels were reset, we want to keep a local copy for the report
+    if dataset[target].info['bads'] != original_bads:
+        dataset[target].info['temp'] = {'bads': original_bads}
     return dataset
 
 
