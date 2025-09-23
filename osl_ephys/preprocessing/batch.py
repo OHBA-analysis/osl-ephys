@@ -156,8 +156,8 @@ def import_data(infile, preload=True):
             raw = mne.io.read_raw(infile, preload=preload)
         except:
             msg = "Unable to determine file type of input {0}".format(infile)
-        logger.error(msg)
-        raise ValueError(msg)
+            logger.error(msg)
+            raise ValueError(msg)
 
     return raw
 
