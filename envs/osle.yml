@@ -1,4 +1,4 @@
-name: test
+name: osle
 channels:
 - conda-forge
 dependencies:
