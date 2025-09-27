@@ -1,4 +1,4 @@
-name: osle
+name: test
 channels:
 - conda-forge
 dependencies:
@@ -41,4 +41,5 @@ dependencies:
   - tqdm
   - osfclient
   - open3d
+  - pyvista[jupyter]
   - osl-ephys
