@@ -16,6 +16,7 @@ import tempfile
 import pickle
 import pathlib
 import re
+import warnings
 
 import numpy as np
 import pandas as pd
@@ -125,6 +126,11 @@ def gen_html_data(
     run_id : str
         Run ID.
     """
+    
+    # Silence all matplotlib show() warnings
+    warnings.filterwarnings("ignore", message=".*is non-interactive, and thus cannot be shown.*")
+    warnings.filterwarnings("ignore", message="nperseg.*is greater than input length.*")
+    warnings.filterwarnings("ignore", message=".*more than 20 mm from head frame origin.*")
 
     data = {}
     data['filename'] = raw.filenames[0]
@@ -719,7 +725,7 @@ def plot_sensors(raw, savebase=None):
             coil_types = ['grad_longitude', 'grad_lattitude']
         fig, ax = plt.subplots(1,len(coil_types), figsize=(16,4))
         for k in range(len(coil_types)):
-            raw.copy().pick_channels(channels[coil_types[k]]).plot_sensors(axes=ax[k], show=False)
+            raw.copy().pick_channels(channels[coil_types[k]]).plot_sensors(axes=ax[k], show=False, verbose='ERROR')
             ax[k].set_title(f"{coil_types[k].replace('_', ' ')}")
         plt.tight_layout()
     else:
@@ -897,7 +903,7 @@ def plot_spectra(raw, savebase=None):
             n_fft=int(raw.info['sfreq']*2),
             verbose=0).plot(
                         axes=ax[row],
-                        show=False)
+                        show=False,)
 
         ax[row].set_title(name, fontsize=12)
 
@@ -927,7 +933,8 @@ def plot_spectra(raw, savebase=None):
         n_fft=int(raw.info['sfreq']*2),
         verbose=0).plot(
                     axes=ax[row],
-                    show=False)
+                    show=False,
+                )
 
         ax[row].set_title(name, fontsize=12)
 
@@ -965,8 +972,6 @@ def plot_freqbands(raw, savebase=None):
     figname : str
         Path to saved figure.
     """
-    print(f"TYPE: {type(raw)}")
-    print(f"INFO: {raw.info}")
     if 'dev_ctf_t' in raw.info.keys() and raw.info["dev_ctf_t"] is not None:
         is_ctf = True
     else:
@@ -1242,6 +1247,9 @@ def plot_bad_ica(raw, ica, savebase):
     
     """
 
+    # Set MNE to only show critical messages
+    mne.set_log_level('ERROR')
+    
     exclude_uniq = np.sort(np.unique(ica.exclude))[::-1]
     nbad = len(exclude_uniq)
 
