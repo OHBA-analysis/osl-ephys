@@ -157,7 +157,8 @@ class GroupGLMBaseResult:
         elif np.any(['state' in ch for ch in self.info['ch_names']]) or np.any(['mode' in ch for ch in self.info['ch_names']]):
             adjacency = csr_array(np.eye(len(self.info['ch_names'])))
         else:
-            ch_type =  mne.io.meas_info._get_channel_types(self.info)[0]  # Assuming these are all the same!
+            channel_types = [mne.channel_type(self.info, idx) for idx in range(self.info['nchan'])]
+            ch_type = channel_types[0]  # Assuming these are all the same!
             adjacency, ch_names = mne.channels.channels._compute_ch_adjacency(self.info, ch_type)
         ntests = np.prod(self.data.data.shape[2:])
         ntimes = self.data.data.shape[3]
