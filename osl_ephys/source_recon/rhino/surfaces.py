@@ -560,7 +560,7 @@ def plot_surfaces(subjects_dir, subject, include_nose, already_computed=False):
     for surface, output_file in zip(surfaces, output_files):
         display_copy = deepcopy(display)
         nii_file = filenames[f"bet_{surface}_mesh_file"]
-        img = nil._utils.check_niimg_3d(nii_file)
+        img = nil.image.load_img(nii_file)
         data = nil.image.get_data(img)
         vmin = np.nanmin(data)
         vmax = np.nanmax(data)

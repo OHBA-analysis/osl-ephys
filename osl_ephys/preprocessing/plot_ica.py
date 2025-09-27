@@ -4,6 +4,7 @@
 
 # Authors: Mats van Es <mats.vanes@psych.ox.ac.uk>
 import logging
+import warnings
 import numpy as np
 import matplotlib.pyplot as plt
 from mne import channel_type
@@ -97,6 +98,11 @@ def plot_ica(
     from mne.io.pick import _picks_to_idx  # OSL ADDITION
     from mne.evoked import Evoked
     from mne.epochs import BaseEpochs
+
+    # silence warnings
+    warnings.filterwarnings("ignore", message=".*more than 20 mm from head frame origin.*")
+    warnings.filterwarnings("ignore", message=".*There are no gridspecs with layoutgrids. Possibly did not call parent GridSpec with the.*")
+    warnings.filterwarnings("ignore", message=".*This figure was using a layout engine that is incompatible with subplots_adjust.*")
 
     exclude = ica.exclude
     picks = _picks_to_idx(ica.n_components_, picks, "all")

@@ -4,8 +4,8 @@ channels:
 dependencies:
 - python=3.12
 - pip
-- vtk
 - pyvistaqt
+- pyqt
 - pip:
   - jupyter
   - ipympl
@@ -40,5 +40,6 @@ dependencies:
   - seaborn
   - tqdm
   - osfclient
+  - open3d
   - pyvista[jupyter]
   - osl-ephys
