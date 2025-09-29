@@ -887,7 +887,7 @@ def run_proc_chain(
 
         outnames = {"raw": None}
         if outdir is not None:
-            outnames = write_dataset(dataset, outbase, run_id, overwrite=overwrite, skip=skip_save)
+            outnames = write_dataset(dataset, outbase, run_id, overwrite=overwrite, skip=skip_save, ftype=ftype)
 
         # Generate report data
         if gen_report:
