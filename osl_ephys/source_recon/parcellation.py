@@ -25,6 +25,53 @@ from mpl_toolkits.axes_grid1 import make_axes_locatable
 import osl_ephys.source_recon.rhino.utils as rhino_utils
 from osl_ephys.utils.logger import log_or_print
 from osl_ephys.source_recon import freesurfer_utils
+import pandas as pd
+
+def load_parcellation_description(parcellation_file, freesurfer=False, subject=None):
+
+    """Load a parcellation description file.
+    
+    Parameters
+    ----------
+    parcellation_file : str
+        Path to parcellation file. 
+        Function will look for a csv file with same name but .csv extension.
+    freesurfer : bool, optional
+        Is this a FreeSurfer parcellation?
+    subject : str
+        Subject ID. Only needed for FreeSurfer parcellations.
+        
+    Returns
+    -------
+    df : dict
+        Dictionary with keys 'name', 'description', 'x', 'y', 'z' for each parcel.
+    
+    """
+
+    parcellation_dict = None
+    parcellation_file = find_file(parcellation_file, freesurfer=False)
+
+    if parcellation_file is not None:
+        # look for xml file with same name
+        csv_file = parcellation_file.replace(".nii.gz", ".csv").replace(".nii", ".csv")
+        print(csv_file)
+        if op.exists(csv_file):
+            # load csv_file without parcellation library
+            df = pd.read_csv(csv_file)
+
+            # if no index column, use ordinal index
+            df = df.set_index('index') if 'index' in df.columns else df.reset_index(drop=True)
+
+            # look for columns that are titled "name", "description", "x", "y", "z" (do not be case sensitive)
+            df = df.loc[:, df.columns.str.lower().isin(["name", "description", "x", "y", "z"])]
+
+            # turn df into a dictionary using the index as keys
+            parcellation_dict = df.to_dict(orient='index')
+            
+        else:
+            print("No csv file found for parcellation")
+
+    return parcellation_dict
 
 def load_parcellation(parcellation_file, freesurfer=False, subject=None):
     """Load a parcellation file.
