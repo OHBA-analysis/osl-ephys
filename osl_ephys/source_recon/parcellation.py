@@ -35,7 +35,7 @@ def load_parcellation_description(parcellation_file, freesurfer=False, subject=N
     ----------
     parcellation_file : str
         Path to parcellation file. 
-        Function will look for a csv file with same name but .csv extension.
+        Function will look for a xml file with same name but .xml extension.
     freesurfer : bool, optional
         Is this a FreeSurfer parcellation?
     subject : str
@@ -44,7 +44,7 @@ def load_parcellation_description(parcellation_file, freesurfer=False, subject=N
     Returns
     -------
     df : dict
-        Dictionary with keys 'name', 'description', 'x', 'y', 'z' for each parcel.
+        Dictionary with keys 'index', 'label', 'x', 'y', 'z' for each parcel.
     
     """
 
@@ -53,23 +53,23 @@ def load_parcellation_description(parcellation_file, freesurfer=False, subject=N
 
     if parcellation_file is not None:
         # look for xml file with same name
-        csv_file = parcellation_file.replace(".nii.gz", ".csv").replace(".nii", ".csv")
-        print(csv_file)
-        if op.exists(csv_file):
-            # load csv_file without parcellation library
-            df = pd.read_csv(csv_file)
+        xml_file = parcellation_file.replace(".nii.gz", ".xml").replace(".nii", ".xml")
+        print(xml_file)
+        if op.exists(xml_file):
+            # load xml_file without parcellation library
+            df = pd.read_xml(xml_file)
 
             # if no index column, use ordinal index
             df = df.set_index('index') if 'index' in df.columns else df.reset_index(drop=True)
 
-            # look for columns that are titled "name", "description", "x", "y", "z" (do not be case sensitive)
-            df = df.loc[:, df.columns.str.lower().isin(["name", "description", "x", "y", "z"])]
+            # keep only relevant columns
+            df = df.loc[:, df.columns.str.lower().isin(["index", "label", "x", "y", "z"])]
 
             # turn df into a dictionary using the index as keys
             parcellation_dict = df.to_dict(orient='index')
             
         else:
-            print("No csv file found for parcellation")
+            print(f"No xml file found for {parcellation_file}")
 
     return parcellation_dict
 
