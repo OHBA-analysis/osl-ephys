@@ -862,7 +862,12 @@ def bem_display(
     plot_type="surf",
     display_outskin_with_nose=True,
     display_sensors=False,
+    display_pairs=True,
+    pairs=None,
+    singletons=None,
+    midline_points=None,
     filename=None,
+    src_index=0,
 ):
     """Displays the coregistered RHINO scalp surface and inner skull surface.
 
@@ -884,6 +889,8 @@ def bem_display(
         Whether to include sensor locations in the display.
     filename : str
         Filename to save display to (as an interactive html). Must have extension .html.
+    src_index : int
+        Index for source model to use
     """
 
     # Note the jargon used varies for xforms and coord spaces:
@@ -978,12 +985,23 @@ def bem_display(
 
     if src is not None:
         # stored points are in metres, convert to mm
-        src_pnts = src[0]["rr"][src[0]["vertno"], :] * 1000
+        # src_pnts = src[0]["rr"][src[0]["vertno"], :] * 1000
+        src_pnts = src[src_index]['rr'][src[src_index]['inuse']==1, :] * 1000
 
         # Move from head space to MEG (device) space
         src_pnts = rhino_utils.xform_points(head_trans["trans"], src_pnts.T).T
 
         log_or_print("BEM surface: number of dipoles = {}".format(src_pnts.shape[0]))
+
+        if display_pairs:
+            if midline_points is not None:
+                midline_pnts = src_pnts[midline_points, :]
+            if singletons is not None:
+                singleton_pnts = src_pnts[singletons, :]
+        else:
+            singleton_pnts = src_pnts
+            midline_pnts = None
+            pairs = None
 
     # --------
     # Do plots
@@ -1030,10 +1048,31 @@ def bem_display(
         renderer.surface(surface=surf_smri, color=(0.25, 0.25, 0.25), opacity=0.25, backface_culling=False)
 
         # vol source grid points
-        if src is not None and len(src_pnts.T) > 0:
-            color, scale, alpha = (1, 0, 0), 0.001, 1
-            renderer.sphere(center=src_pnts, color=color, scale=scale * 1000, opacity=alpha, backface_culling=True)
+        if src is not None and singleton_pnts is not None and len(singleton_pnts.T) > 0:
+            color, scale, alpha = (0, 0, 1), 0.001, 1
+            renderer.sphere(center=singleton_pnts, color=color, scale=scale * 1000, opacity=alpha, backface_culling=True)
 
+        if display_pairs and src is not None:
+
+            if midline_pnts is not None and len(midline_pnts.T) > 0:
+                color, scale, alpha = (0, 1, 0), 0.001, 1
+                renderer.sphere(center=midline_pnts, 
+                                color=color, scale=scale * 1000, opacity=alpha, backface_culling=True)
+
+            if pairs is not None and len(pairs) > 0:
+                for pp in pairs:
+                    color = (1, 0, 0)
+                    alpha = 1
+                    renderer.tube(origin = [src_pnts[pp[0], 0], 
+                                              src_pnts[pp[0], 1],
+                                              src_pnts[pp[0], 2]], 
+                                    destination = [src_pnts[pp[1], 0], 
+                                                   src_pnts[pp[1], 1],
+                                                   src_pnts[pp[1], 2]],
+                                    radius=0.001,
+                                    opacity=alpha,
+                                    color=color)
+                    
         renderer.set_camera(azimuth=90, elevation=90, distance=600, focalpoint=(0.0, 0.0, 0.0))
 
         # Save or show
@@ -1087,18 +1126,40 @@ def bem_display(
         ax.scatter(inner_skull_megt[0, 0:-1:20], inner_skull_megt[1, 0:-1:20], inner_skull_megt[2, 0:-1:20], color=color, marker=marker, s=scale, alpha=alpha)
 
         # vol source grid points
-        if src is not None and len(src_pnts.T) > 0:
-            color, scale, alpha, marker = (1, 0, 0), 1, 0.5, "."
-            src_pntst = src_pnts.T
+        if src is not None and singleton_pnts is not None and len(singleton_pnts.T) > 0:
+            color, scale, alpha, marker = (0, 0, 1), 1, 0.5, "."
+            singleton_pntst = singleton_pnts.T
             ax.scatter(
-                src_pntst[0, :],
-                src_pntst[1, :],
-                src_pntst[2, :],
+                singleton_pntst[0, :],
+                singleton_pntst[1, :],
+                singleton_pntst[2, :],
                 color=color,
                 marker=marker,
                 s=scale,
                 alpha=alpha,
             )
+
+        if display_pairs and src is not None:
+
+            if midline_pnts is not None and len(midline_pnts.T) > 0:
+                color, scale, alpha, marker = (0, 1, 0), 1, 0.5, "."
+                midline_pntst = midline_pnts.T
+                ax.scatter(
+                    midline_pntst[0, :],
+                    midline_pntst[1, :],
+                    midline_pntst[2, :],
+                    color=color,
+                    marker=marker,
+                    s=scale,
+                    alpha=alpha,
+                )
+
+            if pairs is not None and len(pairs) > 0:
+                color = (1, 0, 0)
+                for pp in pairs:
+                    ax.plot([src_pnts[pp[0], 0], src_pnts[pp[1], 0]], 
+                                [src_pnts[pp[0], 1], src_pnts[pp[1], 1]], 
+                                [src_pnts[pp[0], 2], src_pnts[pp[1], 2]], c=color)
 
         if filename is None:
             plt.show()

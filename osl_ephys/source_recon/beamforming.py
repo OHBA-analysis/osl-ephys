@@ -19,7 +19,7 @@ from mne.forward import _subject_from_forward
 from mne.forward.forward import is_fixed_orient
 from mne.beamformer import read_beamformer
 from mne.beamformer._lcmv import _apply_lcmv
-from mne.beamformer._compute_beamformer import _reduce_leadfield_rank, _sym_inv_sm, Beamformer
+from mne.beamformer._compute_beamformer import _reduce_leadfield_rank, Beamformer
 from mne.minimum_norm.inverse import _check_reference
 from mne.utils import (
     _check_channels_spatial_filter,
@@ -46,10 +46,46 @@ except ImportError:
     from mne.io.pick import pick_channels_cov, pick_info
     from mne.io.proj import make_projector
 
-from osl_ephys.source_recon import rhino
+from osl_ephys.source_recon.rhino import coreg 
 from osl_ephys.source_recon.rhino import utils as rhino_utils
 from osl_ephys.utils.logger import log_or_print
 
+def _sym_inv_sm(x, reduce_rank, inversion, sk):
+    """Symmetric inversion with single- or matrix-style inversion.
+    osl-ephys version of the same fn in MNE
+    Modified to cope with bilateral beamformer, which creates the situation 
+    where x.shape[1:] == (2, 2).
+    """
+    if x.shape[1:] == (1, 1):
+        with np.errstate(divide="ignore", invalid="ignore"):
+            x_inv = 1.0 / x
+        x_inv[~np.isfinite(x_inv)] = 1.0
+    # MWW
+    elif x.shape[1:] == (2, 2):
+        x_inv = _sym_mat_pow(x, -1, reduce_rank=reduce_rank)     
+    # MWW end
+    else:
+        #assert x.shape[1:] == (3, 3)
+        if inversion == "matrix":
+            x_inv = _sym_mat_pow(x, -1, reduce_rank=reduce_rank)
+            # Reapply source covariance after inversion
+            x_inv *= sk[:, :, np.newaxis]
+            x_inv *= sk[:, np.newaxis, :]
+            
+        else:
+            # Invert for each dipole separately using plain division
+            diags = np.diagonal(x, axis1=1, axis2=2)
+            assert not reduce_rank  # guaranteed earlier
+            with np.errstate(divide="ignore"):
+                diags = 1.0 / diags
+            # set the diagonal of each 3x3
+            x_inv = np.zeros_like(x)
+            for k in range(x.shape[0]):
+                this = diags[k]
+                # Reapply source covariance after inversion
+                this *= sk[k] * sk[k]
+                x_inv[k].flat[::4] = this
+    return x_inv
 
 def get_beamforming_filenames(subjects_dir, subject):
     """Get beamforming filenames.
@@ -98,6 +134,9 @@ def make_lcmv(
     reduce_rank=True,
     depth=None,
     inversion="matrix",
+    use_bilateral_pairs=None,
+    bilateral_tol=None,
+    bilateral_tol_midline=None,
     verbose=None,
     save_filters=False,
 ):
@@ -225,6 +264,9 @@ def make_lcmv(
         rank=rank,
         noise_rank=noise_rank,
         reduce_rank=reduce_rank,
+        use_bilateral_pairs=use_bilateral_pairs,
+        bilateral_tol=bilateral_tol,
+        bilateral_tol_midline=bilateral_tol_midline,
         verbose=verbose,
     )
 
@@ -238,7 +280,7 @@ def make_lcmv(
 
 
 def make_plots(subjects_dir, subject, filters, data):
-    """Plot LCMV beamforming filters.
+    """Plot LCMV beamforming info.
 
     Parameters
     ----------
@@ -262,6 +304,7 @@ def make_plots(subjects_dir, subject, filters, data):
     fig_cov, fig_svd = filters["data_cov"].plot(data.info, show=False, verbose=False)
     fig_cov.savefig(beamforming_files["filters_plot_cov"], dpi=150)
     fig_svd.savefig(beamforming_files["filters_plot_svd"], dpi=150)
+
     plt.close("all")
     return beamforming_files["filters_plot_cov"], beamforming_files["filters_plot_svd"]
 
@@ -346,7 +389,7 @@ def apply_lcmv_raw(raw, filters, reject_by_annotation="omit"):
     return next(stc)
 
 
-def get_recon_timeseries(subjects_dir, subject, coord_mni, recon_timeseries_head):
+def get_recon_timeseries(subjects_dir, subject, coord_mni, recon_timeseries_head, src_index=0):
     """Gets the reconstructed time series nearest to the passed coordinates in MNI space.
 
     Parameters
@@ -359,7 +402,8 @@ def get_recon_timeseries(subjects_dir, subject, coord_mni, recon_timeseries_head
         3D coordinate in MNI space to get timeseries for
     recon_timeseries_head : (ndipoles, ntpts) np.array
         Reconstructed time courses in head (polhemus) space. Assumes that the dipoles are the same (and in the same order) as those in the forward model, rhino_files['fwd_model'].
-
+    src_index : int
+        Index of source space in forward model to use.
     Returns
     -------
     recon_timeseries : numpy.ndarray
@@ -376,7 +420,7 @@ def get_recon_timeseries(subjects_dir, subject, coord_mni, recon_timeseries_head
 
     # Get hold of coords of points reconstructed to. Note, MNE forward model is done in head space in metres. RHINO does everything in mm
     fwd = read_forward_solution(rhino_files["fwd_model"])
-    vs = fwd["src"][0]
+    vs = fwd["src"][src_index]
     recon_coords_head = vs["rr"][vs["vertno"]] * 1000  # in mm
 
     # Convert coords_head from head to mri space to get index of reconstructed coordinate nearest to coord_mni
@@ -396,6 +440,7 @@ def transform_recon_timeseries(
     recon_timeseries,
     spatial_resolution=None,
     reference_brain="mni",
+    src_index=0,
 ):
     """Spatially resamples a (ndipoles x ntpts) array of reconstructed time courses (in head/polhemus space) to dipoles on the brain grid of the specified reference brain.
 
@@ -416,6 +461,8 @@ def transform_recon_timeseries(
         'mri' indicates that the reference_brain is the subject's sMRI in the scaled native/mri space.
         'unscaled_mri' indicates that the reference_brain is the subject's sMRI in unscaled native/mri space.
         Note that scaled/unscaled relates to the allow_smri_scaling option in coreg. If allow_scaling was False, then the unscaled MRI will be the same as the scaled MRI.
+    src_index : int
+        Index of source space in forward model to use.
 
     Returns
     -------
@@ -436,13 +483,13 @@ def transform_recon_timeseries(
     #
     # Note, MNE forward model is done in head space in metres. RHINO does everything in mm.
     fwd = read_forward_solution(rhino_files["fwd_model"])
-    vs = fwd["src"][0]
+    vs = fwd["src"][src_index]
     recon_coords_head = vs["rr"][vs["vertno"]] * 1000  # in mm
 
     # ----------------------------
     if spatial_resolution is None:
         # Estimate gridstep from forward model
-        rr = fwd["src"][0]["rr"]
+        rr = fwd["src"][src_index]["rr"]
 
         store = []
         for ii in range(rr.shape[0]):
@@ -668,6 +715,192 @@ def get_leadfields(
     return leadfields.T, coords
 
 
+def _find_bilateral_pairs(forward, bilateral_tol, bilateral_tol_midline=None, src_index=0):
+
+    """
+
+    Find pairs of bilateral dipoles in forward["src"][src_index]
+    
+    Parameters
+    ----------
+    forward : instance of :py:class:`mne.Forward`
+        The forward solution.
+    bilateral_tol : float
+        The distance threshold for finding pairs, in metres
+        Recommended to be a bit ~ gridstep / 2000
+    bilateral_tol_midline : float
+        The distance threshold for finding midline points, in metres
+        Recommended to be a bit ~ gridstep / 2000.
+        If None then bilateral_tol_midline = bilateral_tol.
+    src_index : int
+        The index of the source space to use in forward['src'].
+
+    Returns
+    -------
+    pairs : (numpairs, 2) numpy.ndarray
+        List of pairs of indices (wrt to forward.src) specifying bilateral dipoles.
+    singletons : (nsingletons,) numpy.ndarray
+        The single points that could not be paired.
+    midline_points : (nmidline,) numpy.ndarray
+        The points close to the midline.
+
+    """
+
+    # Assumes src['rr'] are in head space
+    # +X: Points towards the RPA.
+    # +Y: Points towards the nasion.
+    # +Z: Points upwards, orthogonal to the X and Y axes
+    # idendify pairs of matching points that are in opposite hemispheres (I.e. x values are the same magnitude, but one is positive , and the other is negative - within a tolerance)
+
+    if bilateral_tol is None or bilateral_tol <= 0:
+        raise ValueError("bilateral_tol must be a positive scalar.")
+
+    if bilateral_tol_midline is None:
+        bilateral_tol_midline = bilateral_tol
+
+    if forward["coord_frame"] != 4:
+        raise ValueError("Source space must be in head coordinates (coord_frame=4).")
+
+    src = forward["src"][src_index]
+
+    if src['type'] != 'vol':
+        raise ValueError("Source space must be of type 'vol'.")
+    
+    src_inuse = src['rr'][src['inuse']==1, :]
+
+    pairs = []
+    singletons = []
+
+    # find all src points that are close to the midline
+    midline_points = np.where(np.abs(src_inuse[:, 0]) < bilateral_tol_midline)[0]
+    non_midline_points = np.where(np.abs(src_inuse[:, 0]) >= bilateral_tol_midline)[0]
+    src_inuse_nomidline = src_inuse[non_midline_points, :]
+
+    # compute distances between all remaining points cross-hemisphere
+    # i.e. between points with positive x and points with negative x
+    left_points = np.where(src_inuse_nomidline[:, 0] < 0)[0]
+    right_points = np.where(src_inuse_nomidline[:, 0] >= 0)[0]
+    left_coords = src_inuse_nomidline[left_points, :]
+    right_coords = src_inuse_nomidline[right_points, :]
+    right_coords[:, 0] = -right_coords[:, 0]  # mirror right hemisphere points to left hemisphere
+
+    # compute distance matrix
+    dist_matrix = np.zeros((left_coords.shape[0], right_coords.shape[0]))
+    for ii in range(left_coords.shape[0]):
+        for jj in range(right_coords.shape[0]):
+            dist_matrix[ii, jj] = np.abs(left_coords[ii, :] - right_coords[jj, :]).mean()
+
+    # find best matching pairs using the distance matrix
+    while True:
+        min_dist = np.min(dist_matrix)
+        if min_dist > bilateral_tol:
+            break
+        min_idx = np.unravel_index(np.argmin(dist_matrix), dist_matrix.shape)
+        pairs.append((min_idx[0], min_idx[1]))
+        dist_matrix[min_idx[0], :] = np.inf
+        dist_matrix[:, min_idx[1]] = np.inf
+        #print(f"Found pair: {left_points[min_idx[0]]} <-> {right_points[min_idx[1]]} with distance {min_dist}") 
+        
+    # find singletons
+    used_left = np.zeros(left_coords.shape[0])
+    used_right = np.zeros(right_coords.shape[0])
+    for pp in pairs:
+        used_left[pp[0]] = 1
+        used_right[pp[1]] = 1
+
+    # midline points already in src_inuse indexing
+
+    # put singletons into src_inuse indexing
+    for ii in range(left_coords.shape[0]):
+        if used_left[ii] == 0:
+            singletons.append(non_midline_points[left_points[ii]])
+    for ii in range(right_coords.shape[0]):
+        if used_right[ii] == 0:
+            singletons.append(non_midline_points[right_points[ii]])
+
+    # put pairs into src_inuse indexing
+    new_pairs = []
+    for pp in pairs:
+        new_pairs.append((non_midline_points[left_points[pp[0]]], 
+                          non_midline_points[right_points[pp[1]]]))                  
+    pairs = new_pairs
+
+    # convert pairs to numpy array
+    pairs = np.array(pairs) 
+    singletons = np.array(singletons)
+    midline_points = np.array(midline_points)
+    
+    log_or_print(f"Found {len(pairs)} pairs and {len(singletons)} singletons and {len(midline_points)} midline points")
+    log_or_print(f"Total points used: {len(pairs)*2 + len(singletons) + len(midline_points)} out of {src_inuse.shape[0]}")
+
+    return pairs, singletons, midline_points
+
+def plot_dipole_locations(outdir, 
+                          subject, 
+                          use_bilateral_pairs, 
+                          bilateral_tol, 
+                          bilateral_tol_midline, 
+                          filename,
+                          src_index=0):
+
+    '''    
+    Parameters
+    ----------
+    outdir : string
+        Directory containing the subject directories.
+    subject : string
+        Subject name.
+    bilateral_tol : float
+        The distance threshold for finding pairs, in metres
+        Recommended to be a bit ~ gridstep / 2000
+    bilateral_tol_midline : float
+        The distance threshold for finding midline points, in metres
+        Recommended to be a bit ~ gridstep / 2000.
+        If None then bilateral_tol_midline = bilateral_tol.
+    filename : string
+        file to save plot to
+    src_index : int
+        The index of the source space to use in forward['src'].        
+    '''
+
+    rhino_files = rhino_utils.get_rhino_filenames(outdir, subject)
+
+    # load forward solution
+    fwd_fname = rhino_files["fwd_model"]
+    fwd = read_forward_solution(fwd_fname)
+
+    # forward, pairs, singletons, midline_points, filename, src_index
+    src = fwd["src"][src_index]
+    if src['type'] != 'vol':
+        return
+    
+    if use_bilateral_pairs:
+        log_or_print("Using bilateral pairs")
+        pairs, singletons, midline_points = _find_bilateral_pairs(fwd, 
+                                                                  bilateral_tol=bilateral_tol, 
+                                                                  bilateral_tol_midline=bilateral_tol_midline,
+                                                                  src_index=src_index)       
+        display_pairs = use_bilateral_pairs                   
+    else: 
+        display_pairs = False
+        pairs, singletons, midline_points = None, None, None
+
+    coreg.bem_display(
+        outdir,
+        subject,
+        plot_type="surf",
+        display_outskin_with_nose=True,
+        display_sensors=False,
+        display_pairs=display_pairs,
+        pairs=pairs,
+        singletons=singletons,
+        midline_points=midline_points,
+        filename=filename,
+        src_index=0,
+    )
+
+    return
+    
 @verbose
 def _make_lcmv(
     info,
@@ -683,6 +916,9 @@ def _make_lcmv(
     reduce_rank=False,
     depth=None,
     inversion="matrix",
+    use_bilateral_pairs=False,
+    bilateral_tol=None,
+    bilateral_tol_midline=None,
     verbose=None,
 ):
     """Compute LCMV spatial filter.
@@ -790,6 +1026,23 @@ def _make_lcmv(
 
     # Compute spatial filter
     n_orient = 3 if is_free_ori else 1
+ 
+    #### MWW 
+    if use_bilateral_pairs:
+        log_or_print("Using bilateral pairs")
+        log_or_print(f"bilateral_tol={bilateral_tol}")
+        pairs, singletons, midline_points = _find_bilateral_pairs(forward, 
+                                                                  bilateral_tol=bilateral_tol, 
+                                                                  bilateral_tol_midline=bilateral_tol_midline)
+
+        # combine singletons and midline points
+        all_singletons = np.concatenate([singletons, midline_points])
+    else:
+        all_singletons = None
+        pairs = None
+
+    #### end MWW
+
     W, max_power_ori = _compute_beamformer(
         G,
         Cm,
@@ -803,6 +1056,8 @@ def _make_lcmv(
         nn=nn,
         orient_std=orient_std,
         whitener=whitener,
+        pairs=pairs, #MWW
+        singletons=all_singletons, #MWW
     )
 
     # Get src type to store with filters for _make_stc
@@ -840,7 +1095,12 @@ def _make_lcmv(
     return filters
 
 
-def _compute_beamformer(G, Cm, reg, n_orient, weight_norm, pick_ori, reduce_rank, rank, inversion, nn, orient_std, whitener):
+def _compute_beamformer(G, Cm, reg, n_orient, 
+                        weight_norm, pick_ori, 
+                        reduce_rank, rank, inversion, 
+                        nn, orient_std, whitener,
+                        pairs=None, singletons=None):
+    
     """Compute a spatial beamformer filter (LCMV or DICS).
 
     For more detailed information on the parameters, see the docstrings of `make_lcmv` and `make_dics`.
@@ -873,6 +1133,8 @@ def _compute_beamformer(G, Cm, reg, n_orient, weight_norm, pick_ori, reduce_rank
         The std of the orientation prior used in weighting the lead fields.
     whitener : (n_channels, n_channels) numpy.ndarray
         The whitener.
+    pairs : 
+    singletons :
 
     Returns
     -------
@@ -907,6 +1169,7 @@ def _compute_beamformer(G, Cm, reg, n_orient, weight_norm, pick_ori, reduce_rank
     assert nn.shape == (n_sources, 3)
 
     mne_logger.info("Computing beamformer filters for %d source%s" % (n_sources, _pl(n_sources)))
+
     n_channels = G.shape[0]
 
     assert n_orient in (3, 1)
@@ -951,7 +1214,10 @@ def _compute_beamformer(G, Cm, reg, n_orient, weight_norm, pick_ori, reduce_rank
 
     def _compute_bf_terms(Gk, Cm_inv):
         bf_numer = np.matmul(Gk.swapaxes(-2, -1).conj(), Cm_inv)
-        bf_denom = np.matmul(bf_numer, Gk)
+
+        # bf_numer is (nsources x norients x nsensors)
+        # Gk is (nsources x nsensors x norients)
+        bf_denom = np.matmul(bf_numer, Gk) # (nsources x nsensors x norient)
         return bf_numer, bf_denom
 
     # ----------------------------------------------------------
@@ -1014,29 +1280,69 @@ def _compute_beamformer(G, Cm, reg, n_orient, weight_norm, pick_ori, reduce_rank
             Gk = Gk[..., 2:3]
             n_orient = 1
 
-    # ----------------------------------------------------------------------
-    # 3. Compute numerator and denominator of beamformer formula (unit-gain)
+    if pairs is not None:
+        # Gk is (n_sources, n_channels, n_orient)
+        Gk_pairs = np.zeros([len(pairs), n_channels, n_orient*2])
+        for pp, pair in enumerate(pairs):
+            Gk_pairs[pp, :, 0] = Gk[pair[0], :, 0]
+            Gk_pairs[pp, :, 1] = Gk[pair[1], :, 0]
+        
+        # 3. Compute numerator and denominator of beamformer formula (unit-gain)
 
-    bf_numer, bf_denom = _compute_bf_terms(Gk, Cm_inv)
+        bf_numer_pairs, bf_denom_pairs = _compute_bf_terms(Gk_pairs, Cm_inv)
+        del Gk_pairs
 
-    assert bf_denom.shape == (n_sources,) + (n_orient,) * 2
-    assert bf_numer.shape == (n_sources, n_orient, n_channels)
+        if singletons is not None:
+            Gk_singletons = Gk[singletons, :, :]            
+            bf_numer_singletons, bf_denom_singletons = _compute_bf_terms(Gk_singletons, Cm_inv)
+            del Gk_singletons
 
-    del Gk  # lead field has been adjusted and should not be used anymore
+        # 4. Invert the denominator
+        # W is W_ug, i.e.: G.T @ Cm_inv / (G.T @ Cm_inv @ G)
 
-    # ----------------------------------------------------------------------
-    # 4. Invert the denominator
+        bf_denom_pairs_inv = _sym_inv_sm(bf_denom_pairs, reduce_rank, inversion, sk)
+        W_pairs = np.matmul(bf_denom_pairs_inv, bf_numer_pairs)
 
-    # Here W is W_ug, i.e.: G.T @ Cm_inv / (G.T @ Cm_inv @ G)
-    bf_denom_inv = _sym_inv_sm(bf_denom, reduce_rank, inversion, sk)
+        if singletons is not None:
+            bf_denom_singletons_inv = _sym_inv_sm(bf_denom_singletons, reduce_rank, inversion, sk)
+            W_singletons = np.matmul(bf_denom_singletons_inv, bf_numer_singletons)
 
-    assert bf_denom_inv.shape == (n_sources, n_orient, n_orient)
+        
+        # build single W from W_pairs and W_singletons
+        W = np.zeros((n_sources, n_orient, n_channels))
+        for ppp, pair in enumerate(pairs):
+            W[pair[0], 0, :] = W_pairs[ppp, 0, :]
+            W[pair[1], 0, :] = W_pairs[ppp, 1, :]
 
-    W = np.matmul(bf_denom_inv, bf_numer)
+        if singletons is not None:
+            W[singletons, :, :] = W_singletons
+            
+        assert W.shape == (n_sources, n_orient, n_channels)
 
-    assert W.shape == (n_sources, n_orient, n_channels)
+    else:
+            
+        # ----------------------------------------------------------------------
+        # 3. Compute numerator and denominator of beamformer formula (unit-gain)
 
-    del bf_denom_inv, sk
+        bf_numer, bf_denom = _compute_bf_terms(Gk, Cm_inv)
+
+        assert bf_denom.shape == (n_sources,) + (n_orient,) * 2
+        assert bf_numer.shape == (n_sources, n_orient, n_channels)
+
+        del Gk  # lead field has been adjusted and should not be used anymore
+
+        # ----------------------------------------------------------------------
+        # 4. Invert the denominator
+
+        # Here W is W_ug, i.e.: G.T @ Cm_inv / (G.T @ Cm_inv @ G)
+        bf_denom_inv = _sym_inv_sm(bf_denom, reduce_rank, inversion, sk)
+
+        assert bf_denom_inv.shape == (n_sources, n_orient, n_orient)
+        W = np.matmul(bf_denom_inv, bf_numer)
+
+        assert W.shape == (n_sources, n_orient, n_channels)
+
+        del bf_denom_inv, sk
 
     # ----------------------------------------------------------------
     # 5. Re-scale filter weights according to the selected weight_norm

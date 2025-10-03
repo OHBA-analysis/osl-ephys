@@ -106,6 +106,10 @@ def gen_html_data(config, outdir, subject, reportdir, logger=None, extra_funcs=N
         data["plt_filters_svd"] = f"{subject}/filters_svd.png"
         copy("{}/{}".format(outdir, data["filters_svd_plot"]), "{}/{}/filters_svd.png".format(reportdir, subject))
 
+    if "dipole_locations_plot" in data:
+        data["plt_dipole_locations"] = f"{subject}/dipole_locations.png"
+        copy("{}/{}".format(outdir, data["dipole_locations_plot"]), "{}/{}/dipole_locations.png".format(reportdir, subject))
+
     if "parc_psd_plot" in data:
         data["plt_parc_psd"] = f"{subject}/parc_psd.png"
         copy("{}/{}".format(outdir, data["parc_psd_plot"]), "{}/{}/parc_psd.png".format(reportdir, subject))

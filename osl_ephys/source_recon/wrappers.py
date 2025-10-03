@@ -661,6 +661,9 @@ def beamform(
     weight_norm="nai",
     pick_ori="max-power-pre-weight-norm",
     reg=0,
+    use_bilateral_pairs=None,
+    bilateral_tol=None,
+    bilateral_tol_midline=None,
     reportdir=None,
 ):
     """Wrapper function for beamforming.
@@ -731,6 +734,9 @@ def beamform(
         pick_ori=pick_ori,
         rank=rank,
         save_filters=True,
+        use_bilateral_pairs=use_bilateral_pairs,
+        bilateral_tol=bilateral_tol,
+        bilateral_tol_midline=bilateral_tol_midline,
     )
 
     # Make plots
@@ -740,6 +746,14 @@ def beamform(
     filters_cov_plot = filters_cov_plot.replace(f"{outdir}/", "")
     filters_svd_plot = filters_svd_plot.replace(f"{outdir}/", "")
 
+    dipole_locations_plot = f"{subject}/dipole_locations_plot.png"
+    beamforming.plot_dipole_locations(outdir, 
+                                    subject, 
+                                    use_bilateral_pairs, 
+                                    bilateral_tol, 
+                                    bilateral_tol_midline, 
+                                    f"{outdir}/{dipole_locations_plot}")
+    
     if reportdir is not None:
         # Save info for the report
         src_report.add_to_data(
@@ -752,6 +766,7 @@ def beamform(
                 "freq_range": freq_range,
                 "filters_cov_plot": filters_cov_plot,
                 "filters_svd_plot": filters_svd_plot,
+                "dipole_locations_plot": dipole_locations_plot,
             },
         )
 
@@ -1115,13 +1130,13 @@ def parcellate(
     # Save plots
     parc_psd_plot = f"{subject}/parc/psd.png"
     parcellation.plot_psd(
-            parcel_data,
-            fs=data.info["sfreq"],
-            freq_range=freq_range,
-            parcellation_file=parcellation_file,
-            filename=f"{outdir}/{parc_psd_plot}",
-            freesurfer=surface_extraction_method=='freesurfer',
-        )
+        parcel_data,
+        fs=data.info["sfreq"],
+        freq_range=freq_range,
+        parcellation_file=parcellation_file,
+        filename=f"{outdir}/{parc_psd_plot}",
+        freesurfer=surface_extraction_method=='freesurfer',
+    )
     parc_corr_plot = f"{subject}/parc/corr.png"
     parcellation.plot_correlation(parcel_data, filename=f"{outdir}/{parc_corr_plot}")
 
@@ -1175,6 +1190,9 @@ def beamform_and_parcellate(
     reference_brain="mni",
     extra_chans="stim",
     neighbour_distance=None,
+    use_bilateral_pairs=None,
+    bilateral_tol=None,
+    bilateral_tol_midline=None,    
     reportdir=None,
 ):
     """Wrapper function for beamforming and parcellation.
@@ -1273,6 +1291,9 @@ def beamform_and_parcellate(
         pick_ori=pick_ori,
         rank=rank,
         save_filters=True,
+        use_bilateral_pairs=use_bilateral_pairs,
+        bilateral_tol=bilateral_tol,
+        bilateral_tol_midline=bilateral_tol_midline,        
     )
 
     # Make plots
@@ -1282,6 +1303,14 @@ def beamform_and_parcellate(
     filters_cov_plot = filters_cov_plot.replace(f"{outdir}/", "")
     filters_svd_plot = filters_svd_plot.replace(f"{outdir}/", "")
 
+    dipole_locations_plot = f"{subject}/dipole_locations_plot.png"
+    beamforming.plot_dipole_locations(outdir, 
+                                    subject, 
+                                    use_bilateral_pairs, 
+                                    bilateral_tol, 
+                                    bilateral_tol_midline, 
+                                    f"{outdir}/{dipole_locations_plot}")
+
     # Apply beamforming
     bf_data = beamforming.apply_lcmv(chantype_data, filters)
 
@@ -1289,6 +1318,7 @@ def beamform_and_parcellate(
         bf_data = np.transpose([bf.data for bf in bf_data], axes=[1, 2, 0])
     else:
         bf_data = bf_data.data
+
     bf_data_mni, _, coords_mni, _ = beamforming.transform_recon_timeseries(
         subjects_dir=outdir,
         subject=subject,
@@ -1374,6 +1404,7 @@ def beamform_and_parcellate(
                 "freq_range": freq_range,
                 "filters_cov_plot": filters_cov_plot,
                 "filters_svd_plot": filters_svd_plot,
+                "dipole_locations_plot": dipole_locations_plot,
                 "parcellation_file": parcellation_file,
                 "method": method,
                 "reference_brain": reference_brain,
