@@ -469,6 +469,7 @@ def coreg_display(
     display_inskull=False,    
     display_dipoles=False,
     display_pairs=False,
+    pairs_display_mode="lines",
     pairs=None,
     singletons=None,
     midline_points=None,
@@ -477,13 +478,13 @@ def coreg_display(
 ):
     """Display coregistration.
 
-    Displays the coregistered RHINO scalp surface and polhemus/sensor locations.
+    3D display of the coregistered RHINO surfaces, polhemus/sensor locations etc.
 
     Display is done in MEG (device) space (in mm).
 
     Purple dots are the polhemus derived fiducials (these only get used to initialse the coreg, if headshape points are being used).
 
-    Yellow diamonds are the MNI standard space derived fiducials (these are the ones that matter).
+    Yellow diamonds are the MNI standard space derived fiducials.
 
     Parameters
     ----------
@@ -830,7 +831,7 @@ def coreg_display(
             if display_dipoles:
 
                 if singleton_pnts is not None and len(singleton_pnts.T) > 0:
-                    color, scale, alpha = "blue", 0.0015, 0.75
+                    color, scale, alpha = "blue", 0.0015, 0.5
                     renderer.sphere(center=singleton_pnts, 
                                     color=color, 
                                     scale=scale * 1000, 
@@ -850,32 +851,39 @@ def coreg_display(
                     if pairs is not None and len(pairs) > 0:
                         for pp in pairs:
 
-                            color, scale, alpha = "yellow", 0.0015, 0.75
-                            renderer.sphere(center=np.array([[src_pnts[pp[0], 0], 
-                                                              src_pnts[pp[0], 1],
-                                                              src_pnts[pp[0], 2]],
-                                                              [src_pnts[pp[1], 0], 
-                                                              src_pnts[pp[1], 1],
-                                                              src_pnts[pp[1], 2]]
-                                                              ]), 
-                                            color=color, 
-                                            scale=scale * 1000, 
-                                            opacity=alpha, 
-                                            backface_culling=True)
+                            if pairs_display_mode == "points":
+                                # show a point for each dipole
+                                color, scale, alpha = "red", 0.001, 0.5
+                                renderer.sphere(center=np.array([[src_pnts[pp[0], 0], 
+                                                                src_pnts[pp[0], 1],
+                                                                src_pnts[pp[0], 2]],
+                                                                [src_pnts[pp[1], 0], 
+                                                                src_pnts[pp[1], 1],
+                                                                src_pnts[pp[1], 2]]
+                                                                ]), 
+                                                color=color, 
+                                                scale=scale * 1000, 
+                                                opacity=alpha, 
+                                                backface_culling=True)
+                                
+                            elif pairs_display_mode == "lines":
+                                # show a line connecting each pair
+                                color = "red"
+                                alpha = 0.3
+                                radius = 0.1
+                                renderer.tube(origin = np.array([[src_pnts[pp[0], 0], 
+                                                        src_pnts[pp[0], 1],
+                                                        src_pnts[pp[0], 2]]]), 
+                                                destination = np.array([[src_pnts[pp[1], 0], 
+                                                            src_pnts[pp[1], 1],
+                                                            src_pnts[pp[1], 2]]]),
+                                                radius=radius,
+                                                opacity=alpha,
+                                                color=color)
+                            else:
+                                ValueError(f'{pairs_display_mode} is an invalid pairs_display_mode')
+                                
 
-                            # show a line connecting pairs
-                            color = "red"
-                            alpha = 0.5
-                            radius = 0.25
-                            renderer.tube(origin = np.array([[src_pnts[pp[0], 0], 
-                                                    src_pnts[pp[0], 1],
-                                                    src_pnts[pp[0], 2]]]), 
-                                            destination = np.array([[src_pnts[pp[1], 0], 
-                                                        src_pnts[pp[1], 1],
-                                                        src_pnts[pp[1], 2]]]),
-                                            radius=radius,
-                                            opacity=alpha,
-                                            color=color)
 
             renderer.set_camera(azimuth=90, elevation=90, distance=600, focalpoint=(0.0, 0.0, 0.0))
 
