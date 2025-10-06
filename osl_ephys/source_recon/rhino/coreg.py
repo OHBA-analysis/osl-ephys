@@ -831,7 +831,7 @@ def coreg_display(
             if display_dipoles:
 
                 if singleton_pnts is not None and len(singleton_pnts.T) > 0:
-                    color, scale, alpha = "blue", 0.0015, 0.5
+                    color, scale, alpha = "blue", 0.0015, 0.6
                     renderer.sphere(center=singleton_pnts, 
                                     color=color, 
                                     scale=scale * 1000, 
@@ -853,7 +853,7 @@ def coreg_display(
 
                             if pairs_display_mode == "points":
                                 # show a point for each dipole
-                                color, scale, alpha = "red", 0.001, 0.5
+                                color, scale, alpha = "red", 0.001, 0.6
                                 renderer.sphere(center=np.array([[src_pnts[pp[0], 0], 
                                                                 src_pnts[pp[0], 1],
                                                                 src_pnts[pp[0], 2]],
@@ -869,8 +869,8 @@ def coreg_display(
                             elif pairs_display_mode == "lines":
                                 # show a line connecting each pair
                                 color = "red"
-                                alpha = 0.3
-                                radius = 0.1
+                                alpha = 0.4
+                                radius = 0.2
                                 renderer.tube(origin = np.array([[src_pnts[pp[0], 0], 
                                                         src_pnts[pp[0], 1],
                                                         src_pnts[pp[0], 2]]]), 
