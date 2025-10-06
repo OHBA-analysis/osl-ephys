@@ -885,12 +885,17 @@ def plot_dipole_locations(outdir,
         display_pairs = False
         pairs, singletons, midline_points = None, None, None
 
-    coreg.bem_display(
+    coreg.coreg_display(
         outdir,
         subject,
         plot_type="surf",
-        display_outskin_with_nose=True,
+        display_outskin=False,
         display_sensors=False,
+        display_inskull=True,
+        display_dipoles=True,
+        display_sensor_oris=False,
+        display_fiducials=False,
+        display_headshape_pnts=False,        
         display_pairs=display_pairs,
         pairs=pairs,
         singletons=singletons,

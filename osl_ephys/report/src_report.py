@@ -107,8 +107,8 @@ def gen_html_data(config, outdir, subject, reportdir, logger=None, extra_funcs=N
         copy("{}/{}".format(outdir, data["filters_svd_plot"]), "{}/{}/filters_svd.png".format(reportdir, subject))
 
     if "dipole_locations_plot" in data:
-        data["plt_dipole_locations"] = f"{subject}/dipole_locations.png"
-        copy("{}/{}".format(outdir, data["dipole_locations_plot"]), "{}/{}/dipole_locations.png".format(reportdir, subject))
+        data["plt_dipole_locations"] = f"{subject}/dipole_locations.html" # this might not have been rendered yet (if using dask), so potentially need to copy it over later
+        copy("{}/{}".format(outdir, data["dipole_locations_plot"]), "{}/{}/dipole_locations.html".format(reportdir, subject))
 
     if "parc_psd_plot" in data:
         data["plt_parc_psd"] = f"{subject}/parc_psd.png"
@@ -161,6 +161,7 @@ def gen_html_page(reportdir):
     # Load HTML data
     data = []
     for subdir in subdirs:
+        
         subdir = Path(subdir)
         # Just generate the html page with the successful runs
         try:
@@ -468,6 +469,7 @@ def add_to_data(data_file, info):
         Info to add.
     """
     data_file = Path(data_file)
+
     if data_file.exists():
         data = pickle.load(open(data_file, "rb"))
     else:

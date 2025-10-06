@@ -718,7 +718,7 @@ def beamform(
         )
 
     # Pick channels
-    data.pick(chantypes)
+    chantype_data = data.copy().pick(chantypes)
 
     # Create beamforming filters
     log_or_print("beamforming.make_lcmv")
@@ -727,7 +727,7 @@ def beamform(
     filters = beamforming.make_lcmv(
         subjects_dir=outdir,
         subject=subject,
-        data=data,
+        data=chantype_data,
         chantypes=chantypes,
         reg=reg,
         weight_norm=weight_norm,
@@ -741,12 +741,12 @@ def beamform(
 
     # Make plots
     filters_cov_plot, filters_svd_plot = beamforming.make_plots(
-        outdir, subject, filters, data
+        outdir, subject, filters, chantype_data
     )
     filters_cov_plot = filters_cov_plot.replace(f"{outdir}/", "")
     filters_svd_plot = filters_svd_plot.replace(f"{outdir}/", "")
 
-    dipole_locations_plot = f"{subject}/dipole_locations_plot.png"
+    dipole_locations_plot = f"{subject}/dipole_locations_plot.html"
     beamforming.plot_dipole_locations(outdir, 
                                     subject, 
                                     use_bilateral_pairs, 
@@ -1284,7 +1284,7 @@ def beamform_and_parcellate(
     filters = beamforming.make_lcmv(
         subjects_dir=outdir,
         subject=subject,
-        data=data,
+        data=chantype_data,
         chantypes=chantypes,
         reg=reg,
         weight_norm=weight_norm,
@@ -1303,7 +1303,7 @@ def beamform_and_parcellate(
     filters_cov_plot = filters_cov_plot.replace(f"{outdir}/", "")
     filters_svd_plot = filters_svd_plot.replace(f"{outdir}/", "")
 
-    dipole_locations_plot = f"{subject}/dipole_locations_plot.png"
+    dipole_locations_plot = f"{subject}/dipole_locations_plot.html"
     beamforming.plot_dipole_locations(outdir, 
                                     subject, 
                                     use_bilateral_pairs, 

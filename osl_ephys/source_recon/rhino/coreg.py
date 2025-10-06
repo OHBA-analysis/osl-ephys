@@ -15,7 +15,7 @@ import numpy as np
 import nibabel as nib
 import matplotlib.pyplot as plt
 
-from mne import read_epochs, read_forward_solution
+from mne import read_epochs
 from mne.viz._3d import _sensor_shape
 from mne.viz.backends.renderer import _get_renderer
 from mne.transforms import write_trans, read_trans, apply_trans, _get_trans, combine_transforms, Transform, rotation, invert_transform
@@ -461,12 +461,19 @@ def coreg_display(
     subject,
     plot_type="surf",
     display_outskin=True,
-    display_outskin_with_nose=True,
+    display_outskin_with_nose=False,
     display_sensors=True,
     display_sensor_oris=True,
     display_fiducials=True,
     display_headshape_pnts=True,
+    display_inskull=False,    
+    display_dipoles=False,
+    display_pairs=False,
+    pairs=None,
+    singletons=None,
+    midline_points=None,
     filename=None,
+    src_index=0,    
 ):
     """Display coregistration.
 
@@ -499,7 +506,7 @@ def coreg_display(
     display_fiducials - bool
         Whether to include fiducials in the display.
     display_headshape_pnts - bool
-        Whether to include headshape points in the display.
+        Whether to include headshape points in the display.    
     filename : str
         Filename to save display to (as an interactive html).
         Must have extension .html.
@@ -519,6 +526,8 @@ def coreg_display(
     bet_outskin_mesh_vtk_file = coreg_filenames["bet_outskin_mesh_vtk_file"]
     bet_outskin_surf_file = coreg_filenames["bet_outskin_surf_file"]
     bet_outskin_plus_nose_surf_file = coreg_filenames["bet_outskin_plus_nose_surf_file"]
+    bet_inskull_mesh_file = coreg_filenames["bet_inskull_mesh_file"]
+    bet_inskull_surf_file = coreg_filenames["bet_inskull_surf_file"]
 
     head_scaledmri_t_file = coreg_filenames["head_scaledmri_t_file"]
     mrivoxel_scaledmri_t_file = coreg_filenames["mrivoxel_scaledmri_t_file"]
@@ -539,6 +548,18 @@ def coreg_display(
         outskin_mesh_file = bet_outskin_mesh_file
         outskin_mesh_4surf_file = bet_outskin_mesh_vtk_file
         outskin_surf_file = bet_outskin_surf_file
+
+    if display_dipoles:
+        rhino_files = rhino_utils.get_rhino_filenames(subjects_dir, subject)
+
+        fwd_fname = rhino_files["fwd_model"]
+        if Path(fwd_fname).exists():
+            forward = rhino_utils.read_forward_solution(fwd_fname)
+            src = forward["src"]
+        else:
+            log_or_print("No forward model computed. Not displaying dipoles.")
+            src = None
+            display_dipoles = False
 
     # ------------
     # Setup xforms
@@ -669,6 +690,28 @@ def coreg_display(
         meg_sensor_locs = meg_sensor_locs * 1000
         meg_sensor_oris = meg_sensor_oris * 1000
 
+    # ----------------------------
+    # Setup vol source grid points
+
+    if display_dipoles:
+        # stored points are in metres, convert to mm
+        src_pnts = src[src_index]['rr'][src[src_index]['inuse']==1, :] * 1000
+
+        # Move from head space to MEG (device) space
+        src_pnts = rhino_utils.xform_points(head_trans["trans"], src_pnts.T).T
+
+        log_or_print("BEM surface: number of dipoles = {}".format(src_pnts.shape[0]))
+
+        if display_pairs:
+            if midline_points is not None:
+                midline_pnts = src_pnts[midline_points, :]
+            if singletons is not None:
+                singleton_pnts = src_pnts[singletons, :]
+        else:
+            singleton_pnts = src_pnts
+            midline_pnts = None
+            pairs = None
+
     # --------
     # Do plots
     with warnings.catch_warnings():
@@ -771,6 +814,69 @@ def coreg_display(
 
                 renderer.surface(surface=surf_smri, color=(0, 0.7, 0.7), opacity=0.4, backface_culling=False)
 
+            if display_inskull:
+                # Inner skull surface
+                # Load in surface, this is in mm
+                coords_native, faces = nib.freesurfer.read_geometry(bet_inskull_surf_file)
+
+                # Move to MEG (device) space
+                coords_meg = rhino_utils.xform_points(mri_trans["trans"], coords_native.T).T
+
+                surf_smri = dict(rr=coords_meg, tris=faces)
+
+                renderer.surface(surface=surf_smri, color=(0.25, 0.25, 0.25), opacity=0.1, backface_culling=False)
+
+            # dipole (vol source) grid points
+            if display_dipoles:
+
+                if singleton_pnts is not None and len(singleton_pnts.T) > 0:
+                    color, scale, alpha = "blue", 0.0015, 0.75
+                    renderer.sphere(center=singleton_pnts, 
+                                    color=color, 
+                                    scale=scale * 1000, 
+                                    opacity=alpha, 
+                                    backface_culling=True)
+
+                if display_pairs:
+
+                    if midline_pnts is not None and len(midline_pnts.T) > 0:
+                        color, scale, alpha = "green", 0.0025, 1
+                        renderer.sphere(center=midline_pnts, 
+                                        color=color, 
+                                        scale=scale * 1000, 
+                                        opacity=alpha, 
+                                        backface_culling=True)
+
+                    if pairs is not None and len(pairs) > 0:
+                        for pp in pairs:
+
+                            color, scale, alpha = "yellow", 0.0015, 0.75
+                            renderer.sphere(center=np.array([[src_pnts[pp[0], 0], 
+                                                              src_pnts[pp[0], 1],
+                                                              src_pnts[pp[0], 2]],
+                                                              [src_pnts[pp[1], 0], 
+                                                              src_pnts[pp[1], 1],
+                                                              src_pnts[pp[1], 2]]
+                                                              ]), 
+                                            color=color, 
+                                            scale=scale * 1000, 
+                                            opacity=alpha, 
+                                            backface_culling=True)
+
+                            # show a line connecting pairs
+                            color = "red"
+                            alpha = 0.5
+                            radius = 0.25
+                            renderer.tube(origin = np.array([[src_pnts[pp[0], 0], 
+                                                    src_pnts[pp[0], 1],
+                                                    src_pnts[pp[0], 2]]]), 
+                                            destination = np.array([[src_pnts[pp[1], 0], 
+                                                        src_pnts[pp[1], 1],
+                                                        src_pnts[pp[1], 2]]]),
+                                            radius=radius,
+                                            opacity=alpha,
+                                            color=color)
+
             renderer.set_camera(azimuth=90, elevation=90, distance=600, focalpoint=(0.0, 0.0, 0.0))
 
             # Save or show
@@ -782,15 +888,31 @@ def coreg_display(
             # -------------------
             # Setup scalp surface
 
-            # Load in scalp surface
-            # And turn the nvoxx x nvoxy x nvoxz volume into a 3 x npoints point cloud
-            smri_headshape_nativeindex = rhino_utils.niimask2indexpointcloud(outskin_mesh_file)
+            if display_outskin:
+                # Load in scalp surface
+                # And turn the nvoxx x nvoxy x nvoxz volume into a 3 x npoints point cloud
+                smri_headshape_nativeindex = rhino_utils.niimask2indexpointcloud(outskin_mesh_file)
 
-            # Move from native voxel indices to native space coordinates (in mm)
-            smri_headshape_native = rhino_utils.xform_points(mrivoxel_scaledmri_t["trans"], smri_headshape_nativeindex)
+                # Move from native voxel indices to native space coordinates (in mm)
+                smri_headshape_native = rhino_utils.xform_points(mrivoxel_scaledmri_t["trans"], smri_headshape_nativeindex)
 
-            # Move to MEG (device) space
-            smri_headshape_meg = rhino_utils.xform_points(mri_trans["trans"], smri_headshape_native)
+                # Move to MEG (device) space
+                smri_headshape_meg = rhino_utils.xform_points(mri_trans["trans"], smri_headshape_native)
+
+            # -------------------------
+            # Setup inner skull surface
+
+            if display_inskull:
+                # Load in inner skull surface and turn the nvoxx x nvoxy x nvoxz volume into a 3 x npoints point cloud
+                inner_skull_nativeindex = rhino_utils.niimask2indexpointcloud(bet_inskull_mesh_file)
+
+                # Move from native voxel indices to native space coordinates (in mm)
+                inner_skull_native = rhino_utils.xform_points(mrivoxel_scaledmri_t["trans"], inner_skull_nativeindex)
+
+                # Move to MEG (device) space
+                inner_skull_meg = rhino_utils.xform_points(mri_trans["trans"], inner_skull_native)
+
+            # -------------------
 
             plt.figure()
             ax = plt.axes(projection="3d")
@@ -820,6 +942,12 @@ def coreg_display(
                     smri_headshape_megt = smri_headshape_meg
                     ax.scatter(smri_headshape_megt[0, 0:-1:10], smri_headshape_megt[1, 0:-1:10], smri_headshape_megt[2, 0:-1:10], color=color, marker=marker, s=scale, alpha=alpha)
 
+            if display_inskull:
+                # Inner skull
+                inner_skull_megt = inner_skull_meg
+                color, scale, alpha, marker = (0.5, 0.5, 0.5), 6, 0.1, "."
+                ax.scatter(inner_skull_megt[0, 0:-1:20], inner_skull_megt[1, 0:-1:20], inner_skull_megt[2, 0:-1:20], color=color, marker=marker, s=scale, alpha=alpha)
+
             if display_headshape_pnts:
                 color, scale, alpha, marker = "red", 8, 0.7, "o"
                 if polhemus_headshape_meg is not None and len(polhemus_headshape_meg) > 0:
@@ -846,6 +974,43 @@ def coreg_display(
                 else:
                     log_or_print("There are no polhemus derived fiducials to plot")
 
+            if display_dipoles:
+
+                if singleton_pnts is not None and len(singleton_pnts.T) > 0:
+                    color, scale, alpha, marker = "blue", 1, 0.5, "."
+                    singleton_pntst = singleton_pnts.T
+                    ax.scatter(
+                        singleton_pntst[0, :],
+                        singleton_pntst[1, :],
+                        singleton_pntst[2, :],
+                        color=color,
+                        marker=marker,
+                        s=scale,
+                        alpha=alpha,
+                    )
+
+                if display_pairs:
+
+                    if midline_pnts is not None and len(midline_pnts.T) > 0:
+                        color, scale, alpha, marker = "green", 1, 0.5, "."
+                        midline_pntst = midline_pnts.T
+                        ax.scatter(
+                            midline_pntst[0, :],
+                            midline_pntst[1, :],
+                            midline_pntst[2, :],
+                            color=color,
+                            marker=marker,
+                            s=scale,
+                            alpha=alpha,
+                        )
+
+                    if pairs is not None and len(pairs) > 0:
+                        color = "red"
+                        for pp in pairs:
+                            ax.plot([src_pnts[pp[0], 0], src_pnts[pp[1], 0]], 
+                                        [src_pnts[pp[0], 1], src_pnts[pp[1], 1]], 
+                                        [src_pnts[pp[0], 2], src_pnts[pp[1], 2]], c=color)
+
             if filename is None:
                 plt.show()
             else:
@@ -855,317 +1020,51 @@ def coreg_display(
         else:
             raise ValueError("invalid plot_type.")
 
-
 def bem_display(
     subjects_dir,
     subject,
     plot_type="surf",
-    display_outskin_with_nose=True,
+    display_outskin=True,
+    display_outskin_with_nose=False,
     display_sensors=False,
-    display_pairs=True,
+    display_sensor_oris=False,
+    display_fiducials=False,
+    display_headshape_pnts=False,    
+    display_inskull=True,    
+    display_dipoles=True,
+    display_pairs=False,
     pairs=None,
     singletons=None,
     midline_points=None,
     filename=None,
-    src_index=0,
+    src_index=0,    
 ):
-    """Displays the coregistered RHINO scalp surface and inner skull surface.
+    '''
+    3D display of the Boundary Element Model, including
+    source/dipole locations.
 
-    Display is done in MEG (device) space (in mm).
+    bem_display calls coreg_display, but has different defaults for the inputs.
 
-    Parameters
-    ----------
-    subjects_dir : string
-        Directory to find RHINO subject dirs in.
-    subject : string
-        Subject name dir to find RHINO files in.
-    plot_type : string
-        Either:
-            'surf' to do a 3D surface plot using surface meshes.
-            'scatter' to do a scatter plot using just point clouds.
-    display_outskin_with_nose : bool
-        Whether to include nose with scalp surface in the display.
-    display_sensors : bool
-        Whether to include sensor locations in the display.
-    filename : str
-        Filename to save display to (as an interactive html). Must have extension .html.
-    src_index : int
-        Index for source model to use
-    """
+    See coreg_display help for more.
+    '''
 
-    # Note the jargon used varies for xforms and coord spaces:
-    # MEG (device) -- dev_head_t --> HEAD (polhemus)
-    # HEAD (polhemus)-- head_mri_t (polhemus2native) --> MRI (native)
-    # MRI (native) -- mri_mrivoxel_t (native2nativeindex) --> MRI (native) voxel indices
-    #
-    # RHINO does everthing in mm
-
-    rhino_files = rhino_utils.get_rhino_filenames(subjects_dir, subject)
-    filenames = rhino_files["coreg"]
-
-    bet_outskin_plus_nose_mesh_file = filenames["bet_outskin_plus_nose_mesh_file"]
-    bet_outskin_plus_nose_surf_file = filenames["bet_outskin_plus_nose_surf_file"]
-    bet_outskin_mesh_file = filenames["bet_outskin_mesh_file"]
-    bet_outskin_mesh_vtk_file = filenames["bet_outskin_mesh_vtk_file"]
-    bet_outskin_surf_file = filenames["bet_outskin_surf_file"]
-    bet_inskull_mesh_file = filenames["bet_inskull_mesh_file"]
-    bet_inskull_surf_file = filenames["bet_inskull_surf_file"]
-
-    head_scaledmri_t_file = filenames["head_scaledmri_t_file"]
-    mrivoxel_scaledmri_t_file = filenames["mrivoxel_scaledmri_t_file"]
-
-    info_fif_file = filenames["info_fif_file"]
-
-    if display_outskin_with_nose:
-        outskin_mesh_file = bet_outskin_plus_nose_mesh_file
-        outskin_mesh_4surf_file = bet_outskin_plus_nose_mesh_file
-        outskin_surf_file = bet_outskin_plus_nose_surf_file
-    else:
-        outskin_mesh_file = bet_outskin_mesh_file
-        outskin_mesh_4surf_file = bet_outskin_mesh_vtk_file
-        outskin_surf_file = bet_outskin_surf_file
-
-    fwd_fname = rhino_files["fwd_model"]
-    if Path(fwd_fname).exists():
-        forward = read_forward_solution(fwd_fname)
-        src = forward["src"]
-    else:
-        src = None
-
-    # ------------
-    # Setup xforms
-
-    info = read_info(info_fif_file)
-
-    mrivoxel_scaledmri_t = read_trans(mrivoxel_scaledmri_t_file)
-
-    # get meg to head xform in metres from info
-    head_scaledmri_t = read_trans(head_scaledmri_t_file)
-    dev_head_t, _ = _get_trans(info["dev_head_t"], "meg", "head")
-
-    # Change xform from metres to mm.
-    # Note that MNE xform in fif.info assume metres, whereas we want it
-    # in mm. To change units on an xform, just need to change the translation
-    # part and leave the rotation alone
-    dev_head_t["trans"][0:3, -1] = dev_head_t["trans"][0:3, -1] * 1000
-
-    # We are going to display everything in MEG (device) coord frame in mm
-    meg_trans = Transform("meg", "meg")
-    mri_trans = invert_transform(combine_transforms(dev_head_t, head_scaledmri_t, "meg", "mri"))
-    head_trans = invert_transform(dev_head_t)
-
-    # -----------------
-    # Setup MEG sensors
-
-    if display_sensors:
-        meg_picks = pick_types(info, meg=True, ref_meg=False, exclude=())
-
-        coil_transs = [_loc_to_coil_trans(info["chs"][pick]["loc"]) for pick in meg_picks]
-        coils = _create_meg_coils([info["chs"][pick] for pick in meg_picks], acc="normal")
-
-        meg_rrs, meg_tris = list(), list()
-        offset = 0
-        for coil, coil_trans in zip(coils, coil_transs):
-            rrs, tris = _sensor_shape(coil)
-            rrs = apply_trans(coil_trans, rrs)
-            meg_rrs.append(rrs)
-            meg_tris.append(tris + offset)
-            offset += len(meg_rrs[-1])
-        if len(meg_rrs) == 0:
-            log_or_print("MEG sensors not found. Cannot plot MEG locations.")
-        else:
-            meg_rrs = apply_trans(meg_trans, np.concatenate(meg_rrs, axis=0))
-            meg_tris = np.concatenate(meg_tris, axis=0)
-
-        # convert to mm
-        meg_rrs = meg_rrs * 1000
-
-    # ----------------------------
-    # Setup vol source grid points
-
-    if src is not None:
-        # stored points are in metres, convert to mm
-        # src_pnts = src[0]["rr"][src[0]["vertno"], :] * 1000
-        src_pnts = src[src_index]['rr'][src[src_index]['inuse']==1, :] * 1000
-
-        # Move from head space to MEG (device) space
-        src_pnts = rhino_utils.xform_points(head_trans["trans"], src_pnts.T).T
-
-        log_or_print("BEM surface: number of dipoles = {}".format(src_pnts.shape[0]))
-
-        if display_pairs:
-            if midline_points is not None:
-                midline_pnts = src_pnts[midline_points, :]
-            if singletons is not None:
-                singleton_pnts = src_pnts[singletons, :]
-        else:
-            singleton_pnts = src_pnts
-            midline_pnts = None
-            pairs = None
-
-    # --------
-    # Do plots
-
-    if plot_type == "surf":
-        # Initialize figure
-        renderer = _get_renderer(None, bgcolor=(0.5, 0.5, 0.5), size=(500, 500))
-
-        # Sensors
-        if display_sensors:
-            if len(meg_rrs) > 0:
-                color, alpha = (0.0, 0.25, 0.5), 0.2
-                surf = dict(rr=meg_rrs, tris=meg_tris)
-                renderer.surface(surface=surf, color=color, opacity=alpha, backface_culling=True)
-
-        # sMRI-derived scalp surface
-        rhino_utils.create_freesurfer_mesh_from_bet_surface(
-            infile=outskin_mesh_4surf_file,
-            surf_outfile=outskin_surf_file,
-            nii_mesh_file=outskin_mesh_file,
-            xform_mri_voxel2mri=mrivoxel_scaledmri_t["trans"],
-        )
-
-        coords_native, faces = nib.freesurfer.read_geometry(outskin_surf_file)
-
-        # Move to MEG (device) space
-        coords_meg = rhino_utils.xform_points(mri_trans["trans"], coords_native.T).T
-
-        surf_smri = dict(rr=coords_meg, tris=faces)
-
-        # plot surface
-        renderer.surface(surface=surf_smri, color=(0.85, 0.85, 0.85), opacity=0.3, backface_culling=False)
-
-        # Inner skull surface
-        # Load in surface, this is in mm
-        coords_native, faces = nib.freesurfer.read_geometry(bet_inskull_surf_file)
-
-        # Move to MEG (device) space
-        coords_meg = rhino_utils.xform_points(mri_trans["trans"], coords_native.T).T
-
-        surf_smri = dict(rr=coords_meg, tris=faces)
-
-        # Plot surface
-        renderer.surface(surface=surf_smri, color=(0.25, 0.25, 0.25), opacity=0.25, backface_culling=False)
-
-        # vol source grid points
-        if src is not None and singleton_pnts is not None and len(singleton_pnts.T) > 0:
-            color, scale, alpha = (0, 0, 1), 0.001, 1
-            renderer.sphere(center=singleton_pnts, color=color, scale=scale * 1000, opacity=alpha, backface_culling=True)
-
-        if display_pairs and src is not None:
-
-            if midline_pnts is not None and len(midline_pnts.T) > 0:
-                color, scale, alpha = (0, 1, 0), 0.001, 1
-                renderer.sphere(center=midline_pnts, 
-                                color=color, scale=scale * 1000, opacity=alpha, backface_culling=True)
-
-            if pairs is not None and len(pairs) > 0:
-                for pp in pairs:
-                    color = (1, 0, 0)
-                    alpha = 1
-                    renderer.tube(origin = [src_pnts[pp[0], 0], 
-                                              src_pnts[pp[0], 1],
-                                              src_pnts[pp[0], 2]], 
-                                    destination = [src_pnts[pp[1], 0], 
-                                                   src_pnts[pp[1], 1],
-                                                   src_pnts[pp[1], 2]],
-                                    radius=0.001,
-                                    opacity=alpha,
-                                    color=color)
-                    
-        renderer.set_camera(azimuth=90, elevation=90, distance=600, focalpoint=(0.0, 0.0, 0.0))
-
-        # Save or show
-        rhino_utils.save_or_show_renderer(renderer, filename)
-
-    # --------------------------
-    elif plot_type == "scatter":
-
-        # -------------------
-        # Setup scalp surface
-
-        # Load in scalp surface and turn the nvoxx x nvoxy x nvoxz volume into a 3 x npoints point cloud
-        smri_headshape_nativeindex = rhino_utils.niimask2indexpointcloud(outskin_mesh_file)
-
-        # Move from native voxel indices to native space coordinates (in mm)
-        smri_headshape_native = rhino_utils.xform_points(mrivoxel_scaledmri_t["trans"], smri_headshape_nativeindex)
-
-        # Move to MEG (device) space
-        smri_headshape_meg = rhino_utils.xform_points(mri_trans["trans"], smri_headshape_native)
-
-        # -------------------------
-        # Setup inner skull surface
-
-        # Load in inner skull surface and turn the nvoxx x nvoxy x nvoxz volume into a 3 x npoints point cloud
-        inner_skull_nativeindex = rhino_utils.niimask2indexpointcloud(bet_inskull_mesh_file)
-
-        # Move from native voxel indices to native space coordinates (in mm)
-        inner_skull_native = rhino_utils.xform_points(mrivoxel_scaledmri_t["trans"], inner_skull_nativeindex)
-
-        # Move to MEG (device) space
-        inner_skull_meg = rhino_utils.xform_points(mri_trans["trans"], inner_skull_native)
-
-        ax = plt.axes(projection="3d")
-
-        # Sensors
-        if display_sensors:
-            color, scale, alpha, marker = (0.0, 0.25, 0.5), 2, 0.2, "."
-            if len(meg_rrs) > 0:
-                meg_rrst = meg_rrs.T  # do plot in mm
-                ax.scatter(meg_rrst[0, :], meg_rrst[1, :], meg_rrst[2, :], color=color, marker=marker, s=scale, alpha=alpha)
-
-        # Scalp
-        color, scale, alpha, marker = (0.75, 0.75, 0.75), 6, 0.2, "."
-        if len(smri_headshape_meg) > 0:
-            smri_headshape_megt = smri_headshape_meg
-            ax.scatter(smri_headshape_megt[0, 0:-1:20], smri_headshape_megt[1, 0:-1:20], smri_headshape_megt[2, 0:-1:20], color=color, marker=marker, s=scale, alpha=alpha)
-
-        # Inner skull
-        inner_skull_megt = inner_skull_meg
-        color, scale, alpha, marker = (0.5, 0.5, 0.5), 6, 0.2, "."
-        ax.scatter(inner_skull_megt[0, 0:-1:20], inner_skull_megt[1, 0:-1:20], inner_skull_megt[2, 0:-1:20], color=color, marker=marker, s=scale, alpha=alpha)
-
-        # vol source grid points
-        if src is not None and singleton_pnts is not None and len(singleton_pnts.T) > 0:
-            color, scale, alpha, marker = (0, 0, 1), 1, 0.5, "."
-            singleton_pntst = singleton_pnts.T
-            ax.scatter(
-                singleton_pntst[0, :],
-                singleton_pntst[1, :],
-                singleton_pntst[2, :],
-                color=color,
-                marker=marker,
-                s=scale,
-                alpha=alpha,
-            )
-
-        if display_pairs and src is not None:
-
-            if midline_pnts is not None and len(midline_pnts.T) > 0:
-                color, scale, alpha, marker = (0, 1, 0), 1, 0.5, "."
-                midline_pntst = midline_pnts.T
-                ax.scatter(
-                    midline_pntst[0, :],
-                    midline_pntst[1, :],
-                    midline_pntst[2, :],
-                    color=color,
-                    marker=marker,
-                    s=scale,
-                    alpha=alpha,
-                )
-
-            if pairs is not None and len(pairs) > 0:
-                color = (1, 0, 0)
-                for pp in pairs:
-                    ax.plot([src_pnts[pp[0], 0], src_pnts[pp[1], 0]], 
-                                [src_pnts[pp[0], 1], src_pnts[pp[1], 1]], 
-                                [src_pnts[pp[0], 2], src_pnts[pp[1], 2]], c=color)
-
-        if filename is None:
-            plt.show()
-        else:
-            log_or_print(f"saving {filename}")
-            plt.savefig(filename)
-            plt.close()
-    else:
-        raise ValueError("invalid plot_type")
+    coreg_display(    
+        subjects_dir,
+        subject,
+        plot_type=plot_type,
+        display_outskin=display_outskin,
+        display_outskin_with_nose=display_outskin_with_nose,
+        display_sensors=display_sensors,
+        display_sensor_oris=display_sensor_oris,
+        display_fiducials=display_fiducials,
+        display_headshape_pnts=display_headshape_pnts,          
+        display_inskull=display_inskull,    
+        display_dipoles=display_dipoles,
+        display_pairs=display_pairs,
+        pairs=pairs,
+        singletons=singletons,
+        midline_points=midline_points,
+        filename=filename,
+        src_index=src_index,
+    )
+    
