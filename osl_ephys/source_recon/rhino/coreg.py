@@ -15,7 +15,7 @@ import numpy as np
 import nibabel as nib
 import matplotlib.pyplot as plt
 
-from mne import read_epochs
+from mne import read_epochs, read_forward_solution
 from mne.viz._3d import _sensor_shape
 from mne.viz.backends.renderer import _get_renderer
 from mne.transforms import write_trans, read_trans, apply_trans, _get_trans, combine_transforms, Transform, rotation, invert_transform
@@ -554,7 +554,7 @@ def coreg_display(
 
         fwd_fname = rhino_files["fwd_model"]
         if Path(fwd_fname).exists():
-            forward = rhino_utils.read_forward_solution(fwd_fname)
+            forward = read_forward_solution(fwd_fname)
             src = forward["src"]
         else:
             log_or_print("No forward model computed. Not displaying dipoles.")
