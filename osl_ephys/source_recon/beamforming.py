@@ -192,6 +192,17 @@ def make_lcmv(
         How to weight (or normalize) the forward using a depth prior (see MNE docs).
     inversion : 'matrix' | 'single'
         The inversion scheme to compute the weights.
+    use_bilateral_pairs : bool
+        If True, find bilateral pairs of dipoles and use a bilateral beamformer.
+    bilateral_tol : float
+        The distance threshold for finding pairs, in mm.
+        Only used if use_bilateral_pairs is True.
+        Recommended to be ~ gridstep / 2
+    bilateral_tol_midline : float
+        The minimum distance in mm from the midline for a dipole to be
+        considered for bilateral pairing. Only used if use_bilateral_pairs
+        is True. Recommended value is ~gridstep / 2  mm.
+        If None then set to bilateral_tol.
     save_filters : bool
         Should we save the LCMV beamforming filter?
 
@@ -883,6 +894,8 @@ def plot_dipole_locations(outdir,
         Directory containing the subject directories.
     subject : string
         Subject name.
+    use_bilateral_pairs : bool
+        If True, display bilateral pairs of dipoles.
     bilateral_tol : float
         The distance threshold for finding pairs, in mm
         Recommended to be ~ gridstep / 2
@@ -1059,7 +1072,7 @@ def _make_lcmv(
     #### MWW 
     if use_bilateral_pairs:
         log_or_print("Using bilateral pairs")
-        log_or_print(f"bilateral_tol={bilateral_tol}")
+        log_or_print(f"bilateral_tol={bilateral_tol}mm")
         pairs, singletons, midline_points = _find_bilateral_pairs(src_pnts_inuse_mni, 
                                                                   bilateral_tol=bilateral_tol, 
                                                                   bilateral_tol_midline=bilateral_tol_midline,

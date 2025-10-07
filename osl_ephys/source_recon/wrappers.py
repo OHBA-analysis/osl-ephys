@@ -661,8 +661,8 @@ def beamform(
     weight_norm="nai",
     pick_ori="max-power-pre-weight-norm",
     reg=0,
-    use_bilateral_pairs=None,
-    bilateral_tol=None,
+    use_bilateral_pairs=False,
+    bilateral_tol=5,
     bilateral_tol_midline=None,
     reportdir=None,
 ):
@@ -692,6 +692,18 @@ def beamform(
         Orientation of the dipoles.
     reg : float, optional
         The regularization for the whitened data covariance.
+    use_bilateral_pairs : bool, optional
+        Whether to use bilateral dipole pairs and a bilateral beamformer.
+        Otherwise, a standard single dipole beamformer is used.
+    bilateral_tol : float, optional
+        The maximum distance in mm between two dipoles to be considered
+        a bilateral pair. Only used if use_bilateral_pairs is True.
+        Recommended value is ~gridstep/2 mm.
+    bilateral_tol_midline : float, optional
+        The minimum distance in mm from the midline for a dipole to be
+        considered for bilateral pairing. Only used if use_bilateral_pairs
+        is True. Recommended value is ~gridstep/2 mm.
+        If None, is set to bilateral_tol.        
     reportdir : str, optional
         Path to report directory
     """
@@ -1190,8 +1202,8 @@ def beamform_and_parcellate(
     reference_brain="mni",
     extra_chans="stim",
     neighbour_distance=None,
-    use_bilateral_pairs=None,
-    bilateral_tol=None,
+    use_bilateral_pairs=False,
+    bilateral_tol=5,
     bilateral_tol_midline=None,    
     reportdir=None,
 ):
@@ -1249,6 +1261,18 @@ def beamform_and_parcellate(
     neighbour_distance : float, optional
         Distance in mm between parcel centers to consider neighbours 
         for orthogonalisation='local'.
+    use_bilateral_pairs : bool, optional
+        Whether to use bilateral dipole pairs and a bilateral beamformer.
+        Otherwise, a standard single dipole beamformer is used.
+    bilateral_tol : float, optional
+        The maximum distance in mm between two dipoles to be considered
+        a bilateral pair. Only used if use_bilateral_pairs is True.
+        Recommended value is ~gridstep/2 mm.
+    bilateral_tol_midline : float, optional
+        The minimum distance in mm from the midline for a dipole to be
+        considered for bilateral pairing. Only used if use_bilateral_pairs
+        is True. Recommended value is ~gridstep/2 mm.
+        If None, is set to bilateral_tol.
     reportdir : str, optional
         Path to report directory.
     """
