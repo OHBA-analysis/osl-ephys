@@ -202,12 +202,16 @@ def make_lcmv(
     """
     log_or_print("*** RUNNING OSL MAKE LCMV ***")
 
-    rhino_files = rhino_utils.get_rhino_filenames(subjects_dir, subject)
     beamforming_files = get_beamforming_filenames(subjects_dir, subject)
+    rhino_files = rhino_utils.get_rhino_filenames(subjects_dir, subject)
 
-    # load forward solution
-    fwd_fname = rhino_files["fwd_model"]
-    fwd = read_forward_solution(fwd_fname)
+    fwd = read_forward_solution(rhino_files["fwd_model"])
+
+    src_pnts_inuse_mni = None
+    if use_bilateral_pairs:
+        src_pnts_inuse_mni = _get_src_pnts_inuse_mni(subjects_dir, 
+                                                 subject, 
+                                                 src_index=0)
 
     if data_cov is None:
         # Note that if chantypes are meg, eeg; and meg includes mag, grad then compute_covariance will project data separately for meg and eeg to reduced
@@ -267,6 +271,7 @@ def make_lcmv(
         use_bilateral_pairs=use_bilateral_pairs,
         bilateral_tol=bilateral_tol,
         bilateral_tol_midline=bilateral_tol_midline,
+        src_pnts_inuse_mni=src_pnts_inuse_mni,
         verbose=verbose,
     )
 
@@ -715,7 +720,9 @@ def get_leadfields(
     return leadfields.T, coords
 
 
-def _find_bilateral_pairs(forward, bilateral_tol, bilateral_tol_midline=None, src_index=0):
+def _find_bilateral_pairs(src_pnts_inuse_mni, 
+                          bilateral_tol, 
+                          bilateral_tol_midline=None):
 
     """
 
@@ -723,8 +730,9 @@ def _find_bilateral_pairs(forward, bilateral_tol, bilateral_tol_midline=None, sr
     
     Parameters
     ----------
-    forward : instance of :py:class:`mne.Forward`
-        The forward solution.
+    src_pnts_inuse_mni: np.array
+        The 3D coords on the source/dipole points being used.
+        In MNI space in metres.
     bilateral_tol : float
         The distance threshold for finding pairs, in metres
         Recommended to be a bit ~ gridstep / 2000
@@ -732,17 +740,15 @@ def _find_bilateral_pairs(forward, bilateral_tol, bilateral_tol_midline=None, sr
         The distance threshold for finding midline points, in metres
         Recommended to be a bit ~ gridstep / 2000.
         If None then bilateral_tol_midline = bilateral_tol.
-    src_index : int
-        The index of the source space to use in forward['src'].
 
     Returns
     -------
     pairs : (numpairs, 2) numpy.ndarray
-        List of pairs of indices (wrt to forward.src) specifying bilateral dipoles.
+        List of pairs of indices (wrt to src_pnts_inuse_mni) specifying bilateral dipoles.
     singletons : (nsingletons,) numpy.ndarray
-        The single points that could not be paired.
+        List of indices (wrt to src_pnts_inuse_mni) for single points that could not be paired.
     midline_points : (nmidline,) numpy.ndarray
-        The points close to the midline.
+        List of indices (wrt to src_pnts_inuse_mni) for points close to the midline.
 
     """
 
@@ -758,23 +764,13 @@ def _find_bilateral_pairs(forward, bilateral_tol, bilateral_tol_midline=None, sr
     if bilateral_tol_midline is None:
         bilateral_tol_midline = bilateral_tol
 
-    if forward["coord_frame"] != 4:
-        raise ValueError("Source space must be in head coordinates (coord_frame=4).")
-
-    src = forward["src"][src_index]
-
-    if src['type'] != 'vol':
-        raise ValueError("Source space must be of type 'vol'.")
-    
-    src_inuse = src['rr'][src['inuse']==1, :]
-
     pairs = []
     singletons = []
 
     # find all src points that are close to the midline
-    midline_points = np.where(np.abs(src_inuse[:, 0]) < bilateral_tol_midline)[0]
-    non_midline_points = np.where(np.abs(src_inuse[:, 0]) >= bilateral_tol_midline)[0]
-    src_inuse_nomidline = src_inuse[non_midline_points, :]
+    midline_points = np.where(np.abs(src_pnts_inuse_mni[:, 0]) < bilateral_tol_midline)[0]
+    non_midline_points = np.where(np.abs(src_pnts_inuse_mni[:, 0]) >= bilateral_tol_midline)[0]
+    src_inuse_nomidline = src_pnts_inuse_mni[non_midline_points, :]
 
     # compute distances between all remaining points cross-hemisphere
     # i.e. between points with positive x and points with negative x
@@ -831,9 +827,28 @@ def _find_bilateral_pairs(forward, bilateral_tol, bilateral_tol_midline=None, sr
     midline_points = np.array(midline_points)
     
     log_or_print(f"Found {len(pairs)} pairs and {len(singletons)} singletons and {len(midline_points)} midline points")
-    log_or_print(f"Total points used: {len(pairs)*2 + len(singletons) + len(midline_points)} out of {src_inuse.shape[0]}")
+    log_or_print(f"Total points used: {len(pairs)*2 + len(singletons) + len(midline_points)} out of {src_pnts_inuse_mni.shape[0]}")
 
     return pairs, singletons, midline_points
+
+def _get_src_pnts_inuse_mni(outdir, subject, src_index):
+
+    # load forward solution
+    rhino_files = rhino_utils.get_rhino_filenames(outdir, subject)
+    fwd_fname = rhino_files["fwd_model"]
+    fwd = read_forward_solution(fwd_fname)
+    if fwd["coord_frame"] != 4:
+        raise ValueError("Source space must be in head coordinates (coord_frame=4).")        
+    src = fwd["src"][src_index]
+    if src['type'] != 'vol':
+        ValueError('Forward model, src[''type''], needs to be vol')
+    src_pnts_inuse = src['rr'][src['inuse']==1, :]
+
+    # move to MNI coordinates to find pairs
+    # MNE uses metres, RHINO uses mm
+    src_pnts_inuse_mni = coreg._apply_head2mni_xform(outdir, subject, src_pnts_inuse*1000)/1000 
+
+    return src_pnts_inuse_mni
 
 def plot_dipole_locations(outdir, 
                           subject, 
@@ -863,23 +878,14 @@ def plot_dipole_locations(outdir,
         The index of the source space to use in forward['src'].        
     '''
 
-    rhino_files = rhino_utils.get_rhino_filenames(outdir, subject)
-
-    # load forward solution
-    fwd_fname = rhino_files["fwd_model"]
-    fwd = read_forward_solution(fwd_fname)
-
-    # forward, pairs, singletons, midline_points, filename, src_index
-    src = fwd["src"][src_index]
-    if src['type'] != 'vol':
-        return
-    
     if use_bilateral_pairs:
+
         log_or_print("Using bilateral pairs")
-        pairs, singletons, midline_points = _find_bilateral_pairs(fwd, 
+        src_pnts_inuse_mni = _get_src_pnts_inuse_mni(outdir, subject, src_index)
+        pairs, singletons, midline_points = _find_bilateral_pairs(src_pnts_inuse_mni, 
                                                                   bilateral_tol=bilateral_tol, 
                                                                   bilateral_tol_midline=bilateral_tol_midline,
-                                                                  src_index=src_index)       
+                                                                  )       
         display_pairs = use_bilateral_pairs                   
     else: 
         display_pairs = False
@@ -901,7 +907,7 @@ def plot_dipole_locations(outdir,
         singletons=singletons,
         midline_points=midline_points,
         filename=filename,
-        src_index=0,
+        src_index=src_index,
     )
 
     return
@@ -924,6 +930,7 @@ def _make_lcmv(
     use_bilateral_pairs=False,
     bilateral_tol=None,
     bilateral_tol_midline=None,
+    src_pnts_inuse_mni=None,
     verbose=None,
 ):
     """Compute LCMV spatial filter.
@@ -1036,9 +1043,10 @@ def _make_lcmv(
     if use_bilateral_pairs:
         log_or_print("Using bilateral pairs")
         log_or_print(f"bilateral_tol={bilateral_tol}")
-        pairs, singletons, midline_points = _find_bilateral_pairs(forward, 
+        pairs, singletons, midline_points = _find_bilateral_pairs(src_pnts_inuse_mni, 
                                                                   bilateral_tol=bilateral_tol, 
-                                                                  bilateral_tol_midline=bilateral_tol_midline)
+                                                                  bilateral_tol_midline=bilateral_tol_midline,
+                                                                  )             
 
         # combine singletons and midline points
         all_singletons = np.concatenate([singletons, midline_points])

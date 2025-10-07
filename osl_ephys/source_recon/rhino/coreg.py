@@ -1075,4 +1075,17 @@ def bem_display(
         filename=filename,
         src_index=src_index,
     )
-    
+
+def _apply_head2mni_xform(subjects_dir, subject, pnts):
+
+    coreg_filenames = get_coreg_filenames(subjects_dir, subject)
+    surfaces_filenames = get_surfaces_filenames(subjects_dir, subject)
+
+    head_mri_t = read_trans(coreg_filenames["head_mri_t_file"])
+    mni_mri_t = read_trans(surfaces_filenames["mni_mri_t_file"])
+    head_mni_t = combine_transforms(head_mri_t, invert_transform(mni_mri_t), 'head', 'mni_tal')
+
+    # Apply this xform to the mni fids to get what we call the "sMRI-derived fids" in native space
+    xformed_pnts = rhino_utils.xform_points(head_mni_t["trans"], pnts.T).T
+
+    return xformed_pnts
