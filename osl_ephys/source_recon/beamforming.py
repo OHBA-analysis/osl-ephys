@@ -426,7 +426,7 @@ def get_recon_timeseries(subjects_dir, subject, coord_mni, recon_timeseries_head
     # Get hold of coords of points reconstructed to. Note, MNE forward model is done in head space in metres. RHINO does everything in mm
     fwd = read_forward_solution(rhino_files["fwd_model"])
     vs = fwd["src"][src_index]
-    recon_coords_head = vs["rr"][vs["vertno"]] * 1000  # in mm
+    recon_coords_head = vs["rr"][vs["vertno"]] * 1000  # RHINO is in mm
 
     # Convert coords_head from head to mri space to get index of reconstructed coordinate nearest to coord_mni
     head_scaledmri_t = rhino_utils.read_trans(coreg_filenames["head_scaledmri_t_file"])
@@ -486,7 +486,8 @@ def transform_recon_timeseries(
     # -------------------------------------------------------------------------------------
     # Get hold of coords of points reconstructed to
     #
-    # Note, MNE forward model is done in head space in metres. RHINO does everything in mm.
+    # Note, MNE forward model is done in head space in metres
+    # RHINO does everything in mm.
     fwd = read_forward_solution(rhino_files["fwd_model"])
     vs = fwd["src"][src_index]
     recon_coords_head = vs["rr"][vs["vertno"]] * 1000  # in mm
@@ -732,13 +733,13 @@ def _find_bilateral_pairs(src_pnts_inuse_mni,
     ----------
     src_pnts_inuse_mni: np.array
         The 3D coords on the source/dipole points being used.
-        In MNI space in metres.
+        In MNI space in mm.
     bilateral_tol : float
-        The distance threshold for finding pairs, in metres
-        Recommended to be a bit ~ gridstep / 2000
+        The distance threshold for finding pairs, in mm
+        Recommended to be ~ gridstep / 2
     bilateral_tol_midline : float
-        The distance threshold for finding midline points, in metres
-        Recommended to be a bit ~ gridstep / 2000.
+        The distance threshold for finding midline points, in mm
+        Recommended to be ~ gridstep / 2
         If None then bilateral_tol_midline = bilateral_tol.
 
     Returns
@@ -752,11 +753,11 @@ def _find_bilateral_pairs(src_pnts_inuse_mni,
 
     """
 
-    # Assumes src['rr'] are in head space
-    # +X: Points towards the RPA.
-    # +Y: Points towards the nasion.
-    # +Z: Points upwards, orthogonal to the X and Y axes
-    # idendify pairs of matching points that are in opposite hemispheres (I.e. x values are the same magnitude, but one is positive , and the other is negative - within a tolerance)
+    # Assumes src_pnts_inuse_mni are in MNI space in mm
+    # x-axis indexes left vs right hemisphere
+    #
+    # Aim is to identify pairs of matching points that are in opposite hemispheres 
+    # (I.e. x values are the same magnitude, but one is positive , and the other is negative - within a tolerance)
 
     if bilateral_tol is None or bilateral_tol <= 0:
         raise ValueError("bilateral_tol must be a positive scalar.")
@@ -833,6 +834,24 @@ def _find_bilateral_pairs(src_pnts_inuse_mni,
 
 def _get_src_pnts_inuse_mni(outdir, subject, src_index):
 
+    '''
+    Get source points that are in use in MNI coordinates.
+    
+    Parameters
+    ----------
+    subjects_dir : string
+        Directory containing subject data.
+    subject : string
+        Subject identifier.
+    head_pnts : array
+        Points in the head coordinate system in mm
+
+    Returns
+    -------
+    mni_pnts : array
+        Points in the MNI coordinate system in mm
+    '''
+
     # load forward solution
     rhino_files = rhino_utils.get_rhino_filenames(outdir, subject)
     fwd_fname = rhino_files["fwd_model"]
@@ -842,11 +861,10 @@ def _get_src_pnts_inuse_mni(outdir, subject, src_index):
     src = fwd["src"][src_index]
     if src['type'] != 'vol':
         ValueError('Forward model, src[''type''], needs to be vol')
-    src_pnts_inuse = src['rr'][src['inuse']==1, :]
+    src_pnts_inuse = src['rr'][src['inuse']==1, :] * 1000  # convert to mm (MNE works in metres, RHINO works in mm)
 
     # move to MNI coordinates to find pairs
-    # MNE uses metres, RHINO uses mm
-    src_pnts_inuse_mni = coreg._apply_head2mni_xform(outdir, subject, src_pnts_inuse*1000)/1000 
+    src_pnts_inuse_mni = coreg.apply_head2mni_xform(outdir, subject, src_pnts_inuse) 
 
     return src_pnts_inuse_mni
 
@@ -866,11 +884,11 @@ def plot_dipole_locations(outdir,
     subject : string
         Subject name.
     bilateral_tol : float
-        The distance threshold for finding pairs, in metres
-        Recommended to be a bit ~ gridstep / 2000
+        The distance threshold for finding pairs, in mm
+        Recommended to be ~ gridstep / 2
     bilateral_tol_midline : float
-        The distance threshold for finding midline points, in metres
-        Recommended to be a bit ~ gridstep / 2000.
+        The distance threshold for finding midline points, in mm
+        Recommended to be ~ gridstep / 2
         If None then bilateral_tol_midline = bilateral_tol.
     filename : string
         file to save plot to
@@ -910,8 +928,7 @@ def plot_dipole_locations(outdir,
         src_index=src_index,
     )
 
-    return
-    
+
 @verbose
 def _make_lcmv(
     info,
@@ -1277,7 +1294,7 @@ def _compute_beamformer(G, Cm, reg, n_orient,
         max_power_ori = eig_vecs[np.arange(len(eig_vecs)), :, order[:, -1]]
 
         assert max_power_ori.shape == (n_sources, n_orient)
-
+        
         # Set the (otherwise arbitrary) sign to match the normal
         signs = np.sign(np.sum(max_power_ori * nn, axis=1, keepdims=True))
         signs[signs == 0] = 1.0

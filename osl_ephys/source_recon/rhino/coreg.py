@@ -135,6 +135,7 @@ def coreg(
     # MRI (native) -- mri_mrivoxel_t (native2nativeindex) --> MRI (native) voxel indices
     #
     # RHINO does everthing in mm
+    # (MNE does everthing in metres)
 
     log_or_print("*** RUNNING OSL-EPHYS RHINO COREGISTRATION ***")
 
@@ -1076,7 +1077,27 @@ def bem_display(
         src_index=src_index,
     )
 
-def _apply_head2mni_xform(subjects_dir, subject, pnts):
+
+def apply_head2mni_xform(subjects_dir, 
+                         subject, 
+                         head_pnts):
+    '''
+    Apply the head to MNI transform to the given points.
+    This function assumes that the points are in the head coordinate system.
+
+    Inputs:
+        subjects_dir: string
+            Directory containing subject data.
+        subject: string
+            Subject identifier.
+        head_pnts: array
+            Points in the head coordinate system in mm.
+
+    Outputs:
+        mni_pnts: array
+            Points in the MNI coordinate system in mm.
+
+    '''
 
     coreg_filenames = get_coreg_filenames(subjects_dir, subject)
     surfaces_filenames = get_surfaces_filenames(subjects_dir, subject)
@@ -1086,6 +1107,6 @@ def _apply_head2mni_xform(subjects_dir, subject, pnts):
     head_mni_t = combine_transforms(head_mri_t, invert_transform(mni_mri_t), 'head', 'mni_tal')
 
     # Apply this xform to the mni fids to get what we call the "sMRI-derived fids" in native space
-    xformed_pnts = rhino_utils.xform_points(head_mni_t["trans"], pnts.T).T
+    mni_pnts = rhino_utils.xform_points(head_mni_t["trans"], head_pnts.T).T
 
-    return xformed_pnts
+    return mni_pnts
