@@ -908,6 +908,8 @@ def run_proc_chain(
                 dataset["raw"],
                 report_data_dir,
                 ica=dataset["ica"],
+                events=dataset["events"],
+                event_id=dataset["event_id"],
                 preproc_fif_filename=outnames["raw"],
                 logsdir=logsdir,
                 run_id=run_id,

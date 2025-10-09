@@ -16,6 +16,9 @@
           <button class="button1" onclick="openTab(event, '{{ data.fif_id }}_channels', this.id)">Channels</button>
           <button class="button1" onclick="openTab(event, '{{ data.fif_id }}_spectra', this.id)">Power Spectra</button>
           <button class="button1" onclick="openTab(event, '{{ data.fif_id }}_digitisation', this.id)">Digitisation</button>
+          {% if data.plt_events is defined %}
+              <button class="button1" onclick="openTab(event, '{{ data.fif_id }}_events', this.id)">Events</button>
+          {% endif %}
           {% if data.plt_ica is defined %}
               <button class="button1" onclick="openTab(event, '{{ data.fif_id }}_ica', this.id)">ICA</button>
           {% endif %}
@@ -214,7 +217,22 @@
               <img src="{{ data.plt_digitisation }}" alt="" style='max-width: 100%'/>
           </div>
       </div>
-  
+    
+      {% if data.plt_events is defined %}
+      <div class="tabpage" style="width: 100%; display: none" id="{{ data.fif_id }}_events">
+          <div style="width: 100%">
+              <h4>Events
+                  <span style="margin-right: 10px;"></span>
+                  <button style="cursor: help; border: 1px solid; background-color: lightblue; color: black; padding: 2px 5px; font-size: 12px;" 
+                          title="Do the events look sensible? i.e., are the numbers and timings the way you would?">
+                      ?
+                  </button>
+              </h4>
+              <img src="{{ data.plt_events }}" alt="" style='max-width: 100%'/>
+          </div>
+      </div>
+      {% endif %}
+
       {% if data.plt_ica is defined %}
           <div class="tabpage" style="width: 100%; display: none" id="{{ data.fif_id }}_ica">
               <div style="width: 100%">

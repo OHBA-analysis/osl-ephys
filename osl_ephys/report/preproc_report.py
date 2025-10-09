@@ -108,7 +108,7 @@ def get_header_id(raw):
 
 
 def gen_html_data(
-    raw, outdir, ica=None, preproc_fif_filename=None, logsdir=None, run_id=None, custom_figures=None
+    raw, outdir, ica=None, events=None, event_id=None, preproc_fif_filename=None, logsdir=None, run_id=None, custom_figures=None
 ):
     """Generate HTML web-report for an MNE data object.
 
@@ -120,6 +120,10 @@ def gen_html_data(
         Directory to write HTML data and plots to.
     ica : :py:class:`mne.preprocessing.ICA <mne.preprocessing.ICA>`
         ICA object.
+    events : array, shape (n_events, 3)
+        The events.
+    event_id : dict
+        The event IDs.
     preproc_fif_filename : str
         Filename of file output by preprocessing
     logsdir : str
@@ -239,6 +243,7 @@ def gen_html_data(
     data['plt_digitisation'] = plot_digitisation_2d(raw, savebase)
     data['plt_artefacts_eog'] = plot_eog_summary(raw, savebase)
     data['plt_artefacts_ecg'] = plot_ecg_summary(raw, savebase)
+    data['plt_events'] = plot_events(events, event_id, savebase)
     
     # add custom figures
     data['plt_custom_figures'] = plot_custom_figures(custom_figures, savebase)
@@ -1443,6 +1448,7 @@ def plot_summary_bad_chans(subject_data, reportdir):
     plt.close(fig)
     return f"summary/bad_chans.png"
 
+
 def plot_artefact_scan(raw, savebase=None):
     """Plot artefact scan.
     
@@ -1692,6 +1698,22 @@ def print_scan_summary(raw):
         s = 'Modality {0} - {1:02f}/{2} seconds rejected     ({3:02f}%)'
         print(s.format(modality, mod_dur, full_dur, pc))
         
+
+def plot_events(events, event_id, savebase):
+    if events is not None:
+        fig = mne.viz.plot_events(events, event_id=event_id, show=False)
+        figname = savebase.format('events')
+        fig.savefig(figname, dpi=150, transparent=True)
+        plt.close(fig)
+
+        # Return the filename
+        savebase = pathlib.Path(savebase)
+        filebase = savebase.parent.name + "/" + savebase.name
+        fpath = filebase.format('events')
+        return fpath
+    else:
+        return None
+
 
 def plot_custom_figures(custom_figures, savebase):
     plots = {}
