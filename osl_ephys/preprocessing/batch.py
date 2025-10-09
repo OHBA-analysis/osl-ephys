@@ -1162,6 +1162,7 @@ def run_proc_batch(
 
 
     # start group processing
+    custom_figures = None
     if config['group'] is not None:
         logger.info("Starting Group Processing")
         logger.info(
@@ -1191,11 +1192,12 @@ def run_proc_batch(
             dataset = func(dataset, userargs)
         outbase = os.path.join(outdir, "{ftype}.{fext}")
         outnames = write_dataset(dataset, outbase, '', ftype='', overwrite=overwrite, skip=skip_save)
+        custom_figures = dataset.get('fig', None)
 
     # rerun the summary report
     if gen_report:
         from ..report import preproc_report # avoids circular import
-        if preproc_report.gen_html_summary(reportdir, logsdir, custom_figures=dataset.get('fig', None)):
+        if preproc_report.gen_html_summary(reportdir, logsdir, custom_figures=custom_figures):
             logger.info("******************************" + "*" * len(str(reportdir)))
             logger.info(f"* REMEMBER TO CHECK REPORT: {reportdir} *")
             logger.info("******************************" + "*" * len(str(reportdir)))
