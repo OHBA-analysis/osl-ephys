@@ -28,6 +28,8 @@ from mne.channels.channels import channel_type
 from matplotlib.lines import Line2D
 from matplotlib.patches import Rectangle
 from pathlib import Path
+from copy import deepcopy
+from glob import glob
 
 try:
     from scipy.ndimage import uniform_filter1d
@@ -106,7 +108,7 @@ def get_header_id(raw):
 
 
 def gen_html_data(
-    raw, outdir, ica=None, preproc_fif_filename=None, logsdir=None, run_id=None
+    raw, outdir, ica=None, preproc_fif_filename=None, logsdir=None, run_id=None, custom_figures=None
 ):
     """Generate HTML web-report for an MNE data object.
 
@@ -125,6 +127,9 @@ def gen_html_data(
         to be in reportdir.replace('report', 'logs')
     run_id : str
         Run ID.
+    custom_figures : dict
+        Dictionary of custom figures to include in the report. Keys should be the
+        figure names, and values should be the matplotlib figure objects.
     """
     
     # Silence all matplotlib show() warnings
@@ -234,6 +239,10 @@ def gen_html_data(
     data['plt_digitisation'] = plot_digitisation_2d(raw, savebase)
     data['plt_artefacts_eog'] = plot_eog_summary(raw, savebase)
     data['plt_artefacts_ecg'] = plot_ecg_summary(raw, savebase)
+    
+    # add custom figures
+    data['plt_custom_figures'] = plot_custom_figures(custom_figures, savebase)
+        
     #filenames = plot_artefact_scan(raw, savebase)
     #data.update(filenames)
 
@@ -291,7 +300,7 @@ def gen_html_data(
         pickle.dump(data, outfile)
 
 
-def gen_html_page(outdir, logsdir=None):
+def gen_html_page(outdir, logsdir=None, custom_figures=None):
     """Generate an HTML page from a report directory.
 
     Parameters
@@ -355,7 +364,7 @@ def gen_html_page(outdir, logsdir=None):
     return True
 
 
-def gen_html_summary(reportdir, logsdir=None):
+def gen_html_summary(reportdir, logsdir=None, custom_figures=None):
     """Generate an HTML summary from a report directory.
 
     Parameters
@@ -395,8 +404,15 @@ def gen_html_summary(reportdir, logsdir=None):
 
     # Create plots
     os.makedirs(f"{reportdir}/summary", exist_ok=True)
-
     data["plt_config"] = subject_data[0]["plt_config"]
+    existing_figs = {ig.split('/')[-1].split('custom_')[1].split('.png')[0]: ig.replace(str(reportdir) + '/', '') for ig in glob(f"{reportdir}/summary/*.png")}
+    data['plt_custom_figures'] = plot_custom_figures(custom_figures, f"{reportdir}/summary/{{}}.png")
+    if len(existing_figs)>0:
+       if data['plt_custom_figures'] is None:
+           data['plt_custom_figures'] = existing_figs
+       else:
+           data['plt_custom_figures'] |= existing_figs
+
     if "extra_funcs" in subject_data[0]:
         data["extra_funcs"] = subject_data[0]["extra_funcs"]
     data['tbl'] = gen_summary_data(subject_data)
@@ -1020,7 +1036,8 @@ def plot_freqbands(raw, savebase=None):
             continue
 
         # Plot spectra
-        psd = raw.compute_psd(
+        raw_zscore = deepcopy(raw).apply_function(lambda x: ((x - np.mean(x)) / np.std(x)))
+        psd = raw_zscore.compute_psd(
             picks=chan_inds, 
             n_fft=int(raw.info['sfreq']*2),
             verbose=0)
@@ -1033,10 +1050,10 @@ def plot_freqbands(raw, savebase=None):
         for ifrq, (f1, f2) in enumerate(freq_bands):
             inds = np.logical_and(psd.freqs>f1, psd.freqs<=(f2))
             p = psd._data[:, inds].mean(axis=1)
-            if is_parc: # normalize because nilearn doesn't plot small values
-                plot_source_topo(p/p.std(), axis=iax[ifrq], cmap='Reds') 
+            if is_parc: # normalize because nilearwn doesn't plot small values
+                plot_source_topo(p/p.std(), axis=iax[ifrq], cmap='hot') 
             else:
-                mne.viz.plot_topomap(p, psd.info, axes=iax[ifrq])
+                mne.viz.plot_topomap(p, psd.info, axes=iax[ifrq], cmap='hot')
             if row==0:
                 iax[ifrq].set_title(f"{freq_band_names[ifrq]}\n({f1}-{f2} Hz)")
             if ifrq==0:
@@ -1050,7 +1067,11 @@ def plot_freqbands(raw, savebase=None):
         figname = savebase.format('freqbands')
         fig.savefig(figname, dpi=150, transparent=True)
         plt.close(fig)
-        return figname
+        
+        savebase = pathlib.Path(savebase)
+        filebase = savebase.parent.name + "/" + savebase.name
+        fpath = filebase.format('freqbands')
+        return fpath
     else:
         return None
 
@@ -1670,3 +1691,22 @@ def print_scan_summary(raw):
         pc = (mod_dur / full_dur) * 100
         s = 'Modality {0} - {1:02f}/{2} seconds rejected     ({3:02f}%)'
         print(s.format(modality, mod_dur, full_dur, pc))
+        
+
+def plot_custom_figures(custom_figures, savebase):
+    plots = {}
+    if custom_figures is not None and type(custom_figures)==dict:
+        for key in custom_figures.keys():
+            if type(custom_figures[key])==plt.Figure:
+                figname = savebase.format(f'custom_{key}')
+                custom_figures[key].savefig(figname, dpi=150, transparent=True)
+                plt.close(custom_figures[key])
+                # Return the filename
+                savebase_path = pathlib.Path(savebase)
+                filebase = savebase_path.parent.name + "/" + savebase_path.name
+                plots[key] = filebase.format(f'custom_{key}')
+            else:
+                log_or_print(f"Custom figure {key} is not a matplotlib figure. Skipping.")
+    if len(plots)==0:
+        plots = None
+    return plots

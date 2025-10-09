@@ -1,41 +1,59 @@
 <div style='max-width: 90%; margin: auto; margin-bottom: 40px; background: #f6f6f6; box-shadow: 10px 10px 5px grey; padding: 25px 25px 25px 0px;'>
-    <div class="flex-container" style="display: flex">
-  
+  <div class="flex-container" style="display: flex">
+
     <div class="flex-child" style="flex: 1">
       <div class="tab" style="display: grid">
-          <button class="button1" onclick="openTab(event, 'config', this.id)" style="border-top-style: solid">Config</button>
-          <button class="button1" onclick="openTab(event, 'tbl', this.id)" style="border-top-style: solid">Preproc Summary</button>
+          <!-- give these explicit ids so JS can reference them -->
+          <button class="button1" id="summary_btn_config"
+                  onclick="openTab(event, 'config', this.id)" style="border-top-style: solid">Config</button>
+          <button class="button1" id="summary_btn_tbl"
+                  onclick="openTab(event, 'tbl', this.id)">Preproc Summary</button>
+
+        {# --- Custom figures: create a tab button for each key --- #}
+          {% if data.plt_custom_figures is defined and data.plt_custom_figures %}
+            {% for key, val in data.plt_custom_figures.items() %}
+                {% set safe_key = key|replace(' ', '_')|replace('/', '_') %}
+                <button class="button1" id="summary_btn_custom_{{ safe_key }}"
+                        onclick="openTab(event, 'summary_custom_{{ safe_key }}', this.id)">
+                    {{ key }}
+                </button>
+            {% endfor %}
+          {% endif %}
+
           {% if data.batchlog is defined %}
-              <button class="button1" onclick="openTab(event, 'batchlog', this.id)" style="border-top-style: solid">Batch Log</button>
+              <button class="button1" id="summary_btn_batchlog"
+                      onclick="openTab(event, 'batchlog', this.id)">Batch Log</button>
           {% endif %}
           {% if data.errlog is defined %}
-              <button class="button1" onclick="openTab(event, 'errlog', this.id)" style="border-top-style: solid">Error Logs</button>
+              <button class="button1" id="summary_btn_errlog"
+                      onclick="openTab(event, 'errlog', this.id)">Error Logs</button>
           {% endif %}
+
       </div>
     </div>
-  
+
     <div class="flex-child" style="flex: 5; padding-left: 25px">
-  
+
       <div class="tabpage" style='width: 100%' id='config'>
           <h3>Config</h3>
           <img src="{{ data.plt_config }}" alt="" style='max-width: 60%'/>
           {% if data.extra_funcs is defined %}
               <h3>Extra functions
                   <span style="margin-right: 10px;"></span>
-                  <button style="cursor: help; border: 1px solid; background-color: lightblue; color: black; padding: 2px 5px; font-size: 12px;" 
+                  <button style="cursor: help; border: 1px solid; background-color: lightblue; color: black; padding: 2px 5px; font-size: 12px;"
                           title="This is the list of extra functions that were used in the preprocessing.">
                       ?
                   </button>
               </h3>
-              <textarea id="log" rows="20" style="width: 80%;" readonly>{{ data.extra_funcs }}</textarea>
+              <textarea id="log_extra_funcs" rows="20" style="width: 80%;" readonly>{{ data.extra_funcs }}</textarea>
           {% endif %}
       </div>
-  
-      <div class="tabpage" style='width: 90%' id='tbl'>
+
+      <div class="tabpage" style='width: 90%; display: none' id='tbl'>
           <h3>Preproc Summary
               <span style="margin-right: 10px;"></span>
-              <button style="cursor: help; border: 1px solid; background-color: lightblue; color: black; padding: 2px 5px; font-size: 12px;" 
-                      title="This table is interactive and can be used to guide quality assurance. For example, sort the table by different columns. Which recordings have the most bad channels? Which recordings have the most bad trials? Which recordings have no bad ICA components? These subjects are good candidates for further inspection in the subject report.">
+              <button style="cursor: help; border: 1px solid; background-color: lightblue; color: black; padding: 2px 5px; font-size: 12px;"
+                      title="This table is interactive and can be used to guide quality assurance.">
                   ?
               </button>
           </h3>
@@ -43,59 +61,180 @@
           {{ data.tbl | safe }}
           </div>
       </div>
-  
+
+      {# --- Custom figure tab pages --- #}
+      {% if data.plt_custom_figures is defined and data.plt_custom_figures %}
+            {% for key, val in data.plt_custom_figures.items() %}
+                {% set safe_key = key|replace(' ', '_')|replace('/', '_') %}
+                <div class="tabpage" style="width: 100%; display: none" id="summary_custom_{{ safe_key }}">
+                    <div style="width: 100%">
+                        <h4>{{ key }}</h4>
+                        <img src="{{ val }}" alt="{{ key }}" style="max-width: 100%;"/>
+                    </div>
+                </div>
+            {% endfor %}
+      {% endif %}
+
       {% if data.batchlog is defined %}
-      <div class="tabpage" style="width: 100%; display: none" id=batchlog>               
+      <div class="tabpage" style="width: 100%; display: none" id="batchlog">
           <h4>Batch Log</h4>
-          <textarea id="batchlog" rows="20" style="width: 80%;" readonly>{{ data.batchlog }}</textarea>
+          <textarea id="batchlog_txt" rows="20" style="width: 80%;" readonly>{{ data.batchlog }}</textarea>
       </div>
       {% endif %}
-  
+
       {% if data.errlog is defined %}
-      <div class="tabpage" style="width: 100%; display: none" id=errlog>               
+      <div class="tabpage" style="width: 100%; display: none" id="errlog">
           <h4>Error Logs</h4>
               {% for key, value in data.errlog.items() %}
                   <h5>{{ key }}</h5>
-                  <textarea id="{{ key }}" rows="20" style="width: 80%;" readonly>{{ value }}</textarea>
+                  <textarea id="errlog_{{ loop.index }}" rows="20" style="width: 80%;" readonly>{{ value }}</textarea>
               {% endfor %}
       </div>
       {% endif %}
-  
-      </div>
+
     </div>
   </div>
-  
-  <script>
-  
-  function openTab(event, figTag, button) {
-      // Get all elements with class="tabpage" and hide them
-      tabpage = document.getElementsByClassName("tabpage");
-      for (i = 0; i < tabpage.length; i++) {
-          tabpage[i].style.display = "none";
-      }
-      // Show the current tab
-      document.getElementById(figTag).style.display = "block";
-      if (figTag.includes('config')) {
-          currentButton = 0;
-      }
-      if (figTag.includes('tbl')) {
-          currentButton = 1;
-      }
-      if (figTag.includes('batchlog')) {
-          currentButton = 2;
-      }
-      if (figTag.includes('errlog')) {
-          currentButton = 3;
-      }
+</div>
+
+<style>
+/* change active tab highlight to lightgreen */
+.button1.active {
+    background-color: lightgreen;
+    border-bottom: 2px solid #2e8b57; /* darker green border for contrast */
+}
+</style>
+
+<script>
+(function () {
+  // locate the summary tab column (first .tab in this summary block)
+  const summaryTabColumn = document.querySelector('div.tab');
+  if (!summaryTabColumn) return;
+
+  // the surrounding .flex-container holds the tab pages we want to control
+  const panel = summaryTabColumn.closest('.flex-container');
+  const summaryButtons = Array.from(summaryTabColumn.querySelectorAll('.button1'));
+
+  // helper: extract target id from an onclick string
+  function extractTargetFromOnclick(onclick) {
+    const m = (onclick || '').match(/openTab\([^,]*,\s*['"]([^'"]+)['"]/);
+    return m ? m[1] : null;
   }
-  
-  document.addEventListener('DOMContentLoaded', function() {
-      $('#preproc_tbl').DataTable();
+
+  // stash each button's target into dataset.target and remove inline onclick
+  summaryButtons.forEach((btn) => {
+    const onclick = btn.getAttribute('onclick');
+    const target = extractTargetFromOnclick(onclick);
+    if (target) btn.dataset.target = target;
+    // remove inline onclick to avoid unpredictable double-calls
+    btn.removeAttribute('onclick');
+  });
+
+  // clamp helper
+  function clamp(n, a, b) { return Math.max(a, Math.min(b, n)); }
+
+  // activate a button (index): set .active, focus, persist index, and open content
+  function activateIndex(idx, { focus = true, callOpen = true } = {}) {
+    if (!summaryButtons.length) return;
+    idx = clamp(idx, 0, summaryButtons.length - 1);
+    const btn = summaryButtons[idx];
+
+    // visual
+    summaryButtons.forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    if (focus) btn.focus();
+    summaryTabColumn.dataset.currentIndex = idx;
+
+    // open content: prefer global openTab if present; fallback to scoped show/hide
+    const target = btn.dataset.target || null;
+    if (!target) return;
+    if (callOpen && typeof window.openTab === 'function') {
+      // This uses the project's openTab to keep behaviour consistent
+      try {
+        window.openTab(null, target, btn.id);
+      } catch (e) {
+        // fallback to manual below if openTab throws
+        manualShow(target);
+      }
+    } else if (callOpen) {
+      manualShow(target);
+    }
+  }
+
+  // fallback manual show/hide for tabpages scoped to this summary panel
+  function manualShow(targetId) {
+    if (!panel) return;
+    const pages = Array.from(panel.querySelectorAll('.tabpage'));
+    pages.forEach(p => p.style.display = 'none');
+    const tgt = document.getElementById(targetId);
+    if (tgt) tgt.style.display = 'block';
+  }
+
+  // wire click handlers (now we control activation centrally)
+  summaryButtons.forEach((btn, i) => {
+    btn.addEventListener('click', function (ev) {
+      ev.preventDefault();
+      activateIndex(i, { focus: true, callOpen: true });
     });
-  
-  </script>
-  
-  
-  <link rel="stylesheet" type="text/css" href="https://cdn.datatables.net/1.10.24/css/jquery.dataTables.css">
-  <script type="text/javascript" charset="utf8" src="https://code.jquery.com/jquery-3.5.1.js"></script>
-  <script type="text/javascript" charset="utf8" src="https://cdn.datatables.net/1.10.24/js/jquery.dataTables.js"></script>
+  });
+
+  // set initial tab: prefer 'config' if present, otherwise first button
+  function showInitial() {
+    let startIdx = summaryButtons.findIndex(b => b.dataset.target === 'config');
+    if (startIdx === -1) startIdx = 0;
+    activateIndex(startIdx, { focus: true, callOpen: true });
+  }
+
+  // keyboard: Up/Down to move AND activate; Enter will also activate focused button
+  document.addEventListener('keydown', function (e) {
+    // ignore when typing in inputs/textareas
+    const ae = document.activeElement;
+    if (ae && (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA' || ae.isContentEditable)) return;
+
+    if (!summaryButtons.length) return;
+
+    let currentIndex = parseInt(summaryTabColumn.dataset.currentIndex || -1, 10);
+    if (isNaN(currentIndex) || currentIndex < 0) {
+      currentIndex = summaryButtons.findIndex(b => b.classList.contains('active'));
+      if (currentIndex === -1) currentIndex = 0;
+    }
+
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      const next = clamp(currentIndex + 1, 0, summaryButtons.length - 1);
+      activateIndex(next, { focus: true, callOpen: true });
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      const prev = clamp(currentIndex - 1, 0, summaryButtons.length - 1);
+      activateIndex(prev, { focus: true, callOpen: true });
+    } else if (e.key === 'Enter') {
+      // activate focused button (if it's one of our summary buttons)
+      const focused = document.activeElement;
+      const idx = summaryButtons.indexOf(focused);
+      if (idx !== -1) {
+        e.preventDefault();
+        activateIndex(idx, { focus: true, callOpen: true });
+      }
+    }
+  });
+
+  // init on DOMContentLoaded (and immediately if DOM already ready)
+  document.addEventListener('DOMContentLoaded', showInitial);
+  if (document.readyState === 'interactive' || document.readyState === 'complete') showInitial();
+
+})(); // IIFE
+</script>
+
+
+<!-- DataTables assets (unchanged) -->
+<link rel="stylesheet" type="text/css" href="https://cdn.datatables.net/1.10.24/css/jquery.dataTables.css">
+<script type="text/javascript" charset="utf8" src="https://code.jquery.com/jquery-3.5.1.js"></script>
+<script type="text/javascript" charset="utf8" src="https://cdn.datatables.net/1.10.24/js/jquery.dataTables.js"></script>
+
+<script>
+  // init datatable if table id present
+  document.addEventListener('DOMContentLoaded', function() {
+    if (document.getElementById('preproc_tbl')) {
+      try { $('#preproc_tbl').DataTable(); } catch(e) { console.warn('DataTable init failed', e); }
+    }
+  });
+</script>

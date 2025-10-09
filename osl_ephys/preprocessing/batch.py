@@ -683,7 +683,7 @@ def plot_preproc_flowchart(
     for idx, stage in enumerate(stages):
         method, userargs = next(iter(stage.items()))
 
-        method = method.replace("_", "\_")
+        method = method.replace("_", r"\_")
         if method in ["input", "preproc", "group", "output"]:
             b = startbox
         else:
@@ -898,6 +898,12 @@ def run_proc_chain(
             from ..report import gen_html_data, gen_html_page  # avoids circular import
             logger.info("{0} : Generating Report".format(now))
             report_data_dir = validate_outdir(reportdir / Path(outnames["raw"]).stem.replace(f"_{ftype}", ""))
+            
+            if 'fig' in dataset and dataset['fig'] is not None and len(dataset['fig'])>0:
+                custom_figures = dataset['fig']
+            else:
+                custom_figures = None
+            
             gen_html_data(
                 dataset["raw"],
                 report_data_dir,
@@ -905,6 +911,7 @@ def run_proc_chain(
                 preproc_fif_filename=outnames["raw"],
                 logsdir=logsdir,
                 run_id=run_id,
+                custom_figures=custom_figures,
             )
             gen_html_page(reportdir)
 
@@ -1188,7 +1195,7 @@ def run_proc_batch(
     # rerun the summary report
     if gen_report:
         from ..report import preproc_report # avoids circular import
-        if preproc_report.gen_html_summary(reportdir, logsdir):
+        if preproc_report.gen_html_summary(reportdir, logsdir, custom_figures=dataset.get('fig', None)):
             logger.info("******************************" + "*" * len(str(reportdir)))
             logger.info(f"* REMEMBER TO CHECK REPORT: {reportdir} *")
             logger.info("******************************" + "*" * len(str(reportdir)))
