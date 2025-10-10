@@ -48,17 +48,21 @@ Define a python functions, and make sure it is structured as follows:
 
 .. code-block:: Python
 
-   import osl-ephys
+   import osl_ephys
 
    def custom_function(dataset, userargs):
       # Get any arguments from the userargs dictionary
       target = userargs.pop("target", "raw")
       picks = userargs.pop("picks", "meg")
+
       # if a logger was set up, e.g., by run_proc_chain, log_or_print will write to the logfile
       osl_ephys.utils.log_or_print(f"Taking the absolute value of the {target} data.")
 
-      # manipulate any keys in dataset here, for example using Raw.apply_function:
+      # manipulate any keys in dataset here, or add a new one, for example using Raw.apply_function:
       dataset["rawabs"] = dataset[target].apply_function(np.abs, picks=picks)
+
+      # you can also generate a figure; it will automatically be saved in the appropriate directory! It needs to be a key in dataset['fig']
+      dataset['fig']['rawabs_psd'] = dataset["rawabs"].compute_psd().plot()
    return dataset
 
    # add the function to the config
@@ -70,16 +74,62 @@ Define a python functions, and make sure it is structured as follows:
    # supply the function to run_proc_chain / run_proc_batch
    osl_ephys.preprocessing.run_proc_chain(config, infile, subject, outdir, extra_funcs=[custom_function])
 
-The custom function should have ``dataset`` and ``userargs`` input arguments, and a ``dataset`` output argument. Any key in dataset can be manipulated in place, or a new key can be added, in which case it will be saved according to the name of the key.
-For example, if the data is saved as ``sub001-run01_preproc-raw.fif``, the ``rawabs`` key will be saved as ``sub001-run01_rawabs.fif``. 
+The custom function should have ``dataset`` and ``userargs`` input arguments, and a ``dataset`` output argument. Any key in dataset can be manipulated in place. Alternatively, and really helpful is that when you instead add a new key osl-ephys will save it according to the name of the key.
+For example, if the data is saved as ``sub001-run01_preproc-raw.fif``, the ``rawabs`` key will be saved as ``sub001-run01_rawabs.fif`` in the corresponding directory. 
+
+Similarly, we can add figures to the ``dataset['fig']`` dictionary, and osl-ephys will save them automatically as .png files. The figure name will be used as the filename, e.g., ``sub001-run01_rawabs_psd.png``. If you're using the report functionality, the figures will also appear as their own tabs in the report (e.g., 'rawabs_psd').
 
 The user can also print statements to an existing logfile using ``osl_ephys.utils.log_or_print``. 
+
+
+Can I do group analysis using the osl-ephys config and batch processing?
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Yes! You can use the ``group`` section in the config to specify functions that will be applied to all subjects after the subject-level preprocessing is done. The custom functions work slightly differently than in the ``preproc`` module. Here, the ``dataset`` dictionary will contain lists of data for each subject, e.g., ``dataset['raw']`` will be a list of paths to Raw objects, one for each subject. 
+The userargs work the same way as in the ``preproc`` module.
+
+Note that there are no default functions in the ``group`` module, so you will need to specify at least one custom function in the config (for an example, see the `osl-ephys toolbox paper example <https://github.com/OHBA-analysis/osl-ephys/blob/main/examples/toolbox-paper/4_stats.py>`_).
+
+
+
+Can I add custom information to the reports?
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Yes, you can (for the preproc module)! You can add custom figures to the report by adding them to the ``dataset['fig']`` dictionary in your custom function as ``dataset['fig']['figure name']``. Here, 'figure name' will be used as the tab name in the report.
+This works for both the subject-level and group analyses, and the figures will be added to the subject/summary reports respecively. For example:
+
+.. code-block:: Python
+
+   def plot_subject_psd(dataset, userargs):
+    dataset['fig']['Subject PSD'] = dataset['raw'].compute_psd().plot()
+    return dataset
+
+   def plot_group_psd(dataset, userargs):
+      fig = plt.figure()
+      psd = []
+      for r in dataset['raw']:
+         tmp = mne.io.read_raw(r).compute_psd(picks='meg', fmin=1, fmax=30)
+         f = tmp.freqs
+         psd.append(np.mean(tmp.get_data(), axis=0))
+      psd = np.array(psd)
+      plt.plot(f, psd.T)
+      dataset['fig']['Group PSD'] = fig
+      return dataset
+
+   config = """
+      preproc: 
+         - plot_subject_psd: {}
+      group:
+         - plot_group_psd: {}
+   """
+
 
 
 How do I refine the pipeline for my data?
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 Have a look at the :doc:`tutorials_build/preprocessing_automatic` tutorial.
+
 
 What is MaxFilter and how do I use it?
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -98,7 +148,7 @@ We also need to start a Client and specify ``threads_per_worker=1`` and the numb
 
 .. warning::
 
-   ``threads_per_worker`` should always be set to 1. n_workers depends on your computing infrastructure. For example, if you’re on a personal computer with 8 cores, you can at most use ``n_workers=8``. If you’re working on a shared computing infrastructure, discuss the appropriate setting with your IT support. As a rule of thumb, here we will use half the cores that are available on your computer.
+   ``threads_per_worker`` should always be set to 1. ``n_workers`` depends on your computing infrastructure. For example, if you're on a personal computer with 8 cores, you can at most use ``n_workers=8``. If you're working on a shared computing infrastructure, discuss the appropriate setting with your IT support. As a rule of thumb, here we will use half the cores that are available on your computer.
 
 .. code-block:: Python
 
