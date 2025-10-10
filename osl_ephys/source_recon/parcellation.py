@@ -24,8 +24,11 @@ from nilearn.plotting import plot_markers, plot_glass_brain
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 
 import osl_ephys.source_recon.rhino.utils as rhino_utils
+
 from osl_ephys.utils.logger import log_or_print
 from osl_ephys.source_recon import freesurfer_utils
+from osl_ephys.source_recon.utils import find_file
+
 import pandas as pd
 
 def load_parcellation_description(parcellation_file, freesurfer=False, subject=None):
@@ -50,7 +53,7 @@ def load_parcellation_description(parcellation_file, freesurfer=False, subject=N
     """
 
     parcellation_dict = None
-    parcellation_file = rhino_utils.find_file(parcellation_file, freesurfer=False)
+    parcellation_file = find_file(parcellation_file, freesurfer=False)
 
     if parcellation_file is not None:
         # if file extension is .nii or .nii.gz replace with .xml
@@ -112,7 +115,7 @@ def load_parcellation(parcellation_file, freesurfer=False, subject=None):
             return labels
     
     # otherwise, load the nifti parcellation file
-    parcellation_file = rhino_utils.find_file(parcellation_file, freesurfer=freesurfer)
+    parcellation_file = find_file(parcellation_file, freesurfer=freesurfer)
     if parcellation_file is not None:
         return nib.load(parcellation_file)
     return None
@@ -181,7 +184,7 @@ def guess_parcellation(data, return_path=False):
         raise ValueError("Can't guess parcellation for {} channels".format(nparc))
     # print('Guessing parcellation is {}'.format(fname))
     if return_path:
-        return rhino_utils.find_file(fname, freesurfer=freesurfer)
+        return find_file(fname, freesurfer=freesurfer)
     else:
         return fname
  
@@ -445,7 +448,7 @@ def resample_parcellation(parcellation_file, voxel_coords, working_dir=None, fre
     gridstep = int(rhino_utils.get_gridstep(voxel_coords.T) / 1000)
     log_or_print(f"gridstep = {gridstep} mm")
 
-    parcellation_file = rhino_utils.find_file(parcellation_file, freesurfer=freesurfer)
+    parcellation_file = find_file(parcellation_file, freesurfer=freesurfer)
     path, parcellation_name = op.split(op.splitext(op.splitext(parcellation_file)[0])[0])
 
     if working_dir is None:
@@ -851,7 +854,7 @@ def _parcel_timeseries2nii(
     out_nii_fname : str
         Output nii filename, will be output at spatial resolution of parcel_timeseries['voxel_coords'].
     """
-    parcellation_file = rhino_utils.find_file(parcellation_file, freesurfer=freesurfer)
+    parcellation_file = find_file(parcellation_file, freesurfer=freesurfer)
     path, parcellation_name = op.split(op.splitext(op.splitext(parcellation_file)[0])[0])
 
     if working_dir is None:
@@ -945,8 +948,8 @@ def convert2niftii(parc_data, parcellation_file, mask_file, tres=1, tmin=0, free
         parc_data = np.reshape(parc_data, [1, -1])
 
     # Find files within the package
-    parcellation_file = rhino_utils.find_file(parcellation_file, freesurfer=freesurfer)
-    mask_file = rhino_utils.find_file(mask_file, freesurfer=freesurfer)
+    parcellation_file = find_file(parcellation_file, freesurfer=freesurfer)
+    mask_file = find_file(mask_file, freesurfer=freesurfer)
 
     # Load the mask
     mask = nib.load(mask_file)
@@ -1169,8 +1172,8 @@ def parcel_vector_to_voxel_grid(mask_file, parcellation_file, vector, freesurfer
         :code:`y` and :code:`z` correspond to 3D voxel locations.
     """
     # Validation
-    mask_file = rhino_utils.find_file(mask_file, freesurfer=freesurfer)
-    parcellation_file = rhino_utils.find_file(parcellation_file, freesurfer=freesurfer)
+    mask_file = find_file(mask_file, freesurfer=freesurfer)
+    parcellation_file = find_file(parcellation_file, freesurfer=freesurfer)
 
     # Load the mask
     mask = nib.load(mask_file)
@@ -1290,8 +1293,8 @@ def plot_source_topo(
     
     if parcellation_file is None:
         parcellation_file = guess_parcellation(data_map)
-    parcellation_file = rhino_utils.find_file(parcellation_file, freesurfer=freesurfer)
-    mask_file = rhino_utils.find_file(mask_file, freesurfer=freesurfer)
+    parcellation_file = find_file(parcellation_file, freesurfer=freesurfer)
+    mask_file = find_file(mask_file, freesurfer=freesurfer)
     
     if vmin is None:
         vmin = data_map.min()
@@ -1366,7 +1369,7 @@ def assign_voxels_to_binary_parcellation(voxel_coords, parcel_file):
         List of nvoxels parcel indices assigned to each voxel (-1 for no parcel assigned).
     """
 
-    parcel_file = rhino_utils.find_file(parcel_file)
+    parcel_file = find_file(parcel_file)
     nparcels = nib.load(parcel_file).get_fdata().shape[3]
 
     kdtrees = []

@@ -30,7 +30,6 @@ from mne.transforms import read_trans
 from mne.surface import write_surface
 from mne import io
 from mne.channels import make_dig_montage
-from mne import label as mne_label
 
 from numba import cfunc, carray
 from numba.types import intc, intp, float64, voidptr
@@ -1626,46 +1625,3 @@ def replace_headshape(raw, ds_headshape):
 
     return raw_copy
 
-
-def _find_package_file(filename):
-    files_dir = str(Path(__file__).parent) + "/files/"
-    if op.exists(files_dir + filename):
-        return files_dir + filename
-
-
-def _find_freesurfer_file(filename):
-    avail = mne_label._read_annot_cands(
-        os.path.join(os.environ["SUBJECTS_DIR"], 'fsaverage', 'label')
-    )
-    if filename in avail:
-        filename, hemis = mne_label._get_annot_fname(
-            None, 'fsaverage', 'both', filename, os.environ['SUBJECTS_DIR']
-        )
-        return filename
-
-
-def find_file(filename, freesurfer=False):
-    """Look for a file within the package.
-
-    Parameters
-    ----------
-    filename : str
-        Path to file to look for.
-    freesurfer : bool, optional
-        Should we look in the freesurfer directory?
-
-    Returns
-    -------
-    filename : str
-        Path to file found.
-    """
-    if not op.exists(filename):
-        if freesurfer:
-            filename = _find_freesurfer_file(filename)
-        else:
-            filename = _find_package_file(filename)
-        
-    if filename is None:
-        raise FileNotFoundError(filename)
-
-    return filename

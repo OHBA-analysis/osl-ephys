@@ -53,6 +53,7 @@ except ImportError:
 import nibabel as nib
 from osl_ephys.source_recon.rhino import coreg
 from osl_ephys.source_recon.rhino import utils as rhino_utils
+from osl_ephys.source_recon.utils import find_file
 from osl_ephys.utils.logger import log_or_print
 from osl_ephys.source_recon.parcellation import assign_voxels_to_binary_parcellation  
 
@@ -796,7 +797,7 @@ def _find_patches(src_pnts_inuse_mni,
         If False, do not group patches.
     '''
 
-    parcellation_data = nib.load(rhino_utils.find_file(dipole_patches_file)).get_fdata()
+    parcellation_data = nib.load(find_file(dipole_patches_file)).get_fdata()
 
     # Check if parcellation is binary 
     binary_mask = np.array_equal(np.unique(parcellation_data), [0, 1])
