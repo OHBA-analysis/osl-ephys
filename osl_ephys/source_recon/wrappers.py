@@ -661,6 +661,11 @@ def beamform(
     weight_norm="nai",
     pick_ori="max-power-pre-weight-norm",
     reg=0,
+    use_bilateral_pairs=False,
+    bilateral_tol=5,
+    bilateral_tol_midline=None,
+    dipole_patches_file=None,
+    group_patches=False,
     reportdir=None,
 ):
     """Wrapper function for beamforming.
@@ -689,6 +694,45 @@ def beamform(
         Orientation of the dipoles.
     reg : float, optional
         The regularization for the whitened data covariance.
+    use_bilateral_pairs : bool, optional
+        Whether to use bilateral dipole pairs and a bilateral beamformer.
+        Otherwise, a standard single dipole beamformer is used.
+        Only works with volumetric (RHINO) source spaces.
+        Overridden by dipole_patches_file, i.e. if dipole_patches_file
+        is specified, then use_bilateral_pairs is ignored.
+    bilateral_tol : float, optional
+        The maximum distance in mm between two dipoles to be considered
+        a bilateral pair. Only used if use_bilateral_pairs is True.
+        Recommended value is ~gridstep/2 mm.
+    bilateral_tol_midline : float, optional
+        The minimum distance in mm from the midline for a dipole to be
+        considered for bilateral pairing. Only used if use_bilateral_pairs
+        is True. Recommended value is ~gridstep/2 mm.
+        If None, is set to bilateral_tol. 
+    dipole_patches_file : str, optional
+        Path to a 4D nifti binary, mutually exclusive parcellation file, where
+        each volume should be a mask with 0 for the background  
+        and 1 for the parcel and each parcel should be non-overlapping.
+        Dipoles within a parcel will be considered as a group
+        of dipoles that will be beamformed together as a multi-dipole.
+        If None, then no patches are used in the beamformer.
+        File must be in MNI space.
+        This only works with volumetric (RHINO) source spaces.
+        Overrides use_bilateral_pairs.
+        If group_patches=True is also specified,
+        then the dipole_patches_file needs to be
+        accompanied by a text file with the same name but a .xml
+        extension that contains a "group" field
+        with a unique integer value shared by patches that are 
+        to be grouped into a multi-dipole (if group=0 then the patch 
+        is assumed to not be in a group).
+        (see also parcellation.load_parcellation_description).
+        Using a dipole_patches_file only works with volumetric (RHINO)
+        source spaces.
+    group_patches : bool, optional
+        Whether to group the dipoles within each patch together
+        to form a multi-dipole beamformer.
+        Only used when dipole_patches_file is specified.
     reportdir : str, optional
         Path to report directory
     """
@@ -715,7 +759,7 @@ def beamform(
         )
 
     # Pick channels
-    data.pick(chantypes)
+    chantype_data = data.copy().pick(chantypes)
 
     # Create beamforming filters
     log_or_print("beamforming.make_lcmv")
@@ -724,22 +768,37 @@ def beamform(
     filters = beamforming.make_lcmv(
         subjects_dir=outdir,
         subject=subject,
-        data=data,
+        data=chantype_data,
         chantypes=chantypes,
         reg=reg,
         weight_norm=weight_norm,
         pick_ori=pick_ori,
         rank=rank,
         save_filters=True,
+        use_bilateral_pairs=use_bilateral_pairs,
+        bilateral_tol=bilateral_tol,
+        bilateral_tol_midline=bilateral_tol_midline,
+        dipole_patches_file=dipole_patches_file,  
+        group_patches=group_patches,      
     )
 
     # Make plots
     filters_cov_plot, filters_svd_plot = beamforming.make_plots(
-        outdir, subject, filters, data
+        outdir, subject, filters, chantype_data
     )
     filters_cov_plot = filters_cov_plot.replace(f"{outdir}/", "")
     filters_svd_plot = filters_svd_plot.replace(f"{outdir}/", "")
 
+    dipole_locations_plot = f"{subject}/dipole_locations_plot.html"
+    beamforming.plot_dipole_locations(outdir, 
+                                    subject, 
+                                    use_bilateral_pairs, 
+                                    bilateral_tol, 
+                                    bilateral_tol_midline, 
+                                    dipole_patches_file,
+                                    group_patches,
+                                    f"{outdir}/{dipole_locations_plot}")
+    
     if reportdir is not None:
         # Save info for the report
         src_report.add_to_data(
@@ -752,6 +811,7 @@ def beamform(
                 "freq_range": freq_range,
                 "filters_cov_plot": filters_cov_plot,
                 "filters_svd_plot": filters_svd_plot,
+                "dipole_locations_plot": dipole_locations_plot,
             },
         )
 
@@ -896,7 +956,10 @@ def parcellate(
     epoch_file : str
         Path to epoched preprocessed fif file.
     parcellation_file : str
-        Path to the parcellation file to use.
+        If surface_extraction_method='fsl':
+            Path to a 4D nifti file providing the parcellation to use, 
+            with each volume correspond to a parcel.
+            Must be in MNI space.
     method : str
         Method to use in the parcellation.
     orthogonalisation : str, None
@@ -1115,13 +1178,13 @@ def parcellate(
     # Save plots
     parc_psd_plot = f"{subject}/parc/psd.png"
     parcellation.plot_psd(
-            parcel_data,
-            fs=data.info["sfreq"],
-            freq_range=freq_range,
-            parcellation_file=parcellation_file,
-            filename=f"{outdir}/{parc_psd_plot}",
-            freesurfer=surface_extraction_method=='freesurfer',
-        )
+        parcel_data,
+        fs=data.info["sfreq"],
+        freq_range=freq_range,
+        parcellation_file=parcellation_file,
+        filename=f"{outdir}/{parc_psd_plot}",
+        freesurfer=surface_extraction_method=='freesurfer',
+    )
     parc_corr_plot = f"{subject}/parc/corr.png"
     parcellation.plot_correlation(parcel_data, filename=f"{outdir}/{parc_corr_plot}")
 
@@ -1175,6 +1238,11 @@ def beamform_and_parcellate(
     reference_brain="mni",
     extra_chans="stim",
     neighbour_distance=None,
+    use_bilateral_pairs=False,
+    bilateral_tol=5,
+    bilateral_tol_midline=None, 
+    dipole_patches_file=None,  
+    group_patches=False, 
     reportdir=None,
 ):
     """Wrapper function for beamforming and parcellation.
@@ -1231,6 +1299,45 @@ def beamform_and_parcellate(
     neighbour_distance : float, optional
         Distance in mm between parcel centers to consider neighbours 
         for orthogonalisation='local'.
+    use_bilateral_pairs : bool, optional
+        Whether to use bilateral dipole pairs and a bilateral beamformer.
+        Otherwise, a standard single dipole beamformer is used.
+        This only works with volumetric (RHINO) source spaces.
+        Overridden by dipole_patches_file, i.e. if dipole_patches_file
+        is specified, then use_bilateral_pairs is ignored.
+    bilateral_tol : float, optional
+        The maximum distance in mm between two dipoles to be considered
+        a bilateral pair. Only used if use_bilateral_pairs is True.
+        Recommended value is ~gridstep/2 mm.
+    bilateral_tol_midline : float, optional
+        The minimum distance in mm from the midline for a dipole to be
+        considered for bilateral pairing. Only used if use_bilateral_pairs
+        is True. Recommended value is ~gridstep/2 mm.
+        If None, is set to bilateral_tol.
+    dipole_patches_file : str, optional
+        Path to a 4D nifti binary, mutually exclusive parcellation file, where
+        each volume should be a mask with 0 for the background  
+        and 1 for the parcel and each parcel should be non-overlapping.
+        Dipoles within a parcel will be considered as a group
+        of dipoles that will be beamformed together as a multi-dipole.
+        If None, then no patches are used in the beamformer.
+        File must be in MNI space.
+        This only works with volumetric (RHINO) source spaces.
+        Overrides use_bilateral_pairs.
+        If group_patches=True is also specified,
+        then the dipole_patches_file needs to be
+        accompanied by a text file with the same name but a .xml
+        extension that contains a "group" field
+        with a unique integer value shared by patches that are 
+        to be grouped into a multi-dipole (if group=0 then the patch 
+        is assumed to not be in a group).
+        (see also parcellation.load_parcellation_description).
+        Using a dipole_patches_file only works with volumetric (RHINO)
+        source spaces.
+    group_patches : bool, optional
+        Whether to group the dipoles within each patch together
+        to form a multi-dipole beamformer.
+        Only used when dipole_patches_file is specified.
     reportdir : str, optional
         Path to report directory.
     """
@@ -1266,13 +1373,18 @@ def beamform_and_parcellate(
     filters = beamforming.make_lcmv(
         subjects_dir=outdir,
         subject=subject,
-        data=data,
+        data=chantype_data,
         chantypes=chantypes,
         reg=reg,
         weight_norm=weight_norm,
         pick_ori=pick_ori,
         rank=rank,
         save_filters=True,
+        use_bilateral_pairs=use_bilateral_pairs,
+        bilateral_tol=bilateral_tol,
+        bilateral_tol_midline=bilateral_tol_midline,    
+        dipole_patches_file=dipole_patches_file,
+        group_patches=group_patches,
     )
 
     # Make plots
@@ -1282,6 +1394,16 @@ def beamform_and_parcellate(
     filters_cov_plot = filters_cov_plot.replace(f"{outdir}/", "")
     filters_svd_plot = filters_svd_plot.replace(f"{outdir}/", "")
 
+    dipole_locations_plot = f"{subject}/dipole_locations_plot.html"
+    beamforming.plot_dipole_locations(outdir, 
+                                    subject, 
+                                    use_bilateral_pairs, 
+                                    bilateral_tol, 
+                                    bilateral_tol_midline, 
+                                    dipole_patches_file,
+                                    group_patches,
+                                    f"{outdir}/{dipole_locations_plot}")
+
     # Apply beamforming
     bf_data = beamforming.apply_lcmv(chantype_data, filters)
 
@@ -1289,6 +1411,7 @@ def beamform_and_parcellate(
         bf_data = np.transpose([bf.data for bf in bf_data], axes=[1, 2, 0])
     else:
         bf_data = bf_data.data
+
     bf_data_mni, _, coords_mni, _ = beamforming.transform_recon_timeseries(
         subjects_dir=outdir,
         subject=subject,
@@ -1374,6 +1497,7 @@ def beamform_and_parcellate(
                 "freq_range": freq_range,
                 "filters_cov_plot": filters_cov_plot,
                 "filters_svd_plot": filters_svd_plot,
+                "dipole_locations_plot": dipole_locations_plot,
                 "parcellation_file": parcellation_file,
                 "method": method,
                 "reference_brain": reference_brain,
