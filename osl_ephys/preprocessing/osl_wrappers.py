@@ -329,11 +329,12 @@ def detect_artefacts(X, axis=None, reject_mode='dim', metric_func=np.std,
             return out
 
 
-def detect_maxfilt_zeros(raw):
+def detect_maxfilt_zeros(raw, use_maxfilter_log=True):
     """This function tries to load the maxfilter log files in order 
         to annotate zeroed out data in the :py:class:`mne.io.Raw <mne.io.Raw>` object. It 
         assumes that the log file is in the same directory as the
         raw file and has the same name, but with the extension ``.log``.
+        If the log file can't be found, it will look for zeros in the data.
 
     Parameters
     ----------
@@ -347,7 +348,7 @@ def detect_maxfilt_zeros(raw):
     """    
     if raw.filenames[0] is not None:
         log_fname = str(raw.filenames[0]).replace('.fif', '.log')
-    if 'log_fname' in locals() and exists(log_fname):
+    if 'log_fname' in locals() and exists(log_fname) and use_maxfilter_log:
         try:
             starttime = raw.first_time
             endtime = raw._last_time
@@ -374,15 +375,19 @@ def detect_maxfilt_zeros(raw):
             for ii in range(len(starts)):
                 stop = starts[ii] + duration  # in samples
                 bad_inds[int(starts[ii]):int(stop)] = 1
-            return bad_inds.astype(bool)
+            
         except:
-            s = "detecting zeroed out data from maxfilter log file failed"
-            logger.warning(s)
-            return None
+            logger.info("detecting zeroed-out data from maxfilter log file failed")
+            detect_maxfilt_zeros(raw, use_maxfilter_log=False)
     else:
-        s = "No maxfilter logfile detected - detecting zeroed out data not possible"
-        logger.info(s)
-        return None
+        logger.info("Detecting zeroed-out data from the data itself")
+        d = raw.get_data(picks='meg', reject_by_annotation='omit')
+        bad_inds = np.all(d == 0, axis=0)
+    
+    # check if most of the data is marked as bad
+    if np.sum(bad_inds)/len(bad_inds) > 0.5:
+        raise RuntimeError("More than half of the data is marked as bad. This often happens when maxfilter movement compensation is used but not enough HPI coils are useable. Please check your data and/or maxfilter settings.")
+    return bad_inds.astype(bool)
 
 
 def bad_segments(

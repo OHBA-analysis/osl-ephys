@@ -1,12 +1,11 @@
-<div class="fif" style='max-width: 90%; margin: auto; margin-bottom: 40px; background: #f6f6f6; box-shadow: 10px 10px 5px grey; padding: 25px 25px 25px 0px;' id="{{ data.fif_id }}">
+<div class="fif" style="max-width: 90%; margin: auto; margin-bottom: 40px; background: #f6f6f6; box-shadow: 10px 10px 5px grey; padding: 25px 25px 25px 0px; display: inline-block; vertical-align: top;" id="{{ data.fif_id }}">
 
-    <div>
-      <h3>{{ data.fif_id }} &ensp; ({{ data.num }} of {{ data.total }})</h3>
-    </div>
-  
-    <div class="flex-container" style="display: flex">
-  
-    <div class="flex-child" style="flex: 1">
+  <div>
+    <h3>{{ data.fif_id }} &ensp; ({{ data.num }} of {{ data.total }})</h3>
+  </div>
+
+  <div style="display: table; width: 100%">
+    <div style="display: table-cell; width: 20%; vertical-align: top">
       <div class="tab" style="display: grid">
           {% if data.compute_surfaces %}
               <button class="button1" onclick="openTab(event, '{{ data.fif_id }}_compute_surfaces', this.id)" style="border-top-style: solid">Surfaces</button>
@@ -14,7 +13,7 @@
           {% if data.coregister %}
               <button class="button1" onclick="openTab(event, '{{ data.fif_id }}_coregistration', this.id)" style="border-top-style: solid">Coregistration</button>
           {% endif %}
-          {% if data.beamform or data.beamform_and_parcellate%}
+          {% if data.beamform or data.beamform_and_parcellate %}
               <button class="button1" onclick="openTab(event, '{{ data.fif_id }}_beamforming', this.id)" style="border-top-style: solid">Beamforming</button>
           {% endif %}
           {% if data.beamform_and_parcellate or data.minimum_norm_and_parcellate %}
@@ -25,8 +24,9 @@
           {% endif %}
       </div>
     </div>
-  
-    <div class="flex-child" style="flex: 5; padding-left: 25px">
+
+    <div style="display: table-cell; width: 80%; padding-left: 25px; vertical-align: top">
+
   
       {% if data.compute_surfaces %}
           <div class="tabpage" style='width: 100%' id={{ data.fif_id }}_compute_surfaces>
@@ -84,7 +84,7 @@
       {% endif %}
   
       {% if data.coregister %}
-          <div class="tabpage" style='width: 100%' id={{ data.fif_id }}_coregistration>
+          <div class="tabpage" style='width: 100%; display: none' id={{ data.fif_id }}_coregistration>
               <h3>Coregistration
                   <span style="margin-right: 10px;"></span>
                   <button style="cursor: help; border: 1px solid; background-color: lightblue; color: black; padding: 2px 5px; font-size: 12px;" 
@@ -121,7 +121,7 @@
       {% endif %}
   
       {% if data.beamform_and_parcellate or data.minimum_norm_and_parcellate %}
-          <div class="tabpage" style='width: 100%; display: none' id={{ data.fif_id }}_parcellation>
+          <div class="tabpage" style="width: 100%; display: none" id={{ data.fif_id }}_parcellation>
               <h3>Parcellation</h3>
               <span style="margin-right: 10px;"></span>
               <button style="cursor: help; border: 1px solid; background-color: lightblue; color: black; padding: 2px 5px; font-size: 12px;" 
@@ -157,34 +157,363 @@
       </div>
     </div>
   </div>
-  
-  <script>
-  
-  function openTab(event, figTag, button) {
-      // Get all elements with class="tabpage" and hide them
-      tabpage = document.getElementsByClassName("tabpage");
-      for (i = 0; i < tabpage.length; i++) {
-          tabpage[i].style.display = "none";
-      }
-      // Show the current tab
-      document.getElementById(figTag).style.display = "block";
-      if (figTag.includes('compute_surfaces')) {
-          currentButton = 0;
-      }
-      if (figTag.includes('coregistration')) {
-          iframe = document.getElementById(figTag.concat('_iframe'));
-          iframe.src = iframe.getAttribute('data-src');
-          currentButton = 1;
-      }
-      if (figTag.includes('beamforming')) {
-          currentButton = 2;
-      }
-      if (figTag.includes('parcellation')) {
-          currentButton = 3;
-      }
-      if (figTag.includes('logs')) {
-          currentButton = 4;
-      }
+</div>
+
+<style>
+.button1.active {
+  background-color: lightgreen;
+  border-bottom: 2px solid #2e8b57;
+}
+</style>
+
+
+
+<script>
+(function () {
+  // initialize only once even if template rendered many times
+  if (window.__oslSrcPanelNavFixed__) return;
+  window.__oslSrcPanelNavFixed__ = true;
+
+  // Helper - find the currently visible .fif (first with offsetParent !== null)
+  function findVisibleFif() {
+    const all = Array.from(document.getElementsByClassName('fif'));
+    for (const el of all) {
+      if (el.offsetParent !== null) return el;
+    }
+    return all[0] || null;
   }
-  
-  </script>
+
+  // Helper - buttons inside a given fif (or the visible one)
+  function getButtonsForFif(fifEl) {
+    if (!fifEl) fifEl = findVisibleFif();
+    if (!fifEl) return [];
+    return Array.from(fifEl.querySelectorAll('.button1'));
+  }
+
+  // Parse figTag from inline onclick string (backwards compatibility)
+  function parseFigTagFromOnclick(onclickText) {
+    if (!onclickText) return null;
+    const m = onclickText.match(/openTab\([^,]*,\s*(['"])(.*?)\1/);
+    return m ? m[2] : null;
+  }
+
+  // Replacement openTab: operates *inside* the relevant .fif,
+  // sets .active on buttons, persists per-fif activeTab/currentIndex, lazy-loads iframe.
+  window.openTab = function (event, figTag, buttonId) {
+    if (!figTag) return;
+
+    // Find the .fif owning this tab (buttonId or figTag)
+    let fifEl = null;
+    if (buttonId) {
+      const byId = document.getElementById(buttonId);
+      if (byId) fifEl = byId.closest('.fif');
+    }
+    if (!fifEl) {
+      const tgt = document.getElementById(figTag);
+      if (tgt) fifEl = tgt.closest('.fif');
+    }
+    if (!fifEl) fifEl = findVisibleFif();
+
+    // Ensure visible fif is explicitly displayed as block to avoid layout reflow
+    if (fifEl) {
+      fifEl.style.display = 'block';
+      fifEl.style.boxSizing = 'border-box';
+      fifEl.style.width = '100%';
+    }
+
+    // Hide tabpages inside this .fif only
+    if (fifEl) {
+      const localPages = Array.from(fifEl.querySelectorAll('.tabpage'));
+      localPages.forEach(p => p.style.display = 'none');
+    } else {
+      // fallback global hide
+      const allPages = Array.from(document.getElementsByClassName('tabpage'));
+      allPages.forEach(p => p.style.display = 'none');
+    }
+
+    // Show the requested tabpage
+    const tgtEl = document.getElementById(figTag);
+    if (tgtEl) {
+      tgtEl.style.display = 'block';
+      // lazy-load iframe within this tab if present
+      const iframe = tgtEl.querySelector('iframe[data-src]');
+      if (iframe && iframe.getAttribute('data-src') && !iframe.src) {
+        iframe.src = iframe.getAttribute('data-src');
+      }
+    } else {
+      console.warn('openTab: target not found', figTag);
+    }
+
+    // Set .active within this .fif
+    const buttons = getButtonsForFif(fifEl);
+    buttons.forEach(b => b.classList.remove('active'));
+
+    // Determine index for the target (by buttonId, data-target, or inline onclick)
+    let idx = -1;
+    if (buttonId && buttons.length) {
+      idx = buttons.findIndex(b => b.id === buttonId);
+    }
+    if (idx === -1 && buttons.length) {
+      idx = buttons.findIndex(b => (b.dataset && b.dataset.target && b.dataset.target === figTag));
+      if (idx === -1) {
+        for (let i = 0; i < buttons.length; i++) {
+          const onclick = buttons[i].getAttribute('onclick') || '';
+          const tag = parseFigTagFromOnclick(onclick);
+          if (tag === figTag) { idx = i; break; }
+        }
+      }
+    }
+    if (idx === -1) idx = buttons.length > 0 ? 0 : -1;
+
+    if (idx !== -1 && buttons[idx]) {
+      buttons[idx].classList.add('active');
+      try { if (fifEl) fifEl.dataset.currentIndex = '' + idx; } catch (e) {}
+      try { if (fifEl) fifEl.dataset.activeTab = figTag; } catch (e) {}
+      try { buttons[idx].focus(); } catch (e) {}
+    }
+
+    // compatibility globals
+    try { window.currentFifId = fifEl ? (fifEl.id || null) : null; } catch (e) {}
+    try { window.currentButton = idx === -1 ? 0 : idx; } catch (e) {}
+  };
+
+  // Ensure clicks that call inline onclick still sync active class & persist dataset
+  function syncButtonClicks() {
+    const panels = Array.from(document.querySelectorAll('.fif'));
+    panels.forEach((fif) => {
+      const btns = Array.from(fif.querySelectorAll('.button1'));
+      btns.forEach((b) => {
+        if (b.__oslSyncBound) return;
+        b.addEventListener('click', function (ev) {
+          const parent = b.closest('.fif');
+          if (!parent) return;
+          const siblings = Array.from(parent.querySelectorAll('.button1'));
+          siblings.forEach(s => s.classList.remove('active'));
+          b.classList.add('active');
+          try { parent.dataset.currentIndex = '' + siblings.indexOf(b); } catch (e) {}
+          let target = b.dataset.target || parseFigTagFromOnclick(b.getAttribute('onclick') || '');
+          try { if (parent && target) parent.dataset.activeTab = target; } catch (e) {}
+        }, false);
+        b.__oslSyncBound = true;
+      });
+    });
+  }
+
+  // MutationObserver: when visible .fif changes, restore stored per-file tab and force display:block to avoid layout shifts
+  let lastVisibleId = null;
+  const mo = new MutationObserver(function () {
+    if (mo.__t) clearTimeout(mo.__t);
+    mo.__t = setTimeout(function () {
+      syncButtonClicks();
+      const vis = findVisibleFif();
+      const visId = vis ? vis.id : null;
+      if (vis && vis.style.display !== 'block') {
+        // explicitly set visible style to block to preserve layout
+        vis.style.display = 'block';
+        vis.style.boxSizing = 'border-box';
+        vis.style.width = '100%';
+      }
+      if (visId !== lastVisibleId) {
+        lastVisibleId = visId;
+        if (!vis) return;
+        const stored = vis.dataset && vis.dataset.activeTab ? vis.dataset.activeTab : null;
+        const buttons = Array.from(vis.querySelectorAll('.button1'));
+        if (stored) {
+          // find a button matching stored
+          let btn = buttons.find(b => (b.dataset && b.dataset.target && b.dataset.target === stored) || parseFigTagFromOnclick(b.getAttribute('onclick') || '') === stored);
+          if (btn) {
+            openTab(null, stored, btn.id);
+          } else if (buttons.length) {
+            const fallbackTarget = parseFigTagFromOnclick(buttons[0].getAttribute('onclick') || '');
+            if (fallbackTarget) openTab(null, fallbackTarget, buttons[0].id);
+          }
+        } else if (buttons.length) {
+          const fallbackTarget = parseFigTagFromOnclick(buttons[0].getAttribute('onclick') || '');
+          if (fallbackTarget) openTab(null, fallbackTarget, buttons[0].id);
+        }
+      }
+    }, 30);
+  });
+
+  mo.observe(document.body, { attributes: true, childList: true, subtree: true, attributeFilter: ['style', 'class'] });
+
+  // initial setup
+  document.addEventListener('DOMContentLoaded', function () {
+    syncButtonClicks();
+    // ensure visible panel is block and has an active tab open
+    const vis = findVisibleFif();
+    if (vis) {
+      vis.style.display = 'block';
+      vis.style.boxSizing = 'border-box';
+      vis.style.width = '100%';
+      const buttons = Array.from(vis.querySelectorAll('.button1'));
+      if (buttons.length) {
+        // if a button already has .active, use it; otherwise open the first
+        const active = buttons.find(b => b.classList.contains('active'));
+        if (active) {
+          const target = active.dataset.target || parseFigTagFromOnclick(active.getAttribute('onclick') || '');
+          if (target) openTab(null, target, active.id);
+        } else {
+          const target = parseFigTagFromOnclick(buttons[0].getAttribute('onclick') || '');
+          if (target) openTab(null, target, buttons[0].id);
+        }
+      }
+    }
+  });
+
+  // immediate-run if DOMContentLoaded already fired
+  if (document.readyState === 'interactive' || document.readyState === 'complete') {
+    syncButtonClicks();
+    const vis = findVisibleFif();
+    if (vis) {
+      vis.style.display = 'block';
+      vis.style.boxSizing = 'border-box';
+      vis.style.width = '100%';
+      const buttons = Array.from(vis.querySelectorAll('.button1'));
+      if (buttons.length) {
+        const active = buttons.find(b => b.classList.contains('active'));
+        if (active) {
+          const target = active.dataset.target || parseFigTagFromOnclick(active.getAttribute('onclick') || '');
+          if (target) openTab(null, target, active.id);
+        } else {
+          const target = parseFigTagFromOnclick(buttons[0].getAttribute('onclick') || '');
+          if (target) openTab(null, target, buttons[0].id);
+        }
+      }
+    }
+  }
+
+})();
+</script>
+
+
+<!-- BEGIN: osl-fif stacking fix -->
+<script>
+(function () {
+  if (window.__oslFifStacked__) return;
+  window.__oslFifStacked__ = true;
+
+  function createWrapperIfNeeded() {
+    // if already present, return it
+    const existing = document.getElementById('osl-fif-wrapper');
+    if (existing) return existing;
+
+    const all = Array.from(document.getElementsByClassName('fif'));
+    if (!all.length) return null;
+
+    const wrapper = document.createElement('div');
+    wrapper.id = 'osl-fif-wrapper';
+    // wrapper reserves space in the document flow; children are absolutely stacked inside it
+    wrapper.style.position = 'relative';
+    wrapper.style.width = '100%';
+    wrapper.style.boxSizing = 'border-box';
+
+    const first = all[0];
+    first.parentNode.insertBefore(wrapper, first);
+
+    // move all .fif nodes into the wrapper in order
+    all.forEach(el => wrapper.appendChild(el));
+    return wrapper;
+  }
+
+  function measureAndApply() {
+    const wrapper = createWrapperIfNeeded();
+    if (!wrapper) return;
+    const fifEls = Array.from(wrapper.getElementsByClassName('fif'));
+    if (!fifEls.length) return;
+
+    // stack them absolutely; visible one stays visible; others hidden
+    fifEls.forEach(el => {
+      el.style.position = 'absolute';
+      el.style.top = '0';
+      el.style.left = '0';
+      el.style.width = '100%';
+      el.style.boxSizing = 'border-box';
+      // do not change display here — we'll set it correctly below
+    });
+
+    // Ensure every panel is measurable: temporarily make hidden ones block+invisible
+    const changed = [];
+    fifEls.forEach(el => {
+      const cs = getComputedStyle(el);
+      if (cs.display === 'none') {
+        changed.push({ el, prevDisplay: el.style.display, prevVisibility: el.style.visibility });
+        el.style.display = 'block';
+        el.style.visibility = 'hidden';
+      }
+    });
+
+    // compute maximum natural height
+    let max = 0;
+    for (const el of fifEls) {
+      // use scrollHeight (works even if children overflow)
+      const h = Math.ceil(el.getBoundingClientRect().height || el.scrollHeight || 0);
+      if (h > max) max = h;
+    }
+
+    // restore temporaries
+    changed.forEach(obj => {
+      obj.el.style.display = obj.prevDisplay || 'none';
+      obj.el.style.visibility = obj.prevVisibility || '';
+    });
+
+    // ensure only the intended visible panel is display:block; others display:none
+    // find a currently visible one (offsetParent !== null) as best candidate
+    let vis = fifEls.find(e => e.offsetParent !== null);
+    if (!vis) {
+      // fallback: prefer one with dataset.activeTab or first
+      vis = fifEls.find(e => e.dataset && e.dataset.activeTab) || fifEls[0];
+    }
+    fifEls.forEach(el => {
+      if (el === vis) {
+        el.style.display = 'block';
+        el.style.visibility = '';
+      } else {
+        el.style.display = 'none';
+      }
+    });
+
+    if (max > 0) {
+      wrapper.style.minHeight = max + 'px';
+    } else {
+      // safety fallback
+      wrapper.style.minHeight = '';
+    }
+  }
+
+  // run measurement on DOM ready + load
+  document.addEventListener('DOMContentLoaded', function () {
+    // allow the rest of your init code to run first
+    setTimeout(measureAndApply, 30);
+  });
+  window.addEventListener('load', function () {
+    setTimeout(measureAndApply, 30);
+  });
+
+  // re-run when media loads (images / iframes inside .fif)
+  function attachMediaListeners() {
+    const media = Array.from(document.querySelectorAll('.fif img, .fif iframe'));
+    media.forEach(m => {
+      if (m.__oslFifBound__) return;
+      m.addEventListener('load', function () { setTimeout(measureAndApply, 40); }, { passive: true });
+      m.__oslFifBound__ = true;
+    });
+  }
+  document.addEventListener('DOMContentLoaded', attachMediaListeners);
+  window.addEventListener('load', attachMediaListeners);
+
+  // watch for DOM changes that might change which .fif is visible
+  const mo = new MutationObserver(function () {
+    if (mo.__t) clearTimeout(mo.__t);
+    mo.__t = setTimeout(function () {
+      attachMediaListeners();
+      measureAndApply();
+    }, 40);
+  });
+  mo.observe(document.body, { attributes: true, childList: true, subtree: true, attributeFilter: ['style', 'class'] });
+
+  // expose for debugging if needed
+  window.__oslMeasureFifPanels = measureAndApply;
+})();
+</script>
+<!-- END: osl-fif stacking fix -->

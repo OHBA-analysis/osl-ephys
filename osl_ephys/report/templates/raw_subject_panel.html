@@ -3,7 +3,7 @@
     <div>
       <h3>{{ data.fif_id }} &ensp; ({{ data.num }} of {{ data.total }})</h3>
     </div>
-  
+    
     <div class="flex-container" style="display: flex">
   
     <div class="flex-child" style="flex: 1">
@@ -16,19 +16,33 @@
           <button class="button1" onclick="openTab(event, '{{ data.fif_id }}_channels', this.id)">Channels</button>
           <button class="button1" onclick="openTab(event, '{{ data.fif_id }}_spectra', this.id)">Power Spectra</button>
           <button class="button1" onclick="openTab(event, '{{ data.fif_id }}_digitisation', this.id)">Digitisation</button>
+          {% if data.plt_events is defined %}
+              <button class="button1" onclick="openTab(event, '{{ data.fif_id }}_events', this.id)">Events</button>
+          {% endif %}
           {% if data.plt_ica is defined %}
               <button class="button1" onclick="openTab(event, '{{ data.fif_id }}_ica', this.id)">ICA</button>
           {% endif %}
           {% if data.log is defined %}
               <button class="button1" onclick="openTab(event, '{{ data.fif_id }}_logs', this.id)">Logs</button>
           {% endif %}
+
+          {# --- Custom figures: create a tab button for each key --- #}
+          {% if data.plt_custom_figures is defined and data.plt_custom_figures %}
+            {% for key, val in data.plt_custom_figures.items() %}
+                {# create a safe id by replacing spaces and slashes #}
+                {% set safe_key = key|replace(' ', '_')|replace('/', '_') %}
+                <button class="button1" id="{{ data.fif_id }}_btn_custom_{{ safe_key }}"
+                        onclick="openTab(event, '{{ data.fif_id }}_custom_{{ safe_key }}', this.id)">
+                    {{ key }}
+                </button>
+            {% endfor %}
+          {% endif %}
   
       </div>
     </div>
   
     <div class="flex-child" style="flex: 5; padding-left: 25px">
-  
-      <div class="tabpage" style='width: 100%' id={{ data.fif_id }}_info>
+      <div class="tabpage" style='width: 100%' id="{{ data.fif_id }}_info">
           <div>
               <b>Original file:</b> {{ data.filename }}</br>
               {% if data.preproc_fif_filename != None %}
@@ -55,7 +69,7 @@
           </div>
       </div>
       
-      <div class="tabpage" style="width: 100%; display: none" id={{ data.fif_id }}_timeseries>
+      <div class="tabpage" style="width: 100%; display: none" id="{{ data.fif_id }}_timeseries">
           <div style="width: 100%">
               <h4>Raw data
                   <span style="margin-right: 10px;"></span>
@@ -124,7 +138,7 @@
           {% endif %}
       </div>
           
-      <div class="tabpage" style="width: 100%; display: none" id={{ data.fif_id }}_channels>
+      <div class="tabpage" style="width: 100%; display: none" id="{{ data.fif_id }}_channels">
           <div style="width: 75%; margin:0 auto">
               <h4>Distribution of Per-Sensor Variance
                   <span style="margin-right: 10px;"></span>
@@ -154,7 +168,7 @@
           </div>
       </div>
           
-      <div class="tabpage" style="width: 100%; display: none" id={{ data.fif_id }}_spectra>
+      <div class="tabpage" style="width: 100%; display: none" id="{{ data.fif_id }}_spectra">
           <div style="width: 100%; display: table; table-layout: fixed;">
               <div style="display: table-row; height: 100px;">
                   <div class='figbox' style="display: table-cell; width: 50%; vertical-align: top;">
@@ -191,7 +205,7 @@
           </div>
       </div>
       
-      <div class="tabpage" style="width: 100%; display: none" id={{ data.fif_id }}_digitisation>
+      <div class="tabpage" style="width: 100%; display: none" id="{{ data.fif_id }}_digitisation">
           <div style="width: 100%">
               <h4>Digitisation and Headshape
                   <span style="margin-right: 10px;"></span>
@@ -203,9 +217,24 @@
               <img src="{{ data.plt_digitisation }}" alt="" style='max-width: 100%'/>
           </div>
       </div>
-  
+    
+      {% if data.plt_events is defined %}
+      <div class="tabpage" style="width: 100%; display: none" id="{{ data.fif_id }}_events">
+          <div style="width: 100%">
+              <h4>Events
+                  <span style="margin-right: 10px;"></span>
+                  <button style="cursor: help; border: 1px solid; background-color: lightblue; color: black; padding: 2px 5px; font-size: 12px;" 
+                          title="Do the events look sensible? i.e., are the numbers and timings the way you would?">
+                      ?
+                  </button>
+              </h4>
+              <img src="{{ data.plt_events }}" alt="" style='max-width: 100%'/>
+          </div>
+      </div>
+      {% endif %}
+
       {% if data.plt_ica is defined %}
-          <div class="tabpage" style="width: 100%; display: none" id={{ data.fif_id }}_ica>
+          <div class="tabpage" style="width: 100%; display: none" id="{{ data.fif_id }}_ica">
               <div style="width: 100%">
                   <h4>ICA
                       <span style="margin-right: 10px;"></span>
@@ -218,9 +247,24 @@
               </div>
           </div>
       {% endif %}
+
+      {# --- Custom figure tab pages --- #}
+      {% if data.plt_custom_figures is defined and data.plt_custom_figures %}
+            {% for key, val in data.plt_custom_figures.items() %}
+                {% set safe_key = key|replace(' ', '_')|replace('/', '_') %}
+                <div class="tabpage" style="width: 100%; display: none" id="{{ data.fif_id }}_custom_{{ safe_key }}">
+                    <div style="width: 100%">
+                        <h4>{{ key }}</h4>
+                        {# assume val is a URL/path to the figure (same pattern as other plt_* fields) #}
+                        <img src="{{ val }}" alt="{{ key }}" style="max-width: 100%;"/>
+                    </div>
+                </div>
+            {% endfor %}
+      {% endif %}
+
   
       {% if data.log is defined %}
-          <div class="tabpage" style="width: 100%; display: none" id={{ data.fif_id }}_logs>               
+          <div class="tabpage" style="width: 100%; display: none" id="{{ data.fif_id }}_logs">               
               <h4>Preprocessing Log</h4>
               <textarea id="log" rows="20" style="width: 80%;" readonly>{{ data.log }}</textarea>
               {% if data.errlog is defined %}
@@ -231,7 +275,7 @@
       {% endif %}
   
       {% if data.maxlog_autobad is defined or data.maxlog_sss is defined or data.maxlog_trans is defined %}
-          <div class="tabpage" style="width: 100%; display: none" id={{ data.fif_id }}_maxfilt>               
+          <div class="tabpage" style="width: 100%; display: none" id="{{ data.fif_id }}_maxfilt">               
               <h3>Maxfilter Logs</h3>
               {% if data.maxlog_autobad is defined %}
                   <h4>Autobad</h4>
@@ -250,41 +294,288 @@
       </div>
     </div>
   </div>
-  
-  <script>
-  
-  function openTab(event, figTag, button) {
-      // Get all elements with class="tabpage" and hide them
-      tabpage = document.getElementsByClassName("tabpage");
-      for (i = 0; i < tabpage.length; i++) {
-          tabpage[i].style.display = "none";
-      }
-      // Show the current tab
-      document.getElementById(figTag).style.display = "block";
-      if (figTag.includes('info')) {
-          currentButton = 0;
-      }
-      if (figTag.includes('timeseries')) {
-          currentButton = 1;
-      }
-      if (figTag.includes('channels')) {
-          currentButton = 2;
-      }
-      if (figTag.includes('spectra')) {
-          currentButton = 3;
-      }
-      if (figTag.includes('digitisation')) {
-          currentButton = 4;
-      }
-      if (figTag.includes('ica')) {
-          currentButton = 5;
-      }
-      if (figTag.includes('logs')) {
-          currentButton = 6;
-      }
-      if (figTag.includes('maxfilt')) {
-          currentButton = 7;
-      }
+
+
+<script>
+(function () {
+  // Globals
+  window.currentButton = typeof window.currentButton === 'number' ? window.currentButton : 0;
+  window.currentFifId = window.currentFifId || null;
+  let suppressTabNav = false; // when true, ignore arrow/tab programmatic changes for a moment
+
+  // Helpers
+  function findVisibleFif() {
+    const fifEls = Array.from(document.getElementsByClassName('fif'));
+    for (const el of fifEls) {
+      if (el.offsetParent !== null) return el;
+    }
+    return fifEls[0] || null;
   }
-  
-  </script>
+
+  function getButtonsForFif(fifEl) {
+    if (!fifEl) fifEl = findVisibleFif();
+    if (!fifEl) return [];
+    return Array.from(fifEl.querySelectorAll('.button1'));
+  }
+
+  function parseFigTagFromOnclick(onclickText) {
+    if (!onclickText) return null;
+    const m = onclickText.match(/openTab\([^,]*,\s*(['"])(.*?)\1/);
+    return m ? m[2] : null;
+  }
+
+  function getActiveIndex(buttons) {
+    if (!buttons || buttons.length === 0) return -1;
+    const idx = buttons.findIndex(b => b.classList.contains('active'));
+    if (idx !== -1) return idx;
+    // fallback: deduce from visible tabpage
+    for (let i = 0; i < buttons.length; i++) {
+      const onclick = buttons[i].getAttribute('onclick') || '';
+      const tag = parseFigTagFromOnclick(onclick);
+      if (tag) {
+        const el = document.getElementById(tag);
+        if (el && el.style && el.style.display !== 'none') return i;
+      }
+    }
+    return 0;
+  }
+
+function restoreActiveTabForFif(fifEl) {
+  if (!fifEl) fifEl = findVisibleFif();
+  if (!fifEl) return;
+
+  // try stored data-active-tab first
+  const stored = fifEl.dataset && fifEl.dataset.activeTab ? fifEl.dataset.activeTab : null;
+
+  // Find currently visible tag in this panel (if any)
+  const buttons = getButtonsForFif(fifEl);
+  let currentVisibleTag = null;
+  for (let i = 0; i < buttons.length; i++) {
+    const onclick = buttons[i].getAttribute('onclick') || '';
+    const tag = parseFigTagFromOnclick(onclick);
+    if (tag) {
+      const el = document.getElementById(tag);
+      if (el && el.style && el.style.display !== 'none') {
+        currentVisibleTag = tag;
+        break;
+      }
+    }
+  }
+
+  // If stored tab matches what's already visible, do nothing.
+  if (stored && stored === currentVisibleTag) {
+    // still sync numeric index to be safe
+    const idx = getActiveIndex(buttons);
+    window.currentButton = idx === -1 ? 0 : idx;
+    window.currentFifId = fifEl.id || null;
+    return;
+  }
+
+  // Decide fallback target if nothing stored
+  let targetTag = stored;
+  if (!targetTag) {
+    // fallback to first visible or first button tag
+    for (let i = 0; i < buttons.length; i++) {
+      const onclick = buttons[i].getAttribute('onclick') || '';
+      const tag = parseFigTagFromOnclick(onclick);
+      if (tag) {
+        const el = document.getElementById(tag);
+        if (el && el.style && el.style.display !== 'none') { targetTag = tag; break; }
+      }
+    }
+    if (!targetTag && buttons.length > 0) {
+      const onclick = buttons[0].getAttribute('onclick') || '';
+      targetTag = parseFigTagFromOnclick(onclick);
+    }
+  }
+
+  if (targetTag) {
+    // prevent other handlers from reacting while we restore
+    setSuppressNavShort();
+    // openTab will set active class and numeric index
+    openTab(null, targetTag, buttons.length > 0 ? buttons[0].id : null);
+  }
+}
+
+
+  // Core openTab: show tabpage, set active button, persist per-fif active tag
+  window.openTab = function (event, figTag, buttonId) {
+    // If called without figTag -> nothing to do
+    if (!figTag) return;
+
+    // hide all tabpages
+    const tabpages = Array.from(document.getElementsByClassName('tabpage'));
+    tabpages.forEach(tp => tp.style.display = 'none');
+
+    // show requested tabpage
+    const tgt = document.getElementById(figTag);
+    if (tgt) {
+      tgt.style.display = 'block';
+    } else {
+      console.warn('Tab target not found:', figTag);
+    }
+
+    // Determine the .fif container for this tab
+    let fifEl = null;
+    if (buttonId) {
+      const btnEl = document.getElementById(buttonId);
+      if (btnEl) fifEl = btnEl.closest('.fif');
+    }
+    if (!fifEl && tgt) fifEl = tgt.closest('.fif');
+    if (!fifEl) fifEl = findVisibleFif();
+
+    // Update buttons active state within that panel
+    const buttons = getButtonsForFif(fifEl);
+    buttons.forEach(b => b.classList.remove('active'));
+
+    // find index of the clicked button among these buttons
+    let idx = -1;
+    if (buttonId) idx = buttons.findIndex(b => b.id === buttonId);
+    if (idx === -1 && event && event.currentTarget) idx = buttons.indexOf(event.currentTarget);
+
+    if (idx === -1 && figTag) {
+      for (let i = 0; i < buttons.length; i++) {
+        const onclick = buttons[i].getAttribute('onclick') || '';
+        const tag = parseFigTagFromOnclick(onclick);
+        if (tag === figTag) { idx = i; break; }
+      }
+    }
+
+    if (idx === -1) idx = buttons.length > 0 ? 0 : -1;
+    if (idx !== -1 && buttons[idx]) buttons[idx].classList.add('active');
+
+    // persist the exact tag for this fif so we can restore it when we revisit this file
+    if (fifEl) {
+      try {
+        fifEl.dataset.activeTab = figTag;
+      } catch (e) {
+        // ignore if dataset unsupported for some reason
+      }
+      window.currentFifId = fifEl.id || null;
+    }
+
+    // store numeric index as well (some legacy code may expect it)
+    window.currentButton = idx === -1 ? 0 : idx;
+  };
+
+  // Restore per-panel active tab when panel becomes visible
+  function restoreActiveTabForFif(fifEl) {
+    if (!fifEl) fifEl = findVisibleFif();
+    if (!fifEl) return;
+
+    // try stored data-active-tab first
+    const stored = fifEl.dataset && fifEl.dataset.activeTab ? fifEl.dataset.activeTab : null;
+
+    // else fall back to first button/Info
+    const buttons = getButtonsForFif(fifEl);
+    let targetTag = stored;
+    if (!targetTag) {
+      // prefer any currently visible tabpage in this panel
+      for (let i = 0; i < buttons.length; i++) {
+        const onclick = buttons[i].getAttribute('onclick') || '';
+        const tag = parseFigTagFromOnclick(onclick);
+        if (tag) {
+          const el = document.getElementById(tag);
+          if (el && el.style && el.style.display !== 'none') { targetTag = tag; break; }
+        }
+      }
+      // fallback to first button's tag
+      if (!targetTag && buttons.length > 0) {
+        const onclick = buttons[0].getAttribute('onclick') || '';
+        targetTag = parseFigTagFromOnclick(onclick);
+      }
+    }
+
+    if (targetTag) {
+      // prevent other handlers from reacting while we restore
+      setSuppressNavShort();
+      openTab(null, targetTag, buttons.length > 0 ? buttons[0].id : null); // openTab will resolve correct button
+    }
+  }
+
+  // Arrow navigation: compute active index live, then call openTab for exact tag.
+  window.gotoNextTab = function () {
+    if (suppressTabNav) return;
+    const fif = findVisibleFif();
+    const buttons = getButtonsForFif(fif);
+    if (!buttons || buttons.length === 0) return;
+    const active = getActiveIndex(buttons);
+    const next = Math.min(buttons.length - 1, (active === -1 ? 0 : active) + 1);
+    const onclick = buttons[next].getAttribute('onclick') || '';
+    const tag = parseFigTagFromOnclick(onclick);
+    // suppress briefly before we open (prevents race if file switch also happens)
+    setSuppressNavShort();
+    openTab(null, tag || null, buttons[next].id);
+  };
+
+  window.gotoPrevTab = function () {
+    if (suppressTabNav) return;
+    const fif = findVisibleFif();
+    const buttons = getButtonsForFif(fif);
+    if (!buttons || buttons.length === 0) return;
+    const active = getActiveIndex(buttons);
+    const prev = Math.max(0, (active === -1 ? 0 : active) - 1);
+    const onclick = buttons[prev].getAttribute('onclick') || '';
+    const tag = parseFigTagFromOnclick(onclick);
+    setSuppressNavShort();
+    openTab(null, tag || null, buttons[prev].id);
+  };
+
+  // keyboard binding
+  document.addEventListener('keydown', function (e) {
+    const activeEl = document.activeElement;
+    if (activeEl && (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA' || activeEl.isContentEditable)) return;
+    if (e.key === 'ArrowRight') {
+      window.gotoNextTab();
+      e.preventDefault();
+    } else if (e.key === 'ArrowLeft') {
+      window.gotoPrevTab();
+      e.preventDefault();
+    }
+  });
+
+  // MutationObserver: detect visible .fif change. When that happens, restore that panel's saved tab.
+  let lastVisibleFifId = null;
+  let moTimer = null;
+  const mo = new MutationObserver(function () {
+    if (moTimer) clearTimeout(moTimer);
+    moTimer = setTimeout(function () {
+      const vis = findVisibleFif();
+      const visId = vis ? vis.id : null;
+      if (visId !== lastVisibleFifId) {
+        // visible panel changed
+        lastVisibleFifId = visId;
+        // prevent immediate key handlers causing races
+        setSuppressNavShort();
+        // restore that panel's saved tab (this calls openTab once)
+        restoreActiveTabForFif(vis);
+      } else {
+        // same panel — just sync numeric index
+        const fif = vis;
+        if (fif) {
+          const idx = getActiveIndex(getButtonsForFif(fif));
+          window.currentButton = idx === -1 ? 0 : idx;
+          window.currentFifId = fif.id || null;
+        }
+      }
+    }, 30);
+  });
+  mo.observe(document.body, { attributes: true, childList: true, subtree: true, attributeFilter: ['style', 'class'] });
+
+  // initial restore on load
+  document.addEventListener('DOMContentLoaded', function () {
+    const vis = findVisibleFif();
+    lastVisibleFifId = vis ? vis.id : null;
+    restoreActiveTabForFif(vis);
+  });
+
+})();
+</script>
+
+
+<style>
+.button1.active {
+    background-color: lightgreen;
+    border-bottom: 2px solid #2e8b57; /* darker green border for contrast */
+}
+</style>
