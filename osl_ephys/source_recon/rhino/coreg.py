@@ -866,11 +866,13 @@ def coreg_display(
 
                 if single_dipoles is not None and len(single_dipoles.T) > 0:
 
-                    color, scale, alpha = "blue", 0.0015, 0.5
+                    color, alpha = "blue", 0.5
+                    scale = 0.0015
 
                     if multi_dipoles is not None and len(multi_dipoles) > 0: 
+                        # make single dipoles a bit bigger if also plotting multi_dipoles
                         scale = 0.002
-                         # make single dipoles a bit bigger if also plotting multi_dipoles
+
                     renderer.sphere(center=single_dipoles, 
                                         color=color, 
                                         scale=scale * 1000, 
@@ -879,7 +881,8 @@ def coreg_display(
 
                 if midline_points is not None and len(midline_points.T) > 0:
 
-                    color, scale, alpha = "green", 0.0025, 1
+                    color, alpha = "green", 1
+                    scale = 0.0025
                     renderer.sphere(center=midline_points, 
                                     color=color, 
                                     scale=scale * 1000, 
@@ -901,7 +904,8 @@ def coreg_display(
                                 log_or_print("multi_dipoles_display_mode set to 'points' as number of dipoles is not 2")
 
                         if multi_dipoles_display_mode == "points" or multi_dipoles_display_mode == "multicoloured_points":
-                            scale, alpha = 0.0017, 0.5
+                            alpha = 0.5
+                            scale = 0.002
 
                             for i in range(len(pp)):
                                 # spheres

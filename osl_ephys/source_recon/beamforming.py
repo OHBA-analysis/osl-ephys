@@ -865,7 +865,7 @@ def _find_patches(src_pnts_inuse_mni,
 
         multi_dipoles = new_multi_dipoles
 
-        log_or_print(f"After grouping patches into bilateral pairs, number of multi-dipoles is now {len(multi_dipoles)}")
+        log_or_print(f"After grouping patches, number of multi-dipoles is now {len(multi_dipoles)}")
 
     return multi_dipoles, single_dipoles
 
