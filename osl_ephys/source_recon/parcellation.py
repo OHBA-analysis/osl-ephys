@@ -10,7 +10,8 @@ import os
 import os.path as op
 from pathlib import Path
 
-import fsl
+from fsl import wrappers as fsl_wrappers
+
 import mne
 import numpy as np
 import nibabel as nib
@@ -44,26 +45,25 @@ def load_parcellation_description(parcellation_file, freesurfer=False, subject=N
     Returns
     -------
     df : dict
-        Dictionary with keys 'index', 'label', 'x', 'y', 'z' for each parcel.
+        Dictionary with keys 'index', 'group', 'label', 'x', 'y', 'z' for each parcel.
     
     """
 
     parcellation_dict = None
-    parcellation_file = find_file(parcellation_file, freesurfer=False)
+    parcellation_file = rhino_utils.find_file(parcellation_file, freesurfer=False)
 
     if parcellation_file is not None:
-        # look for xml file with same name
+        # if file extension is .nii or .nii.gz replace with .xml
         xml_file = parcellation_file.replace(".nii.gz", ".xml").replace(".nii", ".xml")
-        print(xml_file)
+        log_or_print(f"Looking for {xml_file}")
         if op.exists(xml_file):
             # load xml_file without parcellation library
             df = pd.read_xml(xml_file)
-
             # if no index column, use ordinal index
             df = df.set_index('index') if 'index' in df.columns else df.reset_index(drop=True)
 
             # keep only relevant columns
-            df = df.loc[:, df.columns.str.lower().isin(["index", "label", "x", "y", "z"])]
+            df = df.loc[:, df.columns.str.lower().isin(["index", "group", "label", "x", "y", "z"])]
 
             # turn df into a dictionary using the index as keys
             parcellation_dict = df.to_dict(orient='index')
@@ -112,54 +112,10 @@ def load_parcellation(parcellation_file, freesurfer=False, subject=None):
             return labels
     
     # otherwise, load the nifti parcellation file
-    parcellation_file = find_file(parcellation_file, freesurfer=freesurfer)
+    parcellation_file = rhino_utils.find_file(parcellation_file, freesurfer=freesurfer)
     if parcellation_file is not None:
         return nib.load(parcellation_file)
     return None
-
-
-def _find_package_file(filename):
-    files_dir = str(Path(__file__).parent) + "/files/"
-    if op.exists(files_dir + filename):
-        return files_dir + filename
-
-
-def _find_freesurfer_file(filename):
-    avail = mne.label._read_annot_cands(
-        os.path.join(os.environ["SUBJECTS_DIR"], 'fsaverage', 'label')
-    )
-    if filename in avail:
-        filename, hemis = mne.label._get_annot_fname(
-            None, 'fsaverage', 'both', filename, os.environ['SUBJECTS_DIR']
-        )
-        return filename
-
-
-def find_file(filename, freesurfer=False):
-    """Look for a parcellation file within the package.
-
-    Parameters
-    ----------
-    filename : str
-        Path to parcellation file to look for.
-    freesurfer : bool, optional
-        Should we look in the freesurfer directory?
-
-    Returns
-    -------
-    filename : str
-        Path to parcellation file found.
-    """
-    if not op.exists(filename):
-        if freesurfer:
-            filename = _find_freesurfer_file(filename)
-        else:
-            filename = _find_package_file(filename)
-        
-    if filename is None:
-        raise FileNotFoundError(filename)
-
-    return filename
 
 
 def guess_parcellation(data, return_path=False):
@@ -225,7 +181,7 @@ def guess_parcellation(data, return_path=False):
         raise ValueError("Can't guess parcellation for {} channels".format(nparc))
     # print('Guessing parcellation is {}'.format(fname))
     if return_path:
-        return find_file(fname, freesurfer=freesurfer)
+        return rhino_utils.find_file(fname, freesurfer=freesurfer)
     else:
         return fname
  
@@ -489,7 +445,7 @@ def resample_parcellation(parcellation_file, voxel_coords, working_dir=None, fre
     gridstep = int(rhino_utils.get_gridstep(voxel_coords.T) / 1000)
     log_or_print(f"gridstep = {gridstep} mm")
 
-    parcellation_file = find_file(parcellation_file, freesurfer=freesurfer)
+    parcellation_file = rhino_utils.find_file(parcellation_file, freesurfer=freesurfer)
     path, parcellation_name = op.split(op.splitext(op.splitext(parcellation_file)[0])[0])
 
     if working_dir is None:
@@ -509,7 +465,18 @@ def resample_parcellation(parcellation_file, voxel_coords, working_dir=None, fre
     #   but this functionality is deprecated and will be removed in a future release.
     #
     # However, it doesn't look like the input be being truncated, the resampled parcellation appears to be a 4D volume.
-    fsl.wrappers.flirt(parcellation_file, parcellation_file, out=parcellation_resampled, applyisoxfm=gridstep)
+
+    # Check if parcellation is binary 
+    binary_mask = np.array_equal(np.unique(nib.load(parcellation_file).get_fdata()), [0, 1])
+    if binary_mask:
+        interp = "nearestneighbour"
+    else:
+        interp = "trilinear" 
+
+    fsl_wrappers.flirt(parcellation_file, parcellation_file, out=parcellation_resampled, applyisoxfm=gridstep, interp=interp)
+
+    if nib.load(parcellation_resampled).ndim != 4:
+        raise ValueError(f"Resampled parcellation {parcellation_resampled} should be a 4D NIfTI file.")
 
     nparcels = nib.load(parcellation_resampled).get_fdata().shape[3]
 
@@ -530,7 +497,6 @@ def resample_parcellation(parcellation_file, voxel_coords, working_dir=None, fre
                 parcellation_asmatrix[ind, parcel_index] = parcellation_vals[index]
 
     return parcellation_asmatrix
-
 
 def local_orthogonalise(timeseries, parcellation_file=None, dist=None, adjacency=None, ):
     """Returns a local orthogonalisation of the timeseries, where the time series of local neighbours are regressed out with multiple linear regression.
@@ -885,7 +851,7 @@ def _parcel_timeseries2nii(
     out_nii_fname : str
         Output nii filename, will be output at spatial resolution of parcel_timeseries['voxel_coords'].
     """
-    parcellation_file = find_file(parcellation_file, freesurfer=freesurfer)
+    parcellation_file = rhino_utils.find_file(parcellation_file, freesurfer=freesurfer)
     path, parcellation_name = op.split(op.splitext(op.splitext(parcellation_file)[0])[0])
 
     if working_dir is None:
@@ -979,8 +945,8 @@ def convert2niftii(parc_data, parcellation_file, mask_file, tres=1, tmin=0, free
         parc_data = np.reshape(parc_data, [1, -1])
 
     # Find files within the package
-    parcellation_file = find_file(parcellation_file, freesurfer=freesurfer)
-    mask_file = find_file(mask_file, freesurfer=freesurfer)
+    parcellation_file = rhino_utils.find_file(parcellation_file, freesurfer=freesurfer)
+    mask_file = rhino_utils.find_file(mask_file, freesurfer=freesurfer)
 
     # Load the mask
     mask = nib.load(mask_file)
@@ -1203,8 +1169,8 @@ def parcel_vector_to_voxel_grid(mask_file, parcellation_file, vector, freesurfer
         :code:`y` and :code:`z` correspond to 3D voxel locations.
     """
     # Validation
-    mask_file = find_file(mask_file, freesurfer=freesurfer)
-    parcellation_file = find_file(parcellation_file, freesurfer=freesurfer)
+    mask_file = rhino_utils.find_file(mask_file, freesurfer=freesurfer)
+    parcellation_file = rhino_utils.find_file(parcellation_file, freesurfer=freesurfer)
 
     # Load the mask
     mask = nib.load(mask_file)
@@ -1324,8 +1290,8 @@ def plot_source_topo(
     
     if parcellation_file is None:
         parcellation_file = guess_parcellation(data_map)
-    parcellation_file = find_file(parcellation_file, freesurfer=freesurfer)
-    mask_file = find_file(mask_file, freesurfer=freesurfer)
+    parcellation_file = rhino_utils.find_file(parcellation_file, freesurfer=freesurfer)
+    mask_file = rhino_utils.find_file(mask_file, freesurfer=freesurfer)
     
     if vmin is None:
         vmin = data_map.min()
@@ -1372,3 +1338,60 @@ def plot_source_topo(
     # despite the options of vmin, vmax, the colorbar is always set to -vmax to vmax. correct this
     # plt.gca().get_images()[0].set_clim(vmin, vmax)
     return plt.gca().get_images()[0]
+
+
+def assign_voxels_to_binary_parcellation(voxel_coords, parcel_file):
+    """
+    Assigns voxel to parcels in a 4D parcellation file.
+    Voxel coords and parcel file must be in same coordinate space.
+    Parcel file must be a binary parcellation (0 for background, 1 for parcel)
+    Output is a binary parcellation with each voxel assigned to at most one parcel.
+
+    Assigns voxel to the closest parcel if within gridstep distance.
+    If no parcel is within gridstep distance, then do not assign to any parcel.
+    If multiple parcels are within gridstep distance, then assign to the closest parcel.
+
+    Parameters
+    ----------
+    voxel_coords : (nvoxels, 3) np.array
+        The 3D coords of the voxels to assign to parcels.
+    parcel_file : str
+        Path to a 4D nifti binary parcellation file where 
+        each volume should be a mask with 0 for the background 
+        and 1 for the parcel.
+        File must be in same coordinate space as voxel_coords.
+    Returns
+    -------
+    parcellation_assignment : list[int]
+        List of nvoxels parcel indices assigned to each voxel (-1 for no parcel assigned).
+    """
+
+    parcel_file = rhino_utils.find_file(parcel_file)
+    nparcels = nib.load(parcel_file).get_fdata().shape[3]
+
+    kdtrees = []
+    for parcel_ind in range(nparcels):
+        coords_mni, _ = rhino_utils.niimask2mmpointcloud(parcel_file, volindex=parcel_ind)
+        kdtrees.append(KDTree(coords_mni.T))
+
+    gridstep = int(rhino_utils.get_gridstep(coords_mni.T) / 1000)
+
+    parcellation_assignment = []
+    for ind in range(voxel_coords.shape[0]):
+
+        # Assigns voxel to the closest parcel if within gridstep distance.
+        # If no parcel is within gridstep distance, then do not assign to any parcel.
+        # If multiple parcels are within gridstep distance, then assign to the closest parcel.
+        best_distance = np.inf
+        best_index = -1
+        for parcel_ind, kdtree in enumerate(kdtrees):
+            distance, _ = kdtree.query(voxel_coords[ind, :])
+            if distance < gridstep and distance < best_distance:
+                best_distance = distance
+                best_index = parcel_ind    
+        if best_index >= 0:
+            parcellation_assignment.append(best_index)
+        else:
+            parcellation_assignment.append(-1)  # -1 for no parcel assigned
+
+    return parcellation_assignment

@@ -469,10 +469,9 @@ def coreg_display(
     display_headshape_pnts=True,
     display_inskull=False,    
     display_dipoles=False,
-    display_pairs=False,
-    pairs_display_mode="lines",
-    pairs=None,
-    singletons=None,
+    multi_dipoles_display_mode="multicoloured_points",
+    multi_dipoles=None,
+    single_dipoles=None,
     midline_points=None,
     filename=None,
     src_index=0,    
@@ -509,6 +508,37 @@ def coreg_display(
         Whether to include fiducials in the display.
     display_headshape_pnts - bool
         Whether to include headshape points in the display.    
+    display_inskull : bool
+        Whether to show in-skull surface in the display.
+    display_dipoles : bool  
+        Whether to show dipoles in the display. Dipoles are only shown if a forward model has been computed.
+    multi_dipoles_display_mode : string
+        Either:
+            'multicoloured_points' to show dipoles as colored points with color indicating which dipoles are part of the same multidipole set.
+            'points' to show all dipoles that are part of any patch as small red points
+            'linepairs' to show pairs of dipoles as red line pairs. Only works when number
+            of dipoles in each multidipole set is 2.
+    multi_dipoles : list of np.ndarray
+        Each element of the list is a set of indices corresponding to the dipoles to plot that
+        will be beamformed together as a multi-dipole set.
+        E.g. for bilateral dipoles, each element of the list will contain 2 indices.
+        E.g. for a patch, each element of the list will contain all the indices of the dipoles in the patch.
+        Indices correspond to the order of the single dipoles in the forward model source space.
+        Set to None to not plot any multidipole sets.
+    single_dipoles : list[int]
+        Each element of the list is a set of indices corresponding to the dipoles to plot as single dipoles.
+        Indices correspond to the order of the single dipoles in the forward model source space.
+        Set to None to not plot any single dipoles -  
+        unless multi_dipoles is also None, in which case all dipoles
+        in the forward model source space will be plotted as single dipoles.
+    midline_points : list[int]
+        Dipoles that lie on the midline of the head.
+        E.g. will be set if doing a bilateral beamformer (where they are treated as single dipoles).
+        Only ever used for plotting purposes.
+        Set to None to not plot any midline dipoles.
+    src_index : int
+        Index of the source space to use in the forward model, if there is more than one source space.
+        Default is 0, which is the first source space.
     filename : str
         Filename to save display to (as an interactive html).
         Must have extension .html.
@@ -704,15 +734,18 @@ def coreg_display(
 
         log_or_print("BEM surface: number of dipoles = {}".format(src_pnts.shape[0]))
 
-        if display_pairs:
-            if midline_points is not None:
-                midline_pnts = src_pnts[midline_points, :]
-            if singletons is not None:
-                singleton_pnts = src_pnts[singletons, :]
+        if single_dipoles is not None:
+            single_dipoles = src_pnts[single_dipoles, :]
         else:
-            singleton_pnts = src_pnts
-            midline_pnts = None
-            pairs = None
+            if multi_dipoles is None:
+                single_dipoles = src_pnts
+                log_or_print("No dipole types specified, displaying all dipoles as single dipoles")
+            else:
+                single_dipoles = None
+                log_or_print("Will not display any single dipoles")
+
+        if midline_points is not None:
+            midline_points = src_pnts[midline_points, :]
 
     # --------
     # Do plots
@@ -831,60 +864,73 @@ def coreg_display(
             # dipole (vol source) grid points
             if display_dipoles:
 
-                if singleton_pnts is not None and len(singleton_pnts.T) > 0:
-                    color, scale, alpha = "blue", 0.0015, 0.6
-                    renderer.sphere(center=singleton_pnts, 
-                                    color=color, 
-                                    scale=scale * 1000, 
-                                    opacity=alpha, 
-                                    backface_culling=True)
+                if single_dipoles is not None and len(single_dipoles.T) > 0:
 
-                if display_pairs:
+                    color, scale, alpha = "blue", 0.0015, 0.5
 
-                    if midline_pnts is not None and len(midline_pnts.T) > 0:
-                        color, scale, alpha = "green", 0.0025, 1
-                        renderer.sphere(center=midline_pnts, 
+                    if multi_dipoles is not None and len(multi_dipoles) > 0: 
+                        scale = 0.002
+                         # make single dipoles a bit bigger if also plotting multi_dipoles
+                    renderer.sphere(center=single_dipoles, 
                                         color=color, 
                                         scale=scale * 1000, 
                                         opacity=alpha, 
                                         backface_culling=True)
 
-                    if pairs is not None and len(pairs) > 0:
-                        for pp in pairs:
+                if midline_points is not None and len(midline_points.T) > 0:
 
-                            if pairs_display_mode == "points":
-                                # show a point for each dipole
-                                color, scale, alpha = "red", 0.001, 0.6
-                                renderer.sphere(center=np.array([[src_pnts[pp[0], 0], 
-                                                                src_pnts[pp[0], 1],
-                                                                src_pnts[pp[0], 2]],
-                                                                [src_pnts[pp[1], 0], 
-                                                                src_pnts[pp[1], 1],
-                                                                src_pnts[pp[1], 2]]
-                                                                ]), 
-                                                color=color, 
-                                                scale=scale * 1000, 
-                                                opacity=alpha, 
-                                                backface_culling=True)
-                                
-                            elif pairs_display_mode == "lines":
-                                # show a line connecting each pair
-                                color = "red"
-                                alpha = 0.4
-                                radius = 0.2
-                                renderer.tube(origin = np.array([[src_pnts[pp[0], 0], 
-                                                        src_pnts[pp[0], 1],
-                                                        src_pnts[pp[0], 2]]]), 
-                                                destination = np.array([[src_pnts[pp[1], 0], 
-                                                            src_pnts[pp[1], 1],
-                                                            src_pnts[pp[1], 2]]]),
-                                                radius=radius,
-                                                opacity=alpha,
-                                                color=color)
-                            else:
-                                ValueError(f'{pairs_display_mode} is an invalid pairs_display_mode')
-                                
+                    color, scale, alpha = "green", 0.0025, 1
+                    renderer.sphere(center=midline_points, 
+                                    color=color, 
+                                    scale=scale * 1000, 
+                                    opacity=alpha, 
+                                    backface_culling=True)
+                
+                if multi_dipoles is not None and len(multi_dipoles) > 0:
 
+                    if multi_dipoles_display_mode == "multicoloured_points":
+                        colors_in = plt.cm.get_cmap("tab20", len(multi_dipoles)).colors
+                    else:
+                        colors_in = ["red"] * len(multi_dipoles)
+
+                    for index, pp in enumerate(multi_dipoles):
+                        if multi_dipoles_display_mode == "linepairs":
+                            # only show lines if number of dipoles in multi_dipoles is 2
+                            if len(pp) != 2:
+                                multi_dipoles_display_mode = "points"
+                                log_or_print("multi_dipoles_display_mode set to 'points' as number of dipoles is not 2")
+
+                        if multi_dipoles_display_mode == "points" or multi_dipoles_display_mode == "multicoloured_points":
+                            scale, alpha = 0.0017, 0.5
+
+                            for i in range(len(pp)):
+                                # spheres
+                                renderer.sphere(center=np.array([[src_pnts[pp[i], 0], 
+                                                                    src_pnts[pp[i], 1],
+                                                                    src_pnts[pp[i], 2]]]), 
+                                                    color=colors_in[index], 
+                                                    scale=scale * 1000, 
+                                                    opacity=alpha, 
+                                                    backface_culling=True)
+                            
+                            
+                        elif multi_dipoles_display_mode == "linepairs":
+                            # show a line connecting each pair
+                            color = "red"
+                            alpha = 0.4
+                            radius = 0.2
+                            # mne/viz/backends/_abstract.py
+                            renderer.tube(origin = np.array([[src_pnts[pp[0], 0], 
+                                                    src_pnts[pp[0], 1],
+                                                    src_pnts[pp[0], 2]]]), 
+                                            destination = np.array([[src_pnts[pp[1], 0], 
+                                                        src_pnts[pp[1], 1],
+                                                        src_pnts[pp[1], 2]]]),
+                                            radius=radius,
+                                            opacity=alpha,
+                                            color=color)
+                        else:
+                            ValueError(f'{multi_dipoles_display_mode} is an invalid multi_dipoles_display_mode')
 
             renderer.set_camera(azimuth=90, elevation=90, distance=600, focalpoint=(0.0, 0.0, 0.0))
 
@@ -985,40 +1031,38 @@ def coreg_display(
 
             if display_dipoles:
 
-                if singleton_pnts is not None and len(singleton_pnts.T) > 0:
+                if single_dipoles is not None and len(single_dipoles.T) > 0:
                     color, scale, alpha, marker = "blue", 1, 0.5, "."
-                    singleton_pntst = singleton_pnts.T
+                    single_pntst = single_dipoles.T
                     ax.scatter(
-                        singleton_pntst[0, :],
-                        singleton_pntst[1, :],
-                        singleton_pntst[2, :],
+                        single_pntst[0, :],
+                        single_pntst[1, :],
+                        single_pntst[2, :],
                         color=color,
                         marker=marker,
                         s=scale,
                         alpha=alpha,
                     )
 
-                if display_pairs:
+                if midline_points is not None and len(midline_points.T) > 0:
+                    color, scale, alpha, marker = "green", 1, 0.5, "."
+                    midline_pntst = midline_points.T
+                    ax.scatter(
+                        midline_pntst[0, :],
+                        midline_pntst[1, :],
+                        midline_pntst[2, :],
+                        color=color,
+                        marker=marker,
+                        s=scale,
+                        alpha=alpha,
+                    )
 
-                    if midline_pnts is not None and len(midline_pnts.T) > 0:
-                        color, scale, alpha, marker = "green", 1, 0.5, "."
-                        midline_pntst = midline_pnts.T
-                        ax.scatter(
-                            midline_pntst[0, :],
-                            midline_pntst[1, :],
-                            midline_pntst[2, :],
-                            color=color,
-                            marker=marker,
-                            s=scale,
-                            alpha=alpha,
-                        )
-
-                    if pairs is not None and len(pairs) > 0:
-                        color = "red"
-                        for pp in pairs:
-                            ax.plot([src_pnts[pp[0], 0], src_pnts[pp[1], 0]], 
-                                        [src_pnts[pp[0], 1], src_pnts[pp[1], 1]], 
-                                        [src_pnts[pp[0], 2], src_pnts[pp[1], 2]], c=color)
+                if multi_dipoles is not None and len(multi_dipoles) > 0:
+                    color = "red"
+                    for pp in multi_dipoles:
+                        ax.plot([src_pnts[pp[0], 0], src_pnts[pp[1], 0]], 
+                                    [src_pnts[pp[0], 1], src_pnts[pp[1], 1]], 
+                                    [src_pnts[pp[0], 2], src_pnts[pp[1], 2]], c=color)
 
             if filename is None:
                 plt.show()
@@ -1041,12 +1085,11 @@ def bem_display(
     display_headshape_pnts=False,    
     display_inskull=True,    
     display_dipoles=True,
-    display_pairs=False,
-    pairs=None,
-    singletons=None,
+    multi_dipoles=None,
+    single_dipoles=None,
     midline_points=None,
     filename=None,
-    src_index=0,    
+    src_index=0,
 ):
     '''
     3D display of the Boundary Element Model, including
@@ -1069,9 +1112,8 @@ def bem_display(
         display_headshape_pnts=display_headshape_pnts,          
         display_inskull=display_inskull,    
         display_dipoles=display_dipoles,
-        display_pairs=display_pairs,
-        pairs=pairs,
-        singletons=singletons,
+        multi_dipoles=multi_dipoles,
+        single_dipoles=single_dipoles,
         midline_points=midline_points,
         filename=filename,
         src_index=src_index,

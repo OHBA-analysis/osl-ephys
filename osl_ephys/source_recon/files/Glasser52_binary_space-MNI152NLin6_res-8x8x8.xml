@@ -1,54 +1,54 @@
 <data>
-<label index="1" x="14.5" y="-80.5" z="-0.4">Primary and Early Visual Cortex_rh</label>
-<label index="2" x="19.4" y="-81.4" z="30.6">Dorsal Stream Visual Cortex_rh</label>
-<label index="3" x="29.9" y="-57.6" z="-17.7">Ventral Stream Visual Cortex_rh</label>
-<label index="4" x="42.2" y="-71.5" z="0.0">MT+ Complex and Neighboring Visual Areas_rh</label>
-<label index="5" x="23.6" y="-29.5" z="61.0">Superior Somatosnesory and Motor Cortex_rh</label>
-<label index="6" x="49.1" y="-13.4" z="38.3">Inferior Somatosnesory and Motor Cortex_rh</label>
-<label index="7" x="12.7" y="-2.2" z="62.9">Supplementory Motor Area_rh</label>
-<label index="8" x="10.0" y="-31.2" z="53.6">Cingulate Motor Areas & Area 5_rh</label>
-<label index="9" x="40.9" y="0.9" z="41.1">Premotor Cortex_rh</label>
-<label index="10" x="37.7" y="1.6" z="4.0">Insular & Frontoparietal Operculum_rh</label>
-<label index="11" x="40.2" y="-27.5" z="13.5">Early Auditory Cortex_rh</label>
-<label index="12" x="55.0" y="-14.0" z="-6.5">Auditory Association Cortex_rh</label>
-<label index="13" x="25.0" y="-22.1" z="-22.1">Medial Temporal Cortex_rh</label>
-<label index="14" x="48.5" y="-16.3" z="-25.3">Lateral Temporal Cortex_rh</label>
-<label index="15" x="52.1" y="-48.1" z="12.3">Temporal-Parieto-Occipital Junction_rh</label>
-<label index="16" x="29.5" y="-51.0" z="43.0">Medial Bank of the Intra-parietal Sulcus_rh</label>
-<label index="17" x="19.1" y="-58.4" z="59.6">Superior Medial Parietal Cortex_rh</label>
-<label index="18" x="56.7" y="-29.7" z="35.7">Inferior Parietal Cortex Task-Positive Network_rh</label>
-<label index="19" x="47.4" y="-56.1" z="35.8">Inferior Parietal Cortex Task-Negative Network_rh</label>
-<label index="20" x="36.5" y="-71.1" z="32.6">Intraparietal Sulcus & PGP_rh</label>
-<label index="21" x="10.3" y="-55.1" z="26.8">Posterior Cingulate Cortex_rh</label>
-<label index="22" x="6.1" y="33.8" z="14.2">Anterior Cingulate and Medial Prefrontal Cortex_rh</label>
-<label index="23" x="17.1" y="47.0" z="-11.6">Orbital and Polar Frontal Cortex_rh</label>
-<label index="24" x="45.4" y="32.5" z="3.8">Inferior Frontal Cortex_rh</label>
-<label index="25" x="34.8" y="37.1" z="25.7">Inferior Dorso-Lateral Prefrontal Cortex_rh</label>
-<label index="26" x="21.0" y="31.9" z="45.9">Superior Dorso-Lateral Prefronta lCortex_rh</label>
-<label index="27" x="-16.9" y="-82.0" z="-0.9">Primary and Early Visual Cortex_lh</label>
-<label index="28" x="-21.7" y="-84.3" z="27.0">Dorsal Stream Visual Cortex_lh</label>
-<label index="29" x="-34.5" y="-56.0" z="-18.6">Ventral Stream Visual Cortex_lh</label>
-<label index="30" x="-45.2" y="-70.3" z="-1.4">MT+ Complex and Neighboring Visual Areas_lh</label>
-<label index="31" x="-22.6" y="-30.4" z="62.8">Superior Somatosnesory and Motor Cortex_lh</label>
-<label index="32" x="-48.3" y="-18.7" z="41.7">Inferior Somatosnesory and Motor Cortex_lh</label>
-<label index="33" x="-14.0" y="-2.7" z="62.7">Supplementory Motor Area_lh</label>
-<label index="34" x="-14.4" y="-30.6" z="49.7">Cingulate Motor Areas & Area 5_lh</label>
-<label index="35" x="-40.3" y="-1.7" z="43.8">Premotor Cortex_lh</label>
-<label index="36" x="-41.3" y="0.1" z="3.7">Insular & Frontoparietal Operculum_lh</label>
-<label index="37" x="-45.4" y="-29.4" z="12.1">Early Auditory Cortex_lh</label>
-<label index="38" x="-55.3" y="-17.3" z="-7.8">Auditory Association Cortex_lh</label>
-<label index="39" x="-27.9" y="-22.2" z="-22.6">Medial Temporal Cortex_lh</label>
-<label index="40" x="-49.6" y="-17.9" z="-25.1">Lateral Temporal Cortex_lh</label>
-<label index="41" x="-53.1" y="-54.0" z="14.5">Temporal-Parieto-Occipital Junction_lh</label>
-<label index="42" x="-31.1" y="-50.0" z="41.1">Medial Bank of the Intra-parietal Sulcus_lh</label>
-<label index="43" x="-21.3" y="-60.5" z="58.2">Superior Medial Parietal Cortex_lh</label>
-<label index="44" x="-56.6" y="-36.3" z="36.6">Inferior Parietal Cortex Task-Positive Network_lh</label>
-<label index="45" x="-45.1" y="-63.4" z="35.2">Inferior Parietal Cortex Task-Negative Network_lh</label>
-<label index="46" x="-36.7" y="-70.0" z="30.4">Intraparietal Sulcus & PGP_lh</label>
-<label index="47" x="-11.6" y="-49.5" z="28.0">Posterior Cingulate Cortex_lh</label>
-<label index="48" x="-8.7" y="32.0" z="11.4">Anterior Cingulate and Medial Prefrontal Cortex_lh</label>
-<label index="49" x="-21.9" y="46.3" z="-8.1">Orbital and Polar Frontal Cortex_lh</label>
-<label index="50" x="-45.1" y="28.2" z="7.7">Inferior Frontal Cortex_lh</label>
-<label index="51" x="-37.2" y="36.2" z="25.2">Inferior Dorso-Lateral Prefrontal Cortex_lh</label>
-<label index="52" x="-23.5" y="28.6" z="45.7">Superior Dorso-Lateral Prefrontal Cortex_lh</label>
+<label index="1" group="1" x="14.5" y="-80.5" z="-0.4">Primary and Early Visual Cortex_rh</label>
+<label index="2" group="2" x="19.4" y="-81.4" z="30.6">Dorsal Stream Visual Cortex_rh</label>
+<label index="3" group="3" x="29.9" y="-57.6" z="-17.7">Ventral Stream Visual Cortex_rh</label>
+<label index="4" group="4" x="42.2" y="-71.5" z="0.0">MT+ Complex and Neighboring Visual Areas_rh</label>
+<label index="5" group="5" x="23.6" y="-29.5" z="61.0">Superior Somatosnesory and Motor Cortex_rh</label>
+<label index="6" group="6" x="49.1" y="-13.4" z="38.3">Inferior Somatosnesory and Motor Cortex_rh</label>
+<label index="7" group="7" x="12.7" y="-2.2" z="62.9">Supplementory Motor Area_rh</label>
+<label index="8" group="8" x="10.0" y="-31.2" z="53.6">Cingulate Motor Areas and Area 5_rh</label>
+<label index="9" group="9" x="40.9" y="0.9" z="41.1">Premotor Cortex_rh</label>
+<label index="10" group="10" x="37.7" y="1.6" z="4.0">Insular and Frontoparietal Operculum_rh</label>
+<label index="11" group="11" x="40.2" y="-27.5" z="13.5">Early Auditory Cortex_rh</label>
+<label index="12" group="12" x="55.0" y="-14.0" z="-6.5">Auditory Association Cortex_rh</label>
+<label index="13" group="13" x="25.0" y="-22.1" z="-22.1">Medial Temporal Cortex_rh</label>
+<label index="14" group="14" x="48.5" y="-16.3" z="-25.3">Lateral Temporal Cortex_rh</label>
+<label index="15" group="15" x="52.1" y="-48.1" z="12.3">Temporal-Parieto-Occipital Junction_rh</label>
+<label index="16" group="16" x="29.5" y="-51.0" z="43.0">Medial Bank of the Intra-parietal Sulcus_rh</label>
+<label index="17" group="17" x="19.1" y="-58.4" z="59.6">Superior Medial Parietal Cortex_rh</label>
+<label index="18" group="18" x="56.7" y="-29.7" z="35.7">Inferior Parietal Cortex Task-Positive Network_rh</label>
+<label index="19" group="19" x="47.4" y="-56.1" z="35.8">Inferior Parietal Cortex Task-Negative Network_rh</label>
+<label index="20" group="20" x="36.5" y="-71.1" z="32.6">Intraparietal Sulcus and PGP_rh</label>
+<label index="21" group="21" x="10.3" y="-55.1" z="26.8">Posterior Cingulate Cortex_rh</label>
+<label index="22" group="22" x="6.1" y="33.8" z="14.2">Anterior Cingulate and Medial Prefrontal Cortex_rh</label>
+<label index="23" group="23" x="17.1" y="47.0" z="-11.6">Orbital and Polar Frontal Cortex_rh</label>
+<label index="24" group="24" x="45.4" y="32.5" z="3.8">Inferior Frontal Cortex_rh</label>
+<label index="25" group="25" x="34.8" y="37.1" z="25.7">Inferior Dorso-Lateral Prefrontal Cortex_rh</label>
+<label index="26" group="26" x="21.0" y="31.9" z="45.9">Superior Dorso-Lateral Prefronta lCortex_rh</label>
+<label index="27" group="1" x="-16.9" y="-82.0" z="-0.9">Primary and Early Visual Cortex_lh</label>
+<label index="28" group="2" x="-21.7" y="-84.3" z="27.0">Dorsal Stream Visual Cortex_lh</label>
+<label index="29" group="3" x="-34.5" y="-56.0" z="-18.6">Ventral Stream Visual Cortex_lh</label>
+<label index="30" group="4" x="-45.2" y="-70.3" z="-1.4">MT+ Complex and Neighboring Visual Areas_lh</label>
+<label index="31" group="5" x="-22.6" y="-30.4" z="62.8">Superior Somatosnesory and Motor Cortex_lh</label>
+<label index="32" group="6" x="-48.3" y="-18.7" z="41.7">Inferior Somatosnesory and Motor Cortex_lh</label>
+<label index="33" group="7" x="-14.0" y="-2.7" z="62.7">Supplementory Motor Area_lh</label>
+<label index="34" group="8" x="-14.4" y="-30.6" z="49.7">Cingulate Motor Areas and Area 5_lh</label>
+<label index="35" group="9" x="-40.3" y="-1.7" z="43.8">Premotor Cortex_lh</label>
+<label index="36" group="10" x="-41.3" y="0.1" z="3.7">Insular and Frontoparietal Operculum_lh</label>
+<label index="37" group="11" x="-45.4" y="-29.4" z="12.1">Early Auditory Cortex_lh</label>
+<label index="38" group="12" x="-55.3" y="-17.3" z="-7.8">Auditory Association Cortex_lh</label>
+<label index="39" group="13" x="-27.9" y="-22.2" z="-22.6">Medial Temporal Cortex_lh</label>
+<label index="40" group="14" x="-49.6" y="-17.9" z="-25.1">Lateral Temporal Cortex_lh</label>
+<label index="41" group="15" x="-53.1" y="-54.0" z="14.5">Temporal-Parieto-Occipital Junction_lh</label>
+<label index="42" group="16" x="-31.1" y="-50.0" z="41.1">Medial Bank of the Intra-parietal Sulcus_lh</label>
+<label index="43" group="17" x="-21.3" y="-60.5" z="58.2">Superior Medial Parietal Cortex_lh</label>
+<label index="44" group="18" x="-56.6" y="-36.3" z="36.6">Inferior Parietal Cortex Task-Positive Network_lh</label>
+<label index="45" group="19" x="-45.1" y="-63.4" z="35.2">Inferior Parietal Cortex Task-Negative Network_lh</label>
+<label index="46" group="20" x="-36.7" y="-70.0" z="30.4">Intraparietal Sulcus and PGP_lh</label>
+<label index="47" group="21" x="-11.6" y="-49.5" z="28.0">Posterior Cingulate Cortex_lh</label>
+<label index="48" group="22" x="-8.7" y="32.0" z="11.4">Anterior Cingulate and Medial Prefrontal Cortex_lh</label>
+<label index="49" group="23" x="-21.9" y="46.3" z="-8.1">Orbital and Polar Frontal Cortex_lh</label>
+<label index="50" group="24" x="-45.1" y="28.2" z="7.7">Inferior Frontal Cortex_lh</label>
+<label index="51" group="25" x="-37.2" y="36.2" z="25.2">Inferior Dorso-Lateral Prefrontal Cortex_lh</label>
+<label index="52" group="26" x="-23.5" y="28.6" z="45.7">Superior Dorso-Lateral Prefrontal Cortex_lh</label>
 </data>
