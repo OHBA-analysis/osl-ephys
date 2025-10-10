@@ -1041,7 +1041,7 @@ def plot_freqbands(raw, savebase=None):
             continue
 
         # Plot spectra
-        raw_zscore = deepcopy(raw).apply_function(lambda x: ((x - np.mean(x)) / np.std(x)))
+        raw_zscore = deepcopy(raw).apply_function(lambda x: ((x - np.mean(x)) / np.std(x)), picks=chan_inds)
         psd = raw_zscore.compute_psd(
             picks=chan_inds, 
             n_fft=int(raw.info['sfreq']*2),
