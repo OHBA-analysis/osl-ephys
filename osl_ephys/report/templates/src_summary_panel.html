@@ -3,22 +3,34 @@
   
     <div class="flex-child" style="flex: 1">
       <div class="tab" style="display: grid">
-          <button class="button1" onclick="openTab(event, 'config', this.id)" style="border-top-style: solid">Config</button>
-          {% if data.coregister %}
-              <button class="button1" onclick="openTab(event, 'coregistration', this.id)" style="border-top-style: solid">Coregistration</button>
-          {% endif %}
-          {% if data.beamform_and_parcellate %}
-              <button class="button1" onclick="openTab(event, 'parcellation', this.id)" style="border-top-style: solid">Parcellation</button>
-          {% endif %}
-          {% if data.fix_sign_ambiguity %}
-              <button class="button1" onclick="openTab(event, 'sign_flipping', this.id)" style="border-top-style: solid">Sign Flipping</button>
-          {% endif %}
-          {% if data.batchlog is defined %}
-              <button class="button1" onclick="openTab(event, 'batchlog', this.id)" style="border-top-style: solid">Batch Log</button>
-          {% endif %}
-          {% if data.errlog is defined %}
-              <button class="button1" onclick="openTab(event, 'errlog', this.id)" style="border-top-style: solid">Error Logs</button>
-          {% endif %}
+        <button class="button1" id="btn_config"
+                onclick="openTab(event, 'config', this.id)" style="border-top-style: solid">Config</button>
+
+        {% if data.coregister %}
+        <button class="button1" id="btn_coregistration"
+                onclick="openTab(event, 'coregistration', this.id)" style="border-top-style: solid">Coregistration</button>
+        {% endif %}
+
+        {% if data.beamform_and_parcellate %}
+        <button class="button1" id="btn_parcellation"
+                onclick="openTab(event, 'parcellation', this.id)" style="border-top-style: solid">Parcellation</button>
+        {% endif %}
+
+        {% if data.fix_sign_ambiguity %}
+        <button class="button1" id="btn_sign_flipping"
+                onclick="openTab(event, 'sign_flipping', this.id)" style="border-top-style: solid">Sign Flipping</button>
+        {% endif %}
+
+        {% if data.batchlog is defined %}
+        <button class="button1" id="btn_batchlog"
+                onclick="openTab(event, 'batchlog', this.id)" style="border-top-style: solid">Batch Log</button>
+        {% endif %}
+
+        {% if data.errlog is defined %}
+        <button class="button1" id="btn_errlog"
+                onclick="openTab(event, 'errlog', this.id)" style="border-top-style: solid">Error Logs</button>
+        {% endif %}
+
       </div>
     </div>
   
@@ -116,34 +128,6 @@
   
   <script>
   
-  function openTab(event, figTag, button) {
-      // Get all elements with class="tabpage" and hide them
-      tabpage = document.getElementsByClassName("tabpage");
-      for (i = 0; i < tabpage.length; i++) {
-          tabpage[i].style.display = "none";
-      }
-      // Show the current tab
-      document.getElementById(figTag).style.display = "block";
-      if (figTag.includes('config')) {
-          currentButton = 0;
-      }
-      if (figTag.includes('coregistration')) {
-          currentButton = 1;
-      }
-      if (figTag.includes('parcellation')) {
-          currentButton = 2;
-      }
-      if (figTag.includes('sign_flipping')) {
-          currentButton = 3;
-      }
-      if (figTag.includes('batchlog')) {
-          currentButton = 4;
-      }
-      if (figTag.includes('errlog')) {
-          currentButton = 5;
-      }
-  }
-  
   document.addEventListener('DOMContentLoaded', function() {
       $('#coreg_tbl').DataTable();
     });
@@ -156,3 +140,48 @@
   <link rel="stylesheet" type="text/css" href="https://cdn.datatables.net/1.10.24/css/jquery.dataTables.css">
   <script type="text/javascript" charset="utf8" src="https://code.jquery.com/jquery-3.5.1.js"></script>
   <script type="text/javascript" charset="utf8" src="https://cdn.datatables.net/1.10.24/js/jquery.dataTables.js"></script>
+
+<style>
+.button1.active {
+  background-color: lightgreen;
+  border-bottom: 2px solid #2e8b57;
+}
+</style>
+
+<script>
+function openTab(event, figTag, buttonId) {
+    const tabpages = document.getElementsByClassName("tabpage");
+    for (let i = 0; i < tabpages.length; i++) {
+        tabpages[i].style.display = "none";
+    }
+
+    const tgt = document.getElementById(figTag);
+    if (tgt) tgt.style.display = "block";
+
+    const buttons = document.querySelectorAll('.tab .button1');
+    buttons.forEach(b => b.classList.remove('active'));
+
+    if (buttonId) {
+        const activeBtn = document.getElementById(buttonId);
+        if (activeBtn) activeBtn.classList.add('active');
+    }
+}
+
+document.addEventListener('keydown', function (e) {
+    if (['INPUT', 'TEXTAREA'].includes(document.activeElement.tagName) || document.activeElement.isContentEditable) return;
+
+    const buttons = Array.from(document.querySelectorAll('.tab .button1'));
+    if (!buttons.length) return;
+
+    const currentIndex = buttons.findIndex(b => b.classList.contains('active'));
+    if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        const next = (currentIndex + 1) % buttons.length;
+        buttons[next].click();
+    } else if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        const prev = (currentIndex - 1 + buttons.length) % buttons.length;
+        buttons[prev].click();
+    }
+});
+</script>

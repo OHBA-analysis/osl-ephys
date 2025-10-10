@@ -329,11 +329,12 @@ def detect_artefacts(X, axis=None, reject_mode='dim', metric_func=np.std,
             return out
 
 
-def detect_maxfilt_zeros(raw):
+def detect_maxfilt_zeros(raw, use_maxfilter_log=True):
     """This function tries to load the maxfilter log files in order 
         to annotate zeroed out data in the :py:class:`mne.io.Raw <mne.io.Raw>` object. It 
         assumes that the log file is in the same directory as the
         raw file and has the same name, but with the extension ``.log``.
+        If the log file can't be found, it will look for zeros in the data.
 
     Parameters
     ----------
@@ -347,7 +348,7 @@ def detect_maxfilt_zeros(raw):
     """    
     if raw.filenames[0] is not None:
         log_fname = str(raw.filenames[0]).replace('.fif', '.log')
-    if 'log_fname' in locals() and exists(log_fname):
+    if 'log_fname' in locals() and exists(log_fname) and use_maxfilter_log:
         try:
             starttime = raw.first_time
             endtime = raw._last_time
@@ -374,15 +375,19 @@ def detect_maxfilt_zeros(raw):
             for ii in range(len(starts)):
                 stop = starts[ii] + duration  # in samples
                 bad_inds[int(starts[ii]):int(stop)] = 1
-            return bad_inds.astype(bool)
+            
         except:
-            s = "detecting zeroed out data from maxfilter log file failed"
-            logger.warning(s)
-            return None
+            logger.info("detecting zeroed-out data from maxfilter log file failed")
+            detect_maxfilt_zeros(raw, use_maxfilter_log=False)
     else:
-        s = "No maxfilter logfile detected - detecting zeroed out data not possible"
-        logger.info(s)
-        return None
+        logger.info("Detecting zeroed-out data from the data itself")
+        d = raw.get_data(picks='meg', reject_by_annotation='omit')
+        bad_inds = np.all(d == 0, axis=0)
+    
+    # check if most of the data is marked as bad
+    if np.sum(bad_inds)/len(bad_inds) > 0.5:
+        raise RuntimeError("More than half of the data is marked as bad. This often happens when maxfilter movement compensation is used but not enough HPI coils are useable. Please check your data and/or maxfilter settings.")
+    return bad_inds.astype(bool)
 
 
 def bad_segments(
@@ -716,6 +721,60 @@ def drop_bad_epochs(
 
     return epochs
 
+def detect_bad_channels_psd(raw, fmin=2, fmax=80, n_fft=2000, alpha=0.05):
+    """
+    Detect bad channels using PSD and GESD outlier detection.
+
+    Parameters
+    ----------
+    raw : mne.io.Raw
+        Raw data object.
+    fmin, fmax : float
+        Frequency range for PSD computation.
+    n_fft : int
+        FFT length for PSD.
+    alpha : float
+        Significance level for GESD outlier detection.
+
+    Returns
+    -------
+    list of str
+        Detected bad channel names.
+    """
+    # Exclude already-marked bads
+    good_chans = [ch for ch in raw.ch_names if ch not in raw.info['bads']]
+
+    # Compute PSD (bad channels excluded by MNE)
+    psd = raw.compute_psd(
+        fmin=fmin, fmax=fmax, n_fft=n_fft,
+        reject_by_annotation=True, verbose=False
+    )
+    pow_data = psd.get_data()
+
+    if len(good_chans) != pow_data.shape[0]:
+        raise RuntimeError(
+            f"Channel mismatch: {len(good_chans)} chans vs PSD shape {pow_data.shape[0]}"
+        )
+
+    # Check for NaN or zero PSD
+    bad_forced = [
+        ch for ch, psd_ch in zip(good_chans, pow_data)
+        if np.any(np.isnan(psd_ch)) or np.all(psd_ch == 0)
+    ]
+    if bad_forced:
+        raise RuntimeError(
+            f"PSD contains NaNs or all-zero values for channels: {bad_forced}"
+        )
+
+    # Log-transform PSD
+    pow_log = np.log10(pow_data)
+
+    # Detect artefacts with GESD
+    mask = detect_artefacts(
+        pow_log, axis=0, reject_mode="dim", gesd_args={"alpha": alpha}
+    )
+    
+    return [ch for ch, is_bad in zip(good_chans, mask) if is_bad]
 
 # Wrapper functions
 def run_osl_read_dataset(dataset, userargs):

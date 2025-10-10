@@ -1,12 +1,11 @@
-<div class="fif" style='max-width: 90%; margin: auto; margin-bottom: 40px; background: #f6f6f6; box-shadow: 10px 10px 5px grey; padding: 25px 25px 25px 0px;' id="{{ data.fif_id }}">
+<div class="fif" style="max-width: 90%; margin: auto; margin-bottom: 40px; background: #f6f6f6; box-shadow: 10px 10px 5px grey; padding: 25px 25px 25px 0px; display: inline-block; vertical-align: top;" id="{{ data.fif_id }}">
 
-    <div>
-      <h3>{{ data.fif_id }} &ensp; ({{ data.num }} of {{ data.total }})</h3>
-    </div>
-  
-    <div class="flex-container" style="display: flex">
-  
-    <div class="flex-child" style="flex: 1">
+  <div>
+    <h3>{{ data.fif_id }} &ensp; ({{ data.num }} of {{ data.total }})</h3>
+  </div>
+
+  <div style="display: table; width: 100%">
+    <div style="display: table-cell; width: 20%; vertical-align: top">
       <div class="tab" style="display: grid">
           {% if data.compute_surfaces %}
               <button class="button1" onclick="openTab(event, '{{ data.fif_id }}_compute_surfaces', this.id)" style="border-top-style: solid">Surfaces</button>
@@ -14,7 +13,7 @@
           {% if data.coregister %}
               <button class="button1" onclick="openTab(event, '{{ data.fif_id }}_coregistration', this.id)" style="border-top-style: solid">Coregistration</button>
           {% endif %}
-          {% if data.beamform or data.beamform_and_parcellate%}
+          {% if data.beamform or data.beamform_and_parcellate %}
               <button class="button1" onclick="openTab(event, '{{ data.fif_id }}_beamforming', this.id)" style="border-top-style: solid">Beamforming</button>
           {% endif %}
           {% if data.beamform_and_parcellate or data.minimum_norm_and_parcellate %}
@@ -25,8 +24,9 @@
           {% endif %}
       </div>
     </div>
-  
-    <div class="flex-child" style="flex: 5; padding-left: 25px">
+
+    <div style="display: table-cell; width: 80%; padding-left: 25px; vertical-align: top">
+
   
       {% if data.compute_surfaces %}
           <div class="tabpage" style='width: 100%' id={{ data.fif_id }}_compute_surfaces>
@@ -84,7 +84,7 @@
       {% endif %}
   
       {% if data.coregister %}
-          <div class="tabpage" style='width: 100%' id={{ data.fif_id }}_coregistration>
+          <div class="tabpage" style='width: 100%; display: none' id={{ data.fif_id }}_coregistration>
               <h3>Coregistration
                   <span style="margin-right: 10px;"></span>
                   <button style="cursor: help; border: 1px solid; background-color: lightblue; color: black; padding: 2px 5px; font-size: 12px;" 
@@ -138,7 +138,7 @@
       {% endif %}
   
       {% if data.beamform_and_parcellate or data.minimum_norm_and_parcellate %}
-          <div class="tabpage" style='width: 100%; display: none' id={{ data.fif_id }}_parcellation>
+          <div class="tabpage" style="width: 100%; display: none" id={{ data.fif_id }}_parcellation>
               <h3>Parcellation</h3>
               <span style="margin-right: 10px;"></span>
               <button style="cursor: help; border: 1px solid; background-color: lightblue; color: black; padding: 2px 5px; font-size: 12px;" 
@@ -174,9 +174,7 @@
       </div>
     </div>
   </div>
-  
-
-
+</div>
 
 <style>
 .button1.active {
@@ -184,7 +182,6 @@
   border-bottom: 2px solid #2e8b57;
 }
 </style>
-
 
 
 <script>
