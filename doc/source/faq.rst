@@ -185,6 +185,9 @@ Regarding the manual detection, Eye and heart related components are usually qui
 "Eye-related components are spatially localized on the frontal channels, blinks and vertical saccades are symmetric and horizontal saccades show a distinct left-right pattern. Heart-related components in MEG show up as a very deep source with a bipolar projecting over the left and right side of the helmet. It is common for both eye and heart components that you will see a few of them."
 Note that you typically won't see Heart-related components in EEG. 
 
+How do I preprocess my OPM-MEG data collected at OHBA?
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+OHBA installed a CERCA Magnetics Ltd. 64-sensor OPM-MEG system in January 2025. There are some preliminary scripts for how to preprocess data collected on this system here: [https://github.com/neurofractal/OPM-oxford/tree/main/tutorials#opm-meg-tutorials-in-osl-ephys](https://github.com/neurofractal/OPM-oxford/tree/main/tutorials#opm-meg-tutorials-in-osl-ephys), written by Rob Seymour.
 
 Source reconstruction
 ---------------------
