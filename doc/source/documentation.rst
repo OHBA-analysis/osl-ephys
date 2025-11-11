@@ -38,4 +38,4 @@ More examples scripts can be found in the `examples directory <https://github.co
 Workshops
 ---------
 
-- `2023 OHBA Software Library (OSL) workshop <https://osf.io/zxb6c/>`_.
+- `OHBA Software Library (OSL) workshop <https://osf.io/zxb6c/>`_.
