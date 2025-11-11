@@ -31,7 +31,7 @@ Note, if you're using a Windows computer, you will need to do this in the WSL Ub
 
 4. Install osl-ephys::
 
-    curl https://raw.githubusercontent.com/OHBA-analysis/osl/main/envs/osle.yml > osle.yml
+    curl https://raw.githubusercontent.com/OHBA-analysis/osl-ephys/main/envs/osle.yml > osle.yml
     mamba env create -f osle.yml
     rm osle.yml
 
