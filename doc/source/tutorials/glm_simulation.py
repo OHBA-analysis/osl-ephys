@@ -555,10 +555,12 @@ print(glmsp.design.design_matrix)
 print(glmsp.model.betas)
 
 # Now the challenge, can you use the information above to write some code to plot the GLM model predicted spectrum for the start, middle and end of the data?
-
-start_spec =  # <- your code goes here!
-middle_spec = # <- your code goes here!
-end_spec =    # <- your code goes here!
+#
+# .. code-block:: python
+# 
+#     start_spec =  # <- your code goes here!
+#     middle_spec = # <- your code goes here!
+#     end_spec =    # <- your code goes here!
 
 plt.figure()
 plt.plot(glmsp.f, start_spec)
