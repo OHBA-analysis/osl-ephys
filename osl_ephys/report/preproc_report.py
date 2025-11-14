@@ -1020,6 +1020,15 @@ def plot_freqbands(raw, savebase=None):
             'EEG': mne.pick_types(raw.info, eeg=True, exclude='bads'),
         }
 
+    # only keep those channel types that have sensor position information.
+    for key, picks in list(channel_types.items()):
+        try:
+            if raw.copy().pick(picks).get_montage() is None:
+                del channel_types[key]
+        except Exception:
+            del channel_types[key]
+
+    
     # Number of subplots, i.e. the number of different channel types in the fif file
     nrows = 0
     for _, c in sorted(channel_types.items()):
@@ -1041,7 +1050,7 @@ def plot_freqbands(raw, savebase=None):
     for name, chan_inds in sorted(channel_types.items()):
         if len(chan_inds) == 0:
             continue
-
+        
         # Plot spectra
         raw_zscore = deepcopy(raw).apply_function(lambda x: ((x - np.mean(x)) / np.std(x)), picks=chan_inds)
         psd = raw_zscore.compute_psd(
