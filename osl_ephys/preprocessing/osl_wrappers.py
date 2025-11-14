@@ -346,6 +346,10 @@ def detect_maxfilt_zeros(raw, use_maxfilter_log=True):
     bad_inds : np.array of bool (n_times,) or None
         Boolean array indicating which time points are zeroed out.
     """    
+    if 'mag' in raw.get_channel_types() or 'grad' in raw.get_channel_types():
+        logger.info("No MEG data detected - not looking for MaxFilter zeroed-out data.")
+        return np.zeros(raw.n_times).astype(bool)
+    
     if raw.filenames[0] is not None:
         log_fname = str(raw.filenames[0]).replace('.fif', '.log')
     if 'log_fname' in locals() and exists(log_fname) and use_maxfilter_log:
