@@ -1020,6 +1020,15 @@ def plot_freqbands(raw, savebase=None):
             'EEG': mne.pick_types(raw.info, eeg=True, exclude='bads'),
         }
 
+    # only keep those channel types that have sensor position information.
+    for key, picks in list(channel_types.items()):
+        try:
+            if raw.copy().pick(picks).get_montage() is None:
+                del channel_types[key]
+        except Exception:
+            del channel_types[key]
+
+    
     # Number of subplots, i.e. the number of different channel types in the fif file
     nrows = 0
     for _, c in sorted(channel_types.items()):
@@ -1060,9 +1069,7 @@ def plot_freqbands(raw, savebase=None):
             if is_parc: # normalize because nilearwn doesn't plot small values
                 plot_source_topo(p/p.std(), axis=iax[ifrq], cmap='hot') 
             else:
-                # make sure sensor position information is available
-                if raw.get_montage() is not None:
-                    mne.viz.plot_topomap(p, psd.info, axes=iax[ifrq], cmap='hot')
+                mne.viz.plot_topomap(p, psd.info, axes=iax[ifrq], cmap='hot')
             if row==0:
                 iax[ifrq].set_title(f"{freq_band_names[ifrq]}\n({f1}-{f2} Hz)")
             if ifrq==0:
