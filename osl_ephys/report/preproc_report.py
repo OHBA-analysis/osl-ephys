@@ -1041,7 +1041,7 @@ def plot_freqbands(raw, savebase=None):
     for name, chan_inds in sorted(channel_types.items()):
         if len(chan_inds) == 0:
             continue
-
+        
         # Plot spectra
         raw_zscore = deepcopy(raw).apply_function(lambda x: ((x - np.mean(x)) / np.std(x)), picks=chan_inds)
         psd = raw_zscore.compute_psd(
@@ -1060,7 +1060,9 @@ def plot_freqbands(raw, savebase=None):
             if is_parc: # normalize because nilearwn doesn't plot small values
                 plot_source_topo(p/p.std(), axis=iax[ifrq], cmap='hot') 
             else:
-                mne.viz.plot_topomap(p, psd.info, axes=iax[ifrq], cmap='hot')
+                # make sure sensor position information is available
+                if raw.get_montage() is not None:
+                    mne.viz.plot_topomap(p, psd.info, axes=iax[ifrq], cmap='hot')
             if row==0:
                 iax[ifrq].set_title(f"{freq_band_names[ifrq]}\n({f1}-{f2} Hz)")
             if ifrq==0:
