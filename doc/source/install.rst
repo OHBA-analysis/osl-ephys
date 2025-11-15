@@ -5,7 +5,7 @@ A full installation of the osl-ephys toolbox includes:
 
 - `FSL <https://fsl.fmrib.ox.ac.uk/fsl/fslwiki/FslInstallation>`_ (FMRIB Software Library) - only needed if you want to do volumetric source reconstruction.
 - `FreeSurfer <https://surfer.nmr.mgh.harvard.edu/fswiki/DownloadAndInstall>`_ (FreeSurfer) - only needed if you want to do surface-based source reconstruction.
-- `Miniforge <https://conda-forge.org/download/>`_ (or `Miniconda <https://docs.conda.io/projects/miniconda/en/latest/miniconda-install.html>`_ / `Anaconda <https://docs.anaconda.com/free/anaconda/install/index.html>`_).
+- `Miniforge <https://conda-forge.org/download/>`_.
 - `osl-ephys <https://github.com/OHBA-analysis/osl-ephys>`_ (OSL Ephys Toolbox).
 
 Instructions
@@ -22,10 +22,6 @@ If you're using a Windows machine, you will need to install the above in `Ubuntu
     wget "https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-$(uname)-$(uname -m).sh"
     bash Miniforge3-$(uname)-$(uname -m).sh
     rm Miniforge3-$(uname)-$(uname -m).sh
-
-and install :code:`mamba` with::
-
-    conda install -n base -c conda-forge mamba
 
 Note, if you're using a Windows computer, you will need to do this in the WSL Ubuntu terminal that was used to install FSL (step 1).
 
