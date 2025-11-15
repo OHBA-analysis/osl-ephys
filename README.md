@@ -10,16 +10,11 @@ We recommend installing osl-ephys in a conda environment.
 
 ### Conda / mamba
 
-Miniforge (`conda`) can be installed with:
+Miniforge (`conda`/`mamba`) can be installed with:
 ```
 wget "https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-$(uname)-$(uname -m).sh"
 bash Miniforge3-$(uname)-$(uname -m).sh
 rm Miniforge3-$(uname)-$(uname -m).sh
-```
-
-Mamba (`mamba`) can be installed with:
-```
-conda install -n base -c conda-forge mamba
 ```
 
 ### osl-ephys
