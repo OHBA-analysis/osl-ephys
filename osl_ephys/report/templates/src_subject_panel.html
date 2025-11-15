@@ -105,18 +105,32 @@
       {% endif %}
   
       {% if data.beamform or data.beamform_and_parcellate %}
-          <div class="tabpage" style='width: 100%; display: none' id={{ data.fif_id }}_beamforming>
-              <h3>Beamforming</h3>
-              <span style="margin-right: 10px;"></span>
-              <button style="cursor: help; border: 1px solid; background-color: lightblue; color: black; padding: 2px 5px; font-size: 12px;" 
-                      title="Does the covariance look sensible (i.e., not dominated by a single channel pair)? Do the eigenvalues drop off gradually before suddenly dropping to zero? Is the rank what you'd expect?">
-                  ?
-              </button>
-              <div>LCMV Filter</div>
-              <div style="width: 70%; margin: auto">
-                  <img src="{{ data.plt_filters_cov }}" alt="" style='max-width: 100%'/>
-                  <img src="{{ data.plt_filters_svd }}" alt="" style='max-width: 100%'/>
-              </div>
+          <div class="tabpage" style='width: 100%' id={{ data.fif_id }}_beamforming>
+                <h3>Beamforming</h3>
+                <span style="margin-right: 10px;"></span>
+                <button style="cursor: help; border: 1px solid; background-color: lightblue; color: black; padding: 2px 5px; font-size: 12px;" 
+                        title="Does the covariance look sensible (i.e., not dominated by a single channel pair)? Do the eigenvalues drop off gradually before suddenly dropping to zero? Is the rank what you'd expect?">
+                    ?
+                </button>
+                <div>LCMV Filter</div>
+                <div style="width: 70%; margin: auto">
+                    <img src="{{ data.plt_filters_cov }}" alt="" style='max-width: 100%'/>
+                    <img src="{{ data.plt_filters_svd }}" alt="" style='max-width: 100%'/>
+                </div>
+                <div>Dipole types and locations</div>
+                <iframe data-src="{{ data.plt_dipole_locations }}" width="525" height="525" id="{{ data.fif_id}}_beamforming_iframe"></iframe>
+                <div>
+                    Click and drag to rotate and scroll to zoom.</br>
+                    Blue dots are dipoles that will be treated as single dipoles.</br>
+                    </br>
+                    If a (non-patched) bilateral beamformer is being used:</br>
+                    - Red lines connect dipole "pairs" that will be beamformed together.</br>
+                    - Green dots are "midline" dipoles that will be treated as single dipoles.</br>
+                    </br>
+                    If a patch (multi-dipole) beamformer is being used:</br>
+                    - Multi-coloured dots are dipoles that belong to multi-dipole patches,</br>
+                    the color indicates the patch each dipole belongs to.
+                </div>
           </div>
       {% endif %}
   
@@ -165,7 +179,6 @@
   border-bottom: 2px solid #2e8b57;
 }
 </style>
-
 
 
 <script>
@@ -517,3 +530,4 @@
 })();
 </script>
 <!-- END: osl-fif stacking fix -->
+
