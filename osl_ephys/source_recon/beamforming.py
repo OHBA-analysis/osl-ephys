@@ -584,7 +584,7 @@ def get_leadfields(
     subject,
     spatial_resolution=None,
     reference_brain="mni",
-    orientation="max-dim",
+    orientation=None,
     verbose=None,
 ):
     """Get leadfields from a forward model.
@@ -607,12 +607,13 @@ def get_leadfields(
         'l2-norm' takes the L2 norm across the xyz dimensions.
         'max-dim' takes the leadfield with the highest value across the xyz dimensions.
         'max-power' projects the leadfield onto the eigenvector with the smallest eigenvalue, this is equivalent to the maximum power orientation.
+        None, no reduction.
     verbose : bool
         If True, print out more information.
 
     Returns
     -------
-    leadfield : (nsensors, ndipoles) numpy.ndarray
+    leadfield : (nsensors, ndipoles) or (nsensors, ndipoles, 3) numpy.ndarray
         Lead fields resampled on the reference brain grid.
     coords : (3, ndipoles) numpy.ndarray
         Array of coordinates (in mm) of dipoles in leadfield_out in "reference_brain" space.
@@ -654,7 +655,9 @@ def get_leadfields(
         leadfields = np.sum(L * max_power_ori[None, ...], axis=-1)
 
     else:
-        raise ValueError("orientation should be 'l2-norm', 'max' or 'max-power'.")
+        # L is (sensors, dipoles, 3)
+        L = np.transpose(L, (0, 2, 1)) # (sensors, 3, dipoles)
+        leadfields = L.reshape(-1, L.shape[-1])  # (sensors*3, dipoles)
 
     # Transform to a different coordinate space
     leadfields, _, coords, _ = transform_recon_timeseries(
@@ -665,7 +668,12 @@ def get_leadfields(
         reference_brain=reference_brain,
     )
 
-    return leadfields.T, coords
+    leadfields = leadfields.T  # (sensors, dipoles)
+    if orientation is None:
+        leadfields = leadfields.reshape(-1, 3, leadfields.shape[-1])  # (sensors, 3, dipoles)
+        leadfields = np.transpose(leadfields, (0, 2, 1))  # (sensors, dipoles, 3)
+
+    return leadfields, coords
 
 
 @verbose
