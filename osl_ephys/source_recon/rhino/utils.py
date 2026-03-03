@@ -786,6 +786,7 @@ def transform_vtk_mesh(vtk_mesh_file_in, nii_mesh_file_in, out_vtk_file, nii_mes
     rrs_out = xform_points(overall_xform, rrs_in.T).T
 
     data = pd.read_csv(vtk_mesh_file_in, sep=r"\s+")
+    data = data.astype("object")
 
     num_rrs = int(data.iloc[3, 1])
     data.iloc[4 : num_rrs + 4, 0:3] = rrs_out
