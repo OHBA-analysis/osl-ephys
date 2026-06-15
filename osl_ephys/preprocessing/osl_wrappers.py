@@ -57,23 +57,20 @@ def gesd(x, alpha=0.05, p_out=.1, outlier_side=0):
 
     """
 
-    if outlier_side == 0:
-        alpha = alpha/2
-
     if not isinstance(x, np.ndarray):
         x = np.asarray(x)
 
-    n_out = int(np.ceil(len(x)*p_out))
-
     if np.any(np.isnan(x)):
-        # Need to find outliers only in finite x
-        y = np.where(np.isnan(x))[0]
-        idx1, x2 = gesd(x[np.isfinite(x)], alpha, n_out, outlier_side)
+        finite_idx = np.where(np.isfinite(x))[0]
+        idx_sub, _ = gesd(x[finite_idx], alpha, p_out, outlier_side)  # original alpha & proportion
+        idx = np.zeros(x.shape, dtype=bool)
+        idx[finite_idx[idx_sub]] = True
+        return idx, x[~idx]
+    
+    if outlier_side == 0:
+        alpha = alpha/2
 
-        # idx1 has the indexes of y which were marked as outliers
-        # the value of y contains the corresponding indexes of x that are outliers
-        idx = np.zeros_like(x).astype(bool)
-        idx[y[idx1]] = True
+    n_out = int(np.ceil(len(x)*p_out))
 
     n = len(x)
     temp = x.copy()
@@ -95,7 +92,7 @@ def gesd(x, alpha=0.05, p_out=.1, outlier_side=0):
             sample = np.nanmax(temp)
             R[j] = sample - np.nanmean(temp)
 
-        R[j] = R[j] / np.nanstd(temp)
+        R[j] = R[j] / np.nanstd(temp, ddof=1)
         temp[int(rm_idx[j])] = np.nan
 
         p = 1-alpha/(n-i+1)
@@ -103,8 +100,12 @@ def gesd(x, alpha=0.05, p_out=.1, outlier_side=0):
         lam[j] = ((n-i) * t) / (np.sqrt((n-i-1+t**2)*(n-i+1)))
 
     # Create a boolean array of outliers
-    idx = np.zeros((n,)).astype(bool)
-    idx[rm_idx[np.where(R > lam)[0]]] = True
+    significant = np.where(R > lam)[0]
+    idx = np.zeros((n,), dtype=bool)
+    if significant.size:
+        n_outliers = significant.max() + 1   # largest i with R_i > lam_i (0-based +1)
+        idx[rm_idx[:n_outliers]] = True
+    
 
     x2 = x[~idx]
 
