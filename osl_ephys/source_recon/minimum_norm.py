@@ -279,7 +279,7 @@ def apply_inverse_operator_vol(
         data,
         inverse_operator,
         lambda2=lambda2,
-        pick_ori=pick_ori,
+        pick_ori="vector",
         method=method,
         method_params={"eps": 1e-8, "max_iter": 100},
     )
