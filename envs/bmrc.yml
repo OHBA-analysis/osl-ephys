@@ -346,6 +346,9 @@ dependencies:
       - numpydoc==1.8.0
       - opencv-python==4.11.0.86
       - osfclient==0.0.5
+      # osl-pathfinder (semp file lookup) is on TestPyPI, not PyPI:
+      - --extra-index-url https://test.pypi.org/simple/
+      - osl-pathfinder==0.4.1
       - overrides==7.7.0
       - pandas==2.2.3
       - pandocfilters==1.5.1

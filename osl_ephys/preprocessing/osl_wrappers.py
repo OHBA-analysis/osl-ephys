@@ -1193,3 +1193,114 @@ def run_osl_glm_permutations(dataset, userargs):
         dataset[name].plot_sig_clusters(thresh, ax=ax)
         dataset['fig'][name + 'sig' + str(thresh)] = fig
     return dataset
+
+
+def run_osl_manual_ica(dataset, userargs):
+    """osl-ephys Batch wrapper for :py:func:`manual_ica
+    <osl_ephys.preprocessing.manual_ica.manual_ica>`.
+
+    Fits an ICA decomposition on ``dataset['raw']`` and writes a per-subject
+    HTML review page. The wrapper does NOT apply the ICA --- use
+    ``osl-ica-apply`` after the user has labelled the components in the
+    browser.
+
+    Parameters
+    ----------
+    dataset : dict
+        Must contain ``raw`` (``mne.io.Raw``) and ``subject`` (str, set by
+        an upstream extra_func --- passing it via userargs is rejected).
+        Optional: ``target_pth``, ``slice_interval``, ``tr_interval``.
+    userargs : dict
+        See ``osl_ephys.preprocessing.manual_ica.config.DEFAULT_USERARGS``
+        for the full schema (strict --- unknown keys raise KeyError).
+
+    Returns
+    -------
+    dataset : dict
+        With ``ica`` populated (osl-ephys's batch.py persists this as
+        ``<subject>_ica.fif``).
+    """
+    from .manual_ica import manual_ica
+    logger.info("osl-ephys Stage - {0} : {1}".format("raw", "manual_ica"))
+    logger.info("userargs: {0}".format(str(userargs)))
+    return manual_ica(dataset, userargs)
+
+
+def run_osl_apply_ica(dataset, userargs):
+    """osl-ephys Batch wrapper for :py:func:`apply_ica
+    <osl_ephys.preprocessing.manual_ica.apply_ica>`.
+
+    Applies a saved ICA solution, excluding the components passed as
+    ``bad_ics`` (the in-pipeline counterpart to ``osl-ica-apply``). Lives with
+    the manual ICA pipeline, so it has its own stub here rather than in the
+    lazy semp wrapper loop below.
+
+    Parameters
+    ----------
+    dataset : dict
+        Must contain ``raw`` (``mne.io.Raw``), ``subject`` and ``target_pth``
+        (set by an upstream extra_func).
+    userargs : dict
+        ``bad_ics`` (list[int]) and ``load_from_disk`` (bool).
+
+    Returns
+    -------
+    dataset : dict
+        With the ICA applied to ``dataset['raw']``.
+    """
+    from .manual_ica import apply_ica
+    logger.info("osl-ephys Stage - {0} : {1}".format("raw", "apply_ica"))
+    logger.info("userargs: {0}".format(str(userargs)))
+    return apply_ica(dataset, userargs)
+
+
+# -----------------------------------------------------------------------------
+# semp (Simultaneous EEG-fMRI Preprocessing) wrappers
+# -----------------------------------------------------------------------------
+# The semp wrappers live in osl_ephys.preprocessing.semp.wrappers
+# and take the standard ``(dataset, userargs)`` signature. We expose each one to
+# ``find_func`` as ``run_osl_<name>`` so a plain ``run_proc_batch`` config can
+# reference it by name (e.g. ``{'epoch_aas': {...}}``) without passing it via
+# ``extra_funcs`` --- exactly like any other built-in osl wrapper, and like
+# ``run_osl_manual_ica`` above.
+#
+# The semp import is deferred to *call* time (inside the stub), so osl-ephys's
+# optional heavy semp dependencies (torch, pandas, seaborn, nibabel, nilearn,
+# ...) are only imported when a semp stage actually runs --- importing
+# ``osl_ephys.preprocessing`` stays light. The wrapper names are listed
+# explicitly (rather than discovered by importing semp) to keep that laziness.
+_SEMP_WRAPPER_NAMES = (
+    "voltage_correction", "cleanup", "mid_crop",
+    "init_tracer", "summary", "ckpt_report", "crop_TR", "crop_by_epoch",
+    "create_epoch", "create_TR_epoch", "create_He_epoch", "simulate_epoch",
+    "epoch_ssp", "epoch_aas", "epoch_obs", "slice_reject",
+    "start_timer", "end_timer",
+)
+
+
+def _make_semp_wrapper(name):
+    """Build a lazy ``run_osl_<name>`` stub for a semp preprocessing wrapper."""
+
+    def _run_osl_semp(dataset, userargs):
+        import importlib
+        wrappers = importlib.import_module(
+            "osl_ephys.preprocessing.semp.wrappers"
+        )
+        func = getattr(wrappers, name)
+        logger.info("osl-ephys Stage - {0} : {1}".format("raw", name))
+        logger.info("userargs: {0}".format(str(userargs)))
+        return func(dataset, userargs)
+
+    _run_osl_semp.__name__ = "run_osl_{}".format(name)
+    _run_osl_semp.__qualname__ = _run_osl_semp.__name__
+    _run_osl_semp.__doc__ = (
+        "osl-ephys batch wrapper for the semp ``{0}`` preprocessing wrapper "
+        "(:py:func:`osl_ephys.preprocessing.semp.wrappers.{0}`). "
+        "semp is imported lazily on first use.".format(name)
+    )
+    return _run_osl_semp
+
+
+for _semp_name in _SEMP_WRAPPER_NAMES:
+    globals()["run_osl_{}".format(_semp_name)] = _make_semp_wrapper(_semp_name)
+del _semp_name

@@ -1,0 +1,863 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>ICA Review (Between ICs) — __SUBJECT__</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: #1a1a2e; color: #e0e0e0;
+           font-family: 'Courier New', monospace;
+           height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
+
+    /* ── top bar ── */
+    #top { background: #16213e; padding: 8px 16px; display: flex;
+           align-items: center; gap: 16px; flex-shrink: 0;
+           border-bottom: 2px solid #0f3460; }
+    #ic-id { font-size: 18px; font-weight: bold; min-width: 120px; }
+    #flag-badge { padding: 2px 10px; border-radius: 4px;
+                  font-size: 12px; font-weight: bold;
+                  min-width: 200px; text-align: center; }
+    #flag-badge.flag { background: #7f1d1d; color: #fca5a5;
+                       border: 1px solid #ef4444; }
+    #flag-badge.ok   { background: #1b4332; color: #6ee7b7;
+                       border: 1px solid #22c55e; }
+    #dec { font-size: 15px; font-weight: bold; min-width: 130px;
+           text-align: center; padding: 4px 12px; border-radius: 4px; }
+    .d-bad    { background: #4c1d1d; color: #fca5a5; }
+    .d-good   { background: #1b4332; color: #6ee7b7; }
+    .d-unsure { background: #4a3a0a; color: #fcd28a; }
+    .d-none   { background: #2d2d2d; color: #9ca3af; }
+    #pw { flex: 1; background: #2d2d2d; border-radius: 4px; height: 12px;
+          cursor: pointer; position: relative; overflow: hidden; }
+    #pc { position: absolute; top: -3px; bottom: -3px; width: 3px;
+          background: #fde047; pointer-events: none;
+          box-shadow: 0 0 4px rgba(253, 224, 71, 0.8);
+          transform: translateX(-1.5px); z-index: 2; }
+    #pu { position: absolute; inset: 0; pointer-events: none; z-index: 1; }
+    .pum        { position: absolute; top: 0; bottom: 0; }
+    .pum-good   { background: #22c55e; }
+    .pum-bad    { background: #ef4444; }
+    .pum-unsure { background: #f59e0b; }
+    #ptip { position: fixed; display: none; pointer-events: none;
+            background: #16213e; color: #e0e0e0;
+            border: 1px solid #3b82f6; padding: 3px 9px; border-radius: 4px;
+            font-size: 13px; font-weight: bold; font-family: 'Courier New', monospace;
+            z-index: 50; white-space: nowrap;
+            transform: translate(calc(-100% - 10px), 14px); }
+    #cnt { font-size: 12px; color: #9ca3af; white-space: nowrap; }
+    #save-status { font-size: 11px; color: #6b7280; white-space: nowrap; }
+
+    /* Sticky red banner shown when the autosave POST fails. See
+       single_ic.html for rationale. */
+    #save-fail-banner { display: none; position: fixed; left: 0; right: 0;
+                        top: 0; z-index: 200;
+                        background: #7f1d1d; color: #fee2e2;
+                        border-bottom: 2px solid #ef4444;
+                        padding: 8px 16px; font-size: 13px; font-weight: bold;
+                        font-family: 'Courier New', monospace;
+                        align-items: center; gap: 14px; }
+    #save-fail-banner.show { display: flex; }
+    #save-fail-banner button {
+      background: #fee2e2; color: #7f1d1d; border: 1px solid #fca5a5;
+      padding: 4px 12px; border-radius: 4px; font-weight: bold;
+      cursor: pointer; font-family: inherit; font-size: 13px;
+    }
+    #save-fail-banner button:hover { background: #fff; }
+
+    #scores-bar { margin-left: auto; display: flex; gap: 20px;
+                  align-items: center; font-size: 14px; font-weight: bold;
+                  font-family: 'Courier New', monospace; }
+    .sc-ok  { color: #ffffff; }
+    .sc-bad { color: #ff5555; font-weight: 900; }
+    .sc-na  { color: #6b7280; font-style: italic; font-weight: normal; }
+
+    #img-wrap   { flex: 1; overflow: hidden;
+                  display: flex; align-items: stretch; justify-content: stretch;
+                  background: #f0f0f0; }
+    /* Viewer fills the full plot area --- no forced 2:1 letterbox. Rows
+       inside it expand to share whatever vertical room the browser gives
+       (height / N_rows). Axis bar at the bottom is reserved via
+       padding-bottom so it never overlaps the rows. */
+    #viewer-2   { width: 100%; height: 100%;
+                  display: flex; flex-direction: column;
+                  background: #ffffff;
+                  position: relative;             /* anchor for #bw-veils + #v2-axis */
+                  padding-bottom: 32px; }         /* room for axis */
+    #bw-veils   { position: absolute; left: 0; right: 0; top: 0; bottom: 32px;
+                   pointer-events: none; z-index: 5; }
+    .bw-bad-veil { position: absolute; top: 0; bottom: 0;
+                    background: rgba(239, 68, 68, 0.30);
+                    border-left:  1px solid rgba(220, 38, 38, 0.85);
+                    border-right: 1px solid rgba(220, 38, 38, 0.85); }
+    /* Time-axis bar pinned to the bottom of viewer-2. JS sets its left/width
+       to align with the .v2-zoom column so its ticks land directly under the
+       data. */
+    #v2-axis    { position: absolute; bottom: 0; height: 32px;
+                  border-top: 1px solid #ddd; background: #fafafa;
+                  font-family: 'Courier New', monospace; font-size: 10px;
+                  color: #444; pointer-events: none; z-index: 4; }
+    .v2-tick     { position: absolute; top: 0; bottom: 0;
+                   border-left: 1px solid #9ca3af; }
+    .v2-tick > span { position: absolute; top: 4px; left: 3px;
+                      white-space: nowrap; font-weight: bold; color: #111; }
+    .v2-tick.t-end > span { left: auto; right: 3px; }
+    #v2-axis-window { position: absolute; left: 0; right: 0; top: 14px;
+                      text-align: center; font-size: 10px; color: #6b7280;
+                      font-style: italic; }
+    .v2-row    { display: flex; flex: 1; min-height: 0;
+                 align-items: stretch;
+                 border-bottom: 1px solid #eee;
+                 position: relative; }
+    .v2-row:last-child { border-bottom: none; }
+    .v2-row.cur { background: rgba(255, 230, 100, 0.18);
+                  border-top: 2px solid #c09050;
+                  border-bottom: 2px solid #c09050; }
+
+    /* Per-IC label state stripe (left edge) + soft row tint, so the four
+       states (keep / del / jury / unlabeled) of *this* row and its
+       neighbours are obvious without looking up at the scrollbar. The
+       stripe is wide (8 px) and sits inside the row via box-shadow so it
+       doesn't fight with the .cur gold border. */
+    .v2-row[data-state="good"]   { box-shadow: inset 8px 0 0 0 #22c55e;
+                                    background: rgba(34, 197, 94, 0.06); }
+    .v2-row[data-state="bad"]    { box-shadow: inset 8px 0 0 0 #ef4444;
+                                    background: rgba(239, 68, 68, 0.08); }
+    .v2-row[data-state="unsure"] { box-shadow: inset 8px 0 0 0 #f59e0b;
+                                    background: rgba(245, 158, 11, 0.08); }
+    .v2-row[data-state="none"]   { box-shadow: inset 8px 0 0 0 #cbd5e1; }
+    /* When the row is also the current focus, keep the golden tint
+       on top of the state tint so the cursor row remains unmistakable. */
+    .v2-row.cur[data-state="good"]   { background: rgba(255, 220, 80, 0.28); }
+    .v2-row.cur[data-state="bad"]    { background: rgba(255, 220, 80, 0.28); }
+    .v2-row.cur[data-state="unsure"] { background: rgba(255, 220, 80, 0.28); }
+
+    .v2-label  { width: 78px; flex-shrink: 0;
+                 display: flex; flex-direction: column;
+                 align-items: center; justify-content: center;
+                 gap: 3px;
+                 padding-left: 8px;        /* keep text clear of the stripe */
+                 font-size: 11px; font-weight: bold; color: #333;
+                 border-right: 1px solid #ddd;
+                 font-family: 'Courier New', monospace; }
+    .v2-ic    { letter-spacing: 0.5px; }
+    .v2-state { font-size: 10px; padding: 1px 6px; border-radius: 8px;
+                line-height: 1.3; min-width: 42px; text-align: center;
+                background: #e5e7eb; color: #6b7280; border: 1px solid transparent; }
+    .v2-state.s-good   { background: #dcfce7; color: #15803d; border-color: #86efac; }
+    .v2-state.s-bad    { background: #fee2e2; color: #b91c1c; border-color: #fca5a5; }
+    .v2-state.s-unsure { background: #fef3c7; color: #92400e; border-color: #fcd34d; }
+    .v2-state.s-none   { background: #f3f4f6; color: #9ca3af; border-style: dashed;
+                          border-color: #d1d5db; }
+    /* Topo: square plate whose width tracks the row height, so it scales
+       up/down with the viewport without ever stealing space from zoom. */
+    .v2-topo   { aspect-ratio: 1 / 1; flex-shrink: 0;
+                 display: flex; align-items: center; justify-content: center;
+                 background: #fafafa; }
+    .v2-topo img { max-width: 100%; max-height: 100%; display: block; }
+    /* Zoom: claims all remaining horizontal room. The SVG is set as a
+       stretched background (background-size: 100% 100%) so it fills the
+       slot edge-to-edge regardless of its native aspect --- the source
+       SVG's width/height ratio doesn't have to match the slot's. */
+    .v2-zoom   { flex: 1; min-width: 0;
+                 background-repeat: no-repeat;
+                 background-position: center;
+                 background-size: 100% 100%;
+                 background-color: #ffffff; }
+
+    #bot { background: #0f3460; padding: 8px 16px; display: flex;
+           gap: 24px; align-items: center; font-size: 13px; flex-shrink: 0;
+           color: #cbd5e1; }
+    .kh { display: flex; align-items: center; gap: 6px; }
+    .k  { padding: 2px 9px; border-radius: 4px; font-size: 13px; font-weight: bold; }
+    .kj { background: #1a4a2a; border: 1px solid #52c052; color: #6ee7b7; }
+    .kn { background: #5c1a1a; border: 1px solid #e05252; color: #fca5a5; }
+    .kk { background: #3a2a1a; border: 1px solid #c09050; color: #fcd28a; }
+    a.view-link { color: inherit; text-decoration: none; }
+    a.view-link:hover { opacity: 0.75; }
+
+    #done { display: none; position: fixed; inset: 0;
+            background: rgba(0,0,0,.85); align-items: center;
+            justify-content: center; z-index: 100; }
+    #done.show { display: flex; }
+    #dbox { background: #16213e; border: 2px solid #3b82f6; padding: 32px;
+            border-radius: 12px; text-align: center; max-width: 540px; width: 92%;
+            position: relative; }
+    #dclose { position: absolute; top: 6px; right: 10px;
+              background: transparent; border: none; color: #9ca3af;
+              font-size: 22px; cursor: pointer; padding: 4px 10px;
+              margin-top: 0; line-height: 1; }
+    #dclose:hover { color: #ffffff; background: transparent; }
+    #dbox h2 { font-size: 20px; margin-bottom: 10px; color: #6ee7b7; }
+    #dbox p  { color: #9ca3af; margin-bottom: 10px; font-size: 13px; }
+    #save-msg { font-size: 13px; margin: 8px 0; }
+    .ok  { color: #6ee7b7; }
+    .err { color: #fca5a5; }
+    pre { background: #0a0f1e; padding: 12px; border-radius: 6px; font-size: 11px;
+          text-align: left; margin: 10px 0; overflow: auto; max-height: 200px; }
+    button { background: #1e40af; border: 1px solid #3b82f6; color: #e0e0e0;
+             padding: 8px 24px; border-radius: 6px; font-size: 14px; cursor: pointer;
+             font-family: inherit; margin-top: 6px; }
+    button:hover { background: #2563eb; }
+
+    /* Bad-segment modal (kept identical to single_ic.html so the dialog
+       behaves the same on either page). */
+    #bs-modal { display: none; position: fixed; inset: 0;
+                background: rgba(0,0,0,.75); align-items: center;
+                justify-content: center; z-index: 110; }
+    #bs-modal.show { display: flex; }
+    #bs-box { background: #16213e; border: 2px solid #ef4444; padding: 24px;
+               border-radius: 12px; min-width: 360px; }
+    #bs-box h3 { font-size: 16px; margin-bottom: 8px; color: #fca5a5; }
+    #bs-box p  { font-size: 12px; color: #9ca3af; margin-bottom: 12px; }
+    .bs-row { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+    .bs-row label { width: 60px; }
+    .bs-row input { flex: 1; background: #0a0f1e; color: #e0e0e0;
+                    border: 1px solid #3b82f6; padding: 6px 8px;
+                    border-radius: 4px; font-family: inherit; font-size: 14px; }
+    #bs-err  { color: #fca5a5; font-size: 12px; min-height: 16px; margin: 4px 0 8px; }
+    .bs-btns { display: flex; gap: 10px; justify-content: flex-end; margin-top: 4px; }
+    .bs-btns button { margin-top: 0; padding: 6px 16px; font-size: 13px; }
+    .bs-cancel { background: #374151 !important; border-color: #6b7280 !important; }
+    #bs-list { max-height: 180px; overflow-y: auto; margin-bottom: 12px;
+                background: #0a0f1e; border: 1px solid #2d2d2d; border-radius: 4px; }
+    #bs-list:empty::before {
+      content: '(no bad segments yet)';
+      display: block; padding: 8px 10px;
+      color: #6b7280; font-style: italic; font-size: 12px;
+    }
+    .bs-item { display: flex; align-items: center; justify-content: space-between;
+                padding: 5px 10px; font-size: 12px; font-family: 'Courier New', monospace;
+                border-bottom: 1px solid #1a1a2e; color: #e0e0e0; }
+    .bs-item:last-child { border-bottom: none; }
+    .bs-item button { margin: 0; padding: 0 8px; font-size: 13px; line-height: 18px;
+                       background: #5c1a1a; border: 1px solid #e05252; color: #fca5a5; }
+    .bs-item button:hover { background: #7f1d1d; }
+  </style>
+</head>
+<body>
+
+  <div id="top">
+    <div id="ic-id">IC 001 / __N_COMP_03D__</div>
+    <div id="flag-badge" class="ok">within thresholds</div>
+    <div id="dec" class="d-none">—</div>
+    <div id="pw"><div id="pu"></div><div id="pc" style="left:0%"></div></div>
+    <div id="ptip"></div>
+    <div id="cnt">0 bad &nbsp; 0 good &nbsp; __N_COMP__ left</div>
+    <div id="save-status"></div>
+  </div>
+
+  <div id="save-fail-banner">
+    <span>&#9888; Server unreachable &mdash; your latest decisions are <em>not</em> being saved on disk.</span>
+    <button onclick="browserDl()" type="button">Download label.txt</button>
+    <button onclick="downloadBads()" type="button">Download bads.txt</button>
+  </div>
+
+  <div id="img-wrap">
+    <div id="viewer-2">
+      <div id="bw-veils"></div>
+    </div>
+  </div>
+
+  <div id="bot">
+    <div class="kh"><span class="k kj">K</span> Keep</div>
+    <div class="kh"><span class="k kn">⌫</span> Delete</div>
+    <div class="kh"><span class="k kk">J</span> Jury's out (keep but flag)</div>
+    <div class="kh"><span class="k kk">↑</span><span class="k kk">↓</span> Prev / Next IC</div>
+    <div class="kh"><span class="k kk">H</span><span class="k kk">L</span> Prev / Next zoom</div>
+    <div class="kh"><span class="k kn">B</span> Add bad segment</div>
+    <a id="view-link" class="kh view-link" href="single_ic.html" title="Switch view (V)">
+      <span class="k kk">V</span> Single IC
+    </a>
+    <div id="scores-bar"></div>
+  </div>
+
+  <div id="bs-modal">
+    <div id="bs-box">
+      <h3>Bad segments</h3>
+      <p>Times in seconds, relative to recording start (0 - <span id="bs-total">0</span>)</p>
+      <div id="bs-list"></div>
+      <div class="bs-row"><label>Start:</label><input id="bs-start" type="number" step="0.01" min="0"/></div>
+      <div class="bs-row"><label>End:</label>  <input id="bs-end"   type="number" step="0.01" min="0"/></div>
+      <div id="bs-err"></div>
+      <div class="bs-btns">
+        <button class="bs-cancel" id="bs-cancel">Cancel</button>
+        <button id="bs-save">Save (Enter)</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="done">
+    <div id="dbox">
+      <button id="dclose" title="Close (Esc)">×</button>
+      <h2>&#10003; Review complete</h2>
+      <p>Subject: <strong>__SUBJECT__</strong> &nbsp;|&nbsp; __N_COMP__ components</p>
+      <div id="save-msg"></div>
+      <pre id="lpre"></pre>
+      <button id="dl-btn" style="display:none" onclick="browserDl()">
+        Download label.txt (fallback)
+      </button>
+    </div>
+  </div>
+
+  <script>
+    const flags       = __FLAG_LIST__;
+    const scores      = __SCORES_LIST__;
+    const SUPP_CHS    = __SUPP_CH_LIST__;     // [{label, file}, ...]
+    const N           = __N_COMP__;
+    const N_ZOOM      = __N_ZOOM__;
+    const N_SUPP      = SUPP_CHS.length;
+    const TOTAL_DUR   = __TOTAL_DUR__;
+    const ZOOM_WINDOW = __ZOOM_WINDOW__;
+    const IC_OFFSETS  = [-1, 0, 1, 2, 3];
+
+    // Glyph + caption shown in the per-row state pill (also drives the
+    // left-edge stripe colour via `data-state` on the row).
+    const STATE_PILLS = {
+      good:   { html: '&#10003; keep' },     // ✓
+      bad:    { html: '&#10007; del'  },     // ✗
+      unsure: { html: '? jury' },
+      none:   { html: '&mdash;' },           // —
+    };
+
+    function parseHash() {
+      const out = { ic: 0, w: 0 };
+      const h = (window.location.hash || '').replace(/^#/, '');
+      h.split('&').forEach(p => {
+        const [k, v] = p.split('=');
+        if (k === 'ic') out.ic = Math.max(0, Math.min(N - 1, parseInt(v) || 0));
+        if (k === 'w')  out.w  = Math.max(0, Math.min(Math.max(0, N_ZOOM - 1), parseInt(v) || 0));
+      });
+      return out;
+    }
+    function writeHash() {
+      const h = '#ic=' + cur + '&w=' + cur_zoom;
+      if (h !== window.location.hash) history.replaceState(null, '', h);
+      const link = document.getElementById('view-link');
+      link.href = 'single_ic.html' + h;
+    }
+
+    let cur, cur_zoom;
+    {
+      const h = parseHash();
+      cur = h.ic; cur_zoom = h.w;
+    }
+    const lbl = new Array(N).fill(null);
+
+    const v2El       = document.getElementById('viewer-2');
+    const icEl       = document.getElementById('ic-id');
+    const badgeEl    = document.getElementById('flag-badge');
+    const decEl      = document.getElementById('dec');
+    const pw         = document.getElementById('pw');
+    const pc         = document.getElementById('pc');
+    const pu         = document.getElementById('pu');
+    const cntEl      = document.getElementById('cnt');
+    const statusEl   = document.getElementById('save-status');
+    const scoresEl   = document.getElementById('scores-bar');
+    const doneEl     = document.getElementById('done');
+
+    const padIc = i => String(i).padStart(3, '0');
+    const padW  = w => String(w).padStart(2, '0');
+    const icCleanUrl = (i, w) => 'zoomed_clean/ic_' + padIc(i) + '_w' + padW(w) + '.svg';
+    const topoUrl    = i      => 'topos/ic_' + padIc(i) + '.svg';
+    const suppUrl    = (file, w) => 'zoomed_clean/supp_' + file + '_w' + padW(w) + '.svg';
+
+    function buildView2() {
+      // Re-inject the absolute-positioned bad-segment veil container + the
+      // axis bar so they survive the v2El.innerHTML reset.
+      let html = '<div id="bw-veils"></div>';
+      for (const ch of SUPP_CHS) {
+        html +=
+          '<div class="v2-row" data-kind="supp" data-file="' + ch.file + '">' +
+            '<div class="v2-label">' + ch.label + '</div>' +
+            '<div class="v2-topo"></div>' +
+            '<div class="v2-zoom"></div>' +
+          '</div>';
+      }
+      for (const off of IC_OFFSETS) {
+        const cls = 'v2-row' + (off === 0 ? ' cur' : '');
+        html +=
+          '<div class="' + cls + '" data-kind="ic" data-off="' + off + '" data-state="none">' +
+            '<div class="v2-label">' +
+              '<div class="v2-ic"></div>' +
+              '<div class="v2-state s-none">&mdash;</div>' +
+            '</div>' +
+            '<div class="v2-topo"><img alt="" draggable="false"/></div>' +
+            '<div class="v2-zoom"></div>' +
+          '</div>';
+      }
+      // Axis bar is positioned absolute so it doesn't participate in the
+      // row flex layout. JS sets its left/width to align with .v2-zoom.
+      html += '<div id="v2-axis"></div>';
+      v2El.innerHTML = html;
+    }
+
+    function _bg(url) { return url ? 'url("' + url + '")' : 'none'; }
+
+    function renderView2() {
+      v2El.querySelectorAll('.v2-row[data-kind="supp"]').forEach(row => {
+        const zoom = row.querySelector('.v2-zoom');
+        zoom.style.backgroundImage = _bg(suppUrl(row.dataset.file, cur_zoom));
+      });
+      v2El.querySelectorAll('.v2-row[data-kind="ic"]').forEach(row => {
+        const off    = parseInt(row.dataset.off);
+        const i      = cur + off;
+        const icEl2  = row.querySelector('.v2-ic');
+        const stEl   = row.querySelector('.v2-state');
+        const topo   = row.querySelector('.v2-topo img');
+        const zoom   = row.querySelector('.v2-zoom');
+        if (i < 0 || i >= N) {
+          row.dataset.state = 'none';
+          if (icEl2) icEl2.textContent = '';
+          if (stEl) { stEl.textContent = ''; stEl.className = 'v2-state'; }
+          if (topo) topo.removeAttribute('src');
+          if (zoom) zoom.style.backgroundImage = 'none';
+          row.style.opacity = '0.25';
+        } else {
+          row.style.opacity = '';
+          if (icEl2) {
+            icEl2.textContent = 'IC' + padIc(i);
+            icEl2.style.color = flags[i] ? '#b91c1c' : '#333';
+          }
+          // Per-IC label state — drives both the left stripe + the pill.
+          const v = lbl[i];
+          const stKey = (v === 'good' || v === 'bad' || v === 'unsure') ? v : 'none';
+          row.dataset.state = stKey;
+          if (stEl) {
+            const meta = STATE_PILLS[stKey];
+            stEl.className = 'v2-state s-' + stKey;
+            stEl.innerHTML = meta.html;
+          }
+          if (topo) topo.src = topoUrl(i);
+          if (zoom) zoom.style.backgroundImage = _bg(icCleanUrl(i, cur_zoom));
+        }
+      });
+    }
+
+    // ── prefetch (between-IC view only — topos + clean zooms + supp) ──────
+    const loaded = new Set();
+    let prefetching = false;
+
+    function _missing(key)        { return !loaded.has(key); }
+    function _key_topo(i)         { return 't:' + i; }
+    function _key_ic(i, w)        { return 'i:' + i + ',' + w; }
+    function _key_supp(file, w)   { return 's:' + file + ',' + w; }
+
+    function _nextTarget() {
+      // 1) currently visible IC rows (cur + IC_OFFSETS) for current zoom window
+      for (const off of IC_OFFSETS) {
+        const i = cur + off;
+        if (i < 0 || i >= N) continue;
+        if (_missing(_key_topo(i))) return { url: topoUrl(i), key: _key_topo(i) };
+        if (_missing(_key_ic(i, cur_zoom))) return { url: icCleanUrl(i, cur_zoom), key: _key_ic(i, cur_zoom) };
+      }
+      // 2) supp channels for current window
+      for (const ch of SUPP_CHS) {
+        if (_missing(_key_supp(ch.file, cur_zoom))) return { url: suppUrl(ch.file, cur_zoom), key: _key_supp(ch.file, cur_zoom) };
+      }
+      // 3) other zoom windows for the same neighborhood (cheap H/L navigation)
+      for (let w = 0; w < N_ZOOM; w++) {
+        if (w === cur_zoom) continue;
+        for (const off of IC_OFFSETS) {
+          const i = cur + off;
+          if (i < 0 || i >= N) continue;
+          if (_missing(_key_ic(i, w))) return { url: icCleanUrl(i, w), key: _key_ic(i, w) };
+        }
+        for (const ch of SUPP_CHS) {
+          if (_missing(_key_supp(ch.file, w))) return { url: suppUrl(ch.file, w), key: _key_supp(ch.file, w) };
+        }
+      }
+      // 4) topos for all remaining ICs
+      for (let i = 0; i < N; i++) {
+        if (_missing(_key_topo(i))) return { url: topoUrl(i), key: _key_topo(i) };
+      }
+      return null;
+    }
+
+    function prefetchNext() {
+      if (prefetching) return;
+      const t = _nextTarget();
+      if (!t) return;
+      prefetching = true;
+      const im = new Image();
+      const done = () => { loaded.add(t.key); prefetching = false; prefetchNext(); };
+      im.onload = done; im.onerror = done;
+      im.src = t.url;
+    }
+
+    // ── bad segments (bads.txt) ───────────────────────────────────────────
+    let bads = [];
+    const bsModal = document.getElementById('bs-modal');
+    const bsStart = document.getElementById('bs-start');
+    const bsEnd   = document.getElementById('bs-end');
+    const bsErr   = document.getElementById('bs-err');
+    document.getElementById('bs-total').textContent = TOTAL_DUR.toFixed(2);
+
+    // The clean-zoom SVG is now stretched edge-to-edge inside .v2-zoom via
+    // background-size: 100% 100%, so the slot's pixel rect = the data area.
+    // Bad veils + axis ticks therefore map directly to the slot's left/width
+    // (no SVG-content-rect math needed).
+    function _zoomSlotPx() {
+      const zEl = v2El.querySelector('.v2-zoom');
+      if (!zEl) return null;
+      const vRect = v2El.getBoundingClientRect();
+      const zRect = zEl.getBoundingClientRect();
+      return { left: zRect.left - vRect.left, width: zRect.width };
+    }
+
+    function renderBetweenBadVeils() {
+      const bw = document.getElementById('bw-veils');
+      if (!bw) return;
+      bw.innerHTML = '';
+      if (TOTAL_DUR <= 0 || N_ZOOM <= 0) return;
+      const ws = cur_zoom * ZOOM_WINDOW;
+      const we = Math.min(ws + ZOOM_WINDOW, TOTAL_DUR);
+      const span = we - ws;
+      if (span <= 0) return;
+      const slot = _zoomSlotPx();
+      if (!slot) return;
+      bads.forEach(b => {
+        const s = Math.max(b.start, ws);
+        const e = Math.min(b.end,   we);
+        if (e <= s) return;
+        const lFrac = (s - ws) / span;
+        const wFrac = (e - s) / span;
+        const v = document.createElement('div');
+        v.className = 'bw-bad-veil';
+        v.style.left  = (slot.left + slot.width * lFrac) + 'px';
+        v.style.width = (slot.width * wFrac) + 'px';
+        bw.appendChild(v);
+      });
+    }
+
+    // 1, 2, 5 x 10^k --- pick a tick step giving ~targetN labels for span.
+    function niceStep(span, targetN) {
+      if (span <= 0) return 1;
+      const target = span / targetN;
+      const exp  = Math.floor(Math.log10(target));
+      const base = target / Math.pow(10, exp);
+      const nice = base < 1.5 ? 1 : base < 3.5 ? 2 : base < 7.5 ? 5 : 10;
+      return nice * Math.pow(10, exp);
+    }
+
+    function renderAxis() {
+      const ax = document.getElementById('v2-axis');
+      if (!ax) return;
+      ax.innerHTML = '';
+      if (TOTAL_DUR <= 0 || N_ZOOM <= 0) return;
+      const slot = _zoomSlotPx();
+      if (!slot) return;
+      ax.style.left  = slot.left + 'px';
+      ax.style.width = slot.width + 'px';
+
+      const ws = cur_zoom * ZOOM_WINDOW;
+      const we = Math.min(ws + ZOOM_WINDOW, TOTAL_DUR);
+      const span = we - ws;
+      if (span <= 0) return;
+
+      // Ticks at start, end, and `niceStep`-spaced multiples in between.
+      const step = niceStep(span, 6);
+      const decimals = step >= 1 ? 0 : (step >= 0.1 ? 1 : 2);
+      const fmt = t => t.toFixed(decimals) + 's';
+
+      const ticks = new Set();
+      ticks.add(ws);
+      const t0 = Math.ceil((ws + 1e-9) / step) * step;
+      for (let t = t0; t < we - 1e-9; t += step) ticks.add(t);
+      ticks.add(we);
+
+      Array.from(ticks).sort((a, b) => a - b).forEach((t, i, arr) => {
+        const f = (t - ws) / span;
+        const tick = document.createElement('div');
+        tick.className = 'v2-tick' + (i === arr.length - 1 ? ' t-end' : '');
+        tick.style.left = (f * 100) + '%';
+        tick.innerHTML = '<span>' + fmt(t) + '</span>';
+        ax.appendChild(tick);
+      });
+
+      // Window summary in the middle row of the axis bar.
+      const summary = document.createElement('div');
+      summary.id = 'v2-axis-window';
+      summary.textContent = 'window ' + (cur_zoom + 1) + '/' + N_ZOOM
+        + '  ' + fmt(ws) + ' --- ' + fmt(we)
+        + '  (' + span.toFixed(decimals < 2 ? 1 : 2) + 's)';
+      ax.appendChild(summary);
+    }
+
+    window.addEventListener('resize',
+      () => requestAnimationFrame(() => { renderBetweenBadVeils(); renderAxis(); }));
+
+    function buildBadsText() {
+      const lines = [
+        '# bad segments (seconds, relative to recording start)',
+        '# subject: __SUBJECT__',
+        '',
+      ];
+      bads.forEach(b => lines.push(b.start.toFixed(3) + '\t' + b.end.toFixed(3)));
+      return lines.join('\n') + '\n';
+    }
+    async function saveBads() {
+      try {
+        const r = await fetch('save_bads', {
+          method: 'POST',
+          headers: { 'Content-Type': 'text/plain; charset=utf-8' },
+          body: buildBadsText(),
+        });
+        setServerOk(r.ok);
+      } catch(e) { setServerOk(false); }
+    }
+    const bsListEl = document.getElementById('bs-list');
+    function renderBadList() {
+      bsListEl.innerHTML = '';
+      bads.forEach((b, idx) => {
+        const item = document.createElement('div');
+        item.className = 'bs-item';
+        item.innerHTML =
+          '<span>' + b.start.toFixed(2) + ' &ndash; ' + b.end.toFixed(2) + ' s</span>' +
+          '<button title="Remove">&times;</button>';
+        item.querySelector('button').addEventListener('click', () => {
+          bads.splice(idx, 1);
+          renderBadList();
+          renderBetweenBadVeils();
+          saveBads();
+        });
+        bsListEl.appendChild(item);
+      });
+    }
+
+    function openBadModal() {
+      bsErr.textContent = '';
+      bsStart.value = '';
+      bsEnd.value = '';
+      renderBadList();
+      bsModal.classList.add('show');
+      setTimeout(() => bsStart.focus(), 0);
+    }
+    function closeBadModal() { bsModal.classList.remove('show'); }
+    function submitBadModal() {
+      const s = parseFloat(bsStart.value);
+      const e = parseFloat(bsEnd.value);
+      if (!isFinite(s) || !isFinite(e)) { bsErr.textContent = 'Enter two numbers.'; return; }
+      if (s < 0 || e > TOTAL_DUR) { bsErr.textContent = 'Out of range (0 - ' + TOTAL_DUR.toFixed(2) + ').'; return; }
+      if (e <= s) { bsErr.textContent = 'End must be > start.'; return; }
+      bads.push({ start: s, end: e });
+      bads.sort((a, b) => a.start - b.start);
+      closeBadModal();
+      renderBetweenBadVeils();
+      saveBads();
+    }
+    document.getElementById('bs-cancel').addEventListener('click', closeBadModal);
+    document.getElementById('bs-save').addEventListener('click', submitBadModal);
+    bsModal.addEventListener('click', e => { if (e.target === bsModal) closeBadModal(); });
+    [bsStart, bsEnd].forEach(inp => inp.addEventListener('keydown', e => {
+      if (e.key === 'Enter') { e.preventDefault(); submitBadModal(); }
+    }));
+    async function loadBads() {
+      try {
+        const r = await fetch('bads.txt', { cache: 'no-store' });
+        if (!r.ok) return;
+        const text = await r.text();
+        bads = [];
+        text.split('\n').forEach(line => {
+          line = line.trim();
+          if (!line || line.startsWith('#')) return;
+          const m = line.split(/\s+/);
+          if (m.length >= 2) {
+            const s = parseFloat(m[0]), e = parseFloat(m[1]);
+            if (isFinite(s) && isFinite(e) && e > s) bads.push({ start: s, end: e });
+          }
+        });
+        bads.sort((a, b) => a.start - b.start);
+      } catch(e) {}
+    }
+
+    function renderScores() {
+      const s = scores[cur] || { eog: [] };
+      const parts = [];
+      if (s.ecg !== undefined) {
+        const cls = s.ecg_flag ? 'sc-bad' : 'sc-ok';
+        const mk  = s.ecg_flag ? '  ★' : '';
+        parts.push(`<span class="${cls}">ECG CTPS: ${s.ecg.toFixed(3)} / ${s.ecg_thr}${mk}</span>`);
+      } else { parts.push('<span class="sc-na">ECG: n/a</span>'); }
+      if (s.eog && s.eog.length) {
+        for (const e of s.eog) {
+          const cls = e.flag ? 'sc-bad' : 'sc-ok';
+          const mk  = e.flag ? '  ★' : '';
+          parts.push(`<span class="${cls}">${e.ch}: ${Math.abs(e.val).toFixed(3)} / ±${e.thr}${mk}</span>`);
+        }
+      } else { parts.push('<span class="sc-na">EOG: n/a</span>'); }
+      if (s.ga !== undefined) {
+        const cls = s.ga_flag ? 'sc-bad' : 'sc-ok';
+        const mk  = s.ga_flag ? '  ★' : '';
+        parts.push(`<span class="${cls}">GA: ${s.ga.toFixed(2)} / ${s.ga_thr}${mk}</span>`);
+      }
+      scoresEl.innerHTML = parts.join('');
+    }
+
+    function render() {
+      renderView2();
+      // requestAnimationFrame so layout/flex have settled when we measure.
+      requestAnimationFrame(() => { renderBetweenBadVeils(); renderAxis(); });
+      writeHash();
+      icEl.textContent = 'IC ' + padIc(cur) + ' / ' + padIc(N - 1);
+      if (flags[cur]) { badgeEl.textContent = '⚠ ECG/EOG/GA flagged'; badgeEl.className = 'flag'; }
+      else            { badgeEl.textContent = 'within thresholds';     badgeEl.className = 'ok';   }
+      const v = lbl[cur];
+      if (v === 'bad')         { decEl.textContent = '✗  REMOVE'; decEl.className = 'dec d-bad'; }
+      else if (v === 'good')   { decEl.textContent = '✓  RETAIN'; decEl.className = 'dec d-good'; }
+      else if (v === 'unsure') { decEl.textContent = '?  UNSURE'; decEl.className = 'dec d-unsure'; }
+      else                     { decEl.textContent = '—';         decEl.className = 'dec d-none'; }
+      const nBad    = lbl.filter(x => x === 'bad').length;
+      const nGood   = lbl.filter(x => x === 'good').length;
+      const nUnsure = lbl.filter(x => x === 'unsure').length;
+      const nLeft   = lbl.filter(x => x === null).length;
+      pc.style.left = ((cur + 0.5) / N * 100) + '%';
+      pu.innerHTML = '';
+      const segW = 100 / N;
+      for (let i = 0; i < N; i++) {
+        if (lbl[i] === null) continue;
+        const m = document.createElement('div');
+        m.className = 'pum pum-' + lbl[i];
+        m.style.left  = (i * segW) + '%';
+        m.style.width = segW + '%';
+        pu.appendChild(m);
+      }
+      cntEl.textContent =
+        nGood + ' keep   ' + nBad + ' del   ' + nUnsure + ' jury   ' + nLeft + ' left';
+      renderScores();
+      prefetchNext();
+    }
+
+    function advance() {
+      if (cur < N - 1) { cur++; render(); }
+      else { render(); if (lbl.every(x => x !== null)) showDone(); }
+    }
+
+    function seekTo(clientX) {
+      const r = pw.getBoundingClientRect();
+      cur = Math.min(N - 1, Math.max(0, Math.floor((clientX - r.left) / r.width * N)));
+      render();
+    }
+    const ptip = document.getElementById('ptip');
+    function _idxAt(clientX) {
+      const r = pw.getBoundingClientRect();
+      return Math.min(N - 1, Math.max(0, Math.floor((clientX - r.left) / r.width * N)));
+    }
+    pw.addEventListener('mousemove', e => {
+      const idx = _idxAt(e.clientX);
+      ptip.textContent = 'IC ' + padIc(idx);
+      ptip.style.left = e.clientX + 'px';
+      ptip.style.top  = e.clientY + 'px';
+      ptip.style.display = 'block';
+    });
+    pw.addEventListener('mouseleave', () => { ptip.style.display = 'none'; });
+
+    pw.addEventListener('click', e => seekTo(e.clientX));
+    pw.addEventListener('mousedown', e => {
+      e.preventDefault();
+      seekTo(e.clientX);
+      const onMove = e => seekTo(e.clientX);
+      const onUp   = () => {
+        document.removeEventListener('mousemove', onMove);
+        document.removeEventListener('mouseup',   onUp);
+      };
+      document.addEventListener('mousemove', onMove);
+      document.addEventListener('mouseup',   onUp);
+    });
+
+    function buildText() {
+      const lines = ['# ICA component labels', '# subject: __SUBJECT__', '# total ICs: ' + N, ''];
+      lbl.forEach((v, i) => lines.push('IC' + padIc(i) + ': ' + (v || 'unlabeled')));
+      const bad = lbl.map((v, i) => v === 'bad' ? i : null).filter(i => i !== null);
+      lines.push('');
+      lines.push('bad_ics: [' + bad.join(', ') + ']');
+      return lines.join('\n');
+    }
+
+    let serverOk = true;
+    function setServerOk(ok) {
+      serverOk = ok;
+      const banner = document.getElementById('save-fail-banner');
+      if (ok) {
+        statusEl.textContent = '✓ saved';
+        statusEl.style.color = '#6ee7b7';
+        if (banner) banner.classList.remove('show');
+      } else {
+        statusEl.textContent = '⚠ NOT SAVED';
+        statusEl.style.color = '#fca5a5';
+        if (banner) banner.classList.add('show');
+      }
+    }
+    async function autoSave() {
+      try {
+        const r = await fetch('save_label', {
+          method: 'POST',
+          headers: { 'Content-Type': 'text/plain; charset=utf-8' },
+          body: buildText()
+        });
+        setServerOk(r.ok);
+      } catch(e) { setServerOk(false); }
+    }
+    function _dl(name, body) {
+      const blob = new Blob([body], { type: 'text/plain' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = name;
+      document.body.appendChild(a); a.click();
+      document.body.removeChild(a); URL.revokeObjectURL(a.href);
+    }
+    function browserDl()    { _dl('label.txt', buildText()); }
+    function downloadBads() { _dl('bads.txt',  buildBadsText()); }
+    async function showDone() {
+      document.getElementById('lpre').textContent = buildText();
+      document.getElementById('done').classList.add('show');
+      await autoSave();
+      const msg = document.getElementById('save-msg');
+      const dlBtn = document.getElementById('dl-btn');
+      if (serverOk) { msg.textContent = '✓ label.txt saved to server folder'; msg.className = 'ok'; }
+      else { msg.textContent = '⚠ Server not reachable — use download below'; msg.className = 'err'; dlBtn.style.display = ''; }
+    }
+    function closeDone() { doneEl.classList.remove('show'); }
+    document.getElementById('dclose').addEventListener('click', closeDone);
+    doneEl.addEventListener('click', e => { if (e.target === doneEl) closeDone(); });
+
+    document.addEventListener('keydown', e => {
+      if (e.repeat || e.target.tagName === 'BUTTON') return;
+      if (e.key === 'Escape') {
+        if (bsModal.classList.contains('show')) { closeBadModal(); return; }
+        if (doneEl.classList.contains('show'))  { closeDone();     return; }
+      }
+      if (bsModal.classList.contains('show')) return;
+      const k = e.key.toLowerCase();
+      if (k === 'k') { lbl[cur] = 'good'; advance(); autoSave(); }
+      else if (k === 'backspace') { e.preventDefault(); lbl[cur] = 'bad'; advance(); autoSave(); }
+      else if (k === 'j') { lbl[cur] = 'unsure'; advance(); autoSave(); }
+      else if (k === 'arrowup')   { if (cur > 0)     { cur--; render(); } }
+      else if (k === 'arrowdown') { if (cur < N - 1) { cur++; render(); } }
+      else if (k === 'h') { if (N_ZOOM > 1 && cur_zoom > 0)            { cur_zoom--; render(); } }
+      else if (k === 'l') { if (N_ZOOM > 1 && cur_zoom < N_ZOOM - 1)   { cur_zoom++; render(); } }
+      else if (k === 'v') { writeHash(); window.location.href = document.getElementById('view-link').href; }
+      else if (k === 'b') { e.preventDefault(); openBadModal(); }
+    });
+
+    buildView2();
+    (async () => {
+      try {
+        const r = await fetch('label.txt', { cache: 'no-store' });
+        if (r.ok) {
+          const text = await r.text();
+          text.split('\n').forEach(line => {
+            const m = line.match(/^IC(\d+):\s*(bad|good|unsure)/);
+            if (m) { const i = +m[1]; if (i < N) lbl[i] = m[2]; }
+          });
+          if (!window.location.hash) {
+            const next = lbl.indexOf(null);
+            if (next !== -1) cur = next;
+          }
+        }
+      } catch(e) {}
+      await loadBads();
+      render();
+    })();
+  </script>
+</body>
+</html>

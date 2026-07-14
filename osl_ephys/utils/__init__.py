@@ -9,6 +9,7 @@ from .parallel import dask_parallel_bag  # noqa: F401, F403
 from .simulate import *  # noqa: F401, F403
 from .opm import *  # noqa: F401, F403
 from .package import soft_import, run_package_tests  # noqa: F401, F403
+from .misc import ensure_dir, proc_userargs, mean_psd_in_band  # noqa: F401, F403
 from .version_utils import check_version # noqa: F401, F403
 from . import run_func  # noqa: F401, F403
 

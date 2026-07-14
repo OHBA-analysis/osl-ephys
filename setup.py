@@ -64,10 +64,16 @@ setup(name=name,
               'osl_ica_apply = osl_ephys.preprocessing.ica_label:apply',
               'osl_preproc = osl_ephys.preprocessing.batch:main',
               'osl_func = osl_ephys.utils.run_func:main',
+              'osl-ica-review = osl_ephys.preprocessing.manual_ica.review_server:main',
+              'osl-ica-apply = osl_ephys.preprocessing.manual_ica.apply:main',
           ]},
 
       packages=['osl_ephys', 'osl_ephys.tests', 'osl_ephys.report', 'osl_ephys.maxfilter',
-                'osl_ephys.preprocessing', 'osl_ephys.utils', 'osl_ephys.utils.spmio',
+                'osl_ephys.preprocessing', 'osl_ephys.preprocessing.manual_ica',
+                'osl_ephys.preprocessing.semp',
+                'osl_ephys.preprocessing.semp.wrappers',
+                'osl_ephys.preprocessing.semp.utils',
+                'osl_ephys.utils', 'osl_ephys.utils.spmio',
                 'osl_ephys.source_recon', 'osl_ephys.source_recon.rhino', 'osl_ephys.glm'],
 
 
@@ -80,6 +86,8 @@ setup(name=name,
                             'source_recon/files/*gz',
                             # Report templates
                             'report/templates/*',
+                            # Manual ICA review templates
+                            'preprocessing/manual_ica/templates/*.html',
                             # READMEs
                             '*/README.md']},
 

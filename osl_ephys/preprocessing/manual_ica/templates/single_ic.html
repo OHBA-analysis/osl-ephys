@@ -1,0 +1,823 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>ICA Review (Single IC) — __SUBJECT__</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: #1a1a2e; color: #e0e0e0;
+           font-family: 'Courier New', monospace;
+           height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
+
+    /* ── top bar ── */
+    #top { background: #16213e; padding: 8px 16px; display: flex;
+           align-items: center; gap: 16px; flex-shrink: 0;
+           border-bottom: 2px solid #0f3460; }
+    #ic-id { font-size: 18px; font-weight: bold; min-width: 120px; }
+    /* Always rendered so the bar layout doesn't shift; content + colour
+       swap based on .flag/.ok class. */
+    #flag-badge { padding: 2px 10px; border-radius: 4px;
+                  font-size: 12px; font-weight: bold;
+                  min-width: 200px; text-align: center; }
+    #flag-badge.flag { background: #7f1d1d; color: #fca5a5;
+                       border: 1px solid #ef4444; }
+    #flag-badge.ok   { background: #1b4332; color: #6ee7b7;
+                       border: 1px solid #22c55e; }
+    #dec { font-size: 15px; font-weight: bold; min-width: 130px;
+           text-align: center; padding: 4px 12px; border-radius: 4px; }
+    .d-bad    { background: #4c1d1d; color: #fca5a5; }
+    .d-good   { background: #1b4332; color: #6ee7b7; }
+    .d-unsure { background: #4a3a0a; color: #fcd28a; }
+    .d-none   { background: #2d2d2d; color: #9ca3af; }
+    #pw { flex: 1; background: #2d2d2d; border-radius: 4px; height: 12px;
+          cursor: pointer; position: relative; overflow: hidden; }
+    #pc { position: absolute; top: -3px; bottom: -3px; width: 3px;
+          background: #fde047; pointer-events: none;
+          box-shadow: 0 0 4px rgba(253, 224, 71, 0.8);
+          transform: translateX(-1.5px); z-index: 2; }
+    #pu { position: absolute; inset: 0; pointer-events: none; z-index: 1; }
+    .pum        { position: absolute; top: 0; bottom: 0; }
+    .pum-good   { background: #22c55e; }
+    .pum-bad    { background: #ef4444; }
+    .pum-unsure { background: #f59e0b; }
+    #ptip { position: fixed; display: none; pointer-events: none;
+            background: #16213e; color: #e0e0e0;
+            border: 1px solid #3b82f6; padding: 3px 9px; border-radius: 4px;
+            font-size: 13px; font-weight: bold; font-family: 'Courier New', monospace;
+            z-index: 50; white-space: nowrap;
+            transform: translate(calc(-100% - 10px), 14px); }
+    #cnt { font-size: 12px; color: #9ca3af; white-space: nowrap; }
+    #save-status { font-size: 11px; color: #6b7280; white-space: nowrap; }
+
+    /* Sticky red banner shown when the autosave POST fails. Without it,
+       a server outage looks identical to a successful save (the inline
+       status just goes blank), and the user can label a whole subject
+       before noticing nothing was persisted. */
+    #save-fail-banner { display: none; position: fixed; left: 0; right: 0;
+                        top: 0; z-index: 200;
+                        background: #7f1d1d; color: #fee2e2;
+                        border-bottom: 2px solid #ef4444;
+                        padding: 8px 16px; font-size: 13px; font-weight: bold;
+                        font-family: 'Courier New', monospace;
+                        display: none; align-items: center; gap: 14px; }
+    #save-fail-banner.show { display: flex; }
+    #save-fail-banner button {
+      background: #fee2e2; color: #7f1d1d; border: 1px solid #fca5a5;
+      padding: 4px 12px; border-radius: 4px; font-weight: bold;
+      cursor: pointer; font-family: inherit; font-size: 13px;
+    }
+    #save-fail-banner button:hover { background: #fff; }
+
+    #scores-bar { margin-left: auto; display: flex; gap: 20px;
+                  align-items: center; font-size: 14px; font-weight: bold;
+                  font-family: 'Courier New', monospace; }
+    .sc-ok  { color: #ffffff; }
+    .sc-bad { color: #ff5555; font-weight: 900; }
+    .sc-na  { color: #6b7280; font-style: italic; font-weight: normal; }
+
+    /* ── image viewer (main on top, zoom strip below; combined 2:1) ── */
+    #img-wrap   { flex: 1; overflow: hidden;
+                  display: flex; align-items: center; justify-content: center;
+                  background: #f0f0f0; }
+    #viewer     { width: 100%; max-width: 100%; max-height: 100%;
+                  aspect-ratio: 2 / 1;
+                  display: flex; flex-direction: column;
+                  background: #ffffff; }
+    #main-wrap  { position: relative; flex: 5;
+                  width: 100%; aspect-ratio: 12 / 5;
+                  max-height: 100%; min-height: 0; }
+    #zoom-wrap  { position: relative; flex: 1;
+                  width: 100%; aspect-ratio: 12 / 1;
+                  max-height: 100%; min-height: 0;
+                  cursor: pointer; }
+    #ic-img, #zoom-img { width: 100%; height: 100%;
+                          display: block; }
+    #viewer, #viewer *,
+    #ic-img, #zoom-img,
+    #main-wrap, #zoom-wrap, #tc-area,
+    #zoom-prev, #zoom-next {
+      user-select: none;
+      -webkit-user-select: none;
+      -moz-user-select: none;
+      -ms-user-select: none;
+      -webkit-user-drag: none;
+      -webkit-tap-highlight-color: transparent;
+    }
+    #zoom-img:focus, #ic-img:focus, #tc-area:focus,
+    #zoom-prev:focus, #zoom-next:focus { outline: none; }
+    #zoom-prev, #zoom-next { position: absolute; top: 0; bottom: 0; width: 50%;
+                              pointer-events: none; opacity: 0;
+                              transition: opacity 0.12s;
+                              display: flex; align-items: center;
+                              font-size: 32px; color: #1a1a2e;
+                              text-shadow: 0 0 6px white; }
+    #zoom-prev  { left: 0;  justify-content: flex-start; padding-left: 16px; }
+    #zoom-next  { right: 0; justify-content: flex-end;   padding-right: 16px; }
+    #zoom-wrap:hover #zoom-prev,
+    #zoom-wrap:hover #zoom-next { opacity: 0.55; }
+
+    /* Click-to-jump strip + gold zoom-window overlay. Positioned in PIXELS
+       by JS (svgRect) so they hug the actual SVG content rect (which is
+       letterboxed inside the <img> element when #main-wrap's aspect ratio
+       drifts from 12:5 due to layout). _AX_TC_FULL fractions are applied
+       inside that rect, not against the <img> box. */
+    #tc-area { position: absolute; cursor: pointer; }
+    #tc-gold { position: absolute;
+                background: rgba(255, 196, 0, 0.30);
+                border-left:  1px solid rgba(255, 170, 0, 0.85);
+                border-right: 1px solid rgba(255, 170, 0, 0.85);
+                pointer-events: none; }
+
+    /* ── bottom bar ── */
+    #bot { background: #0f3460; padding: 8px 16px; display: flex;
+           gap: 24px; align-items: center; font-size: 13px; flex-shrink: 0;
+           color: #cbd5e1; }
+    .kh { display: flex; align-items: center; gap: 6px; }
+    .k  { padding: 2px 9px; border-radius: 4px; font-size: 13px; font-weight: bold; }
+    .kj { background: #1a4a2a; border: 1px solid #52c052; color: #6ee7b7; }
+    .kn { background: #5c1a1a; border: 1px solid #e05252; color: #fca5a5; }
+    .kk { background: #3a2a1a; border: 1px solid #c09050; color: #fcd28a; }
+    a.view-link { color: inherit; text-decoration: none; }
+    a.view-link:hover { opacity: 0.75; }
+
+    /* ── done overlay ── */
+    #done { display: none; position: fixed; inset: 0;
+            background: rgba(0,0,0,.85); align-items: center;
+            justify-content: center; z-index: 100; }
+    #done.show { display: flex; }
+    #dbox { background: #16213e; border: 2px solid #3b82f6; padding: 32px;
+            border-radius: 12px; text-align: center; max-width: 540px; width: 92%;
+            position: relative; }
+    #dclose { position: absolute; top: 6px; right: 10px;
+              background: transparent; border: none; color: #9ca3af;
+              font-size: 22px; cursor: pointer; padding: 4px 10px;
+              margin-top: 0; line-height: 1; }
+    #dclose:hover { color: #ffffff; background: transparent; }
+    #dbox h2 { font-size: 20px; margin-bottom: 10px; color: #6ee7b7; }
+    #dbox p  { color: #9ca3af; margin-bottom: 10px; font-size: 13px; }
+    #save-msg { font-size: 13px; margin: 8px 0; }
+    .ok  { color: #6ee7b7; }
+    .err { color: #fca5a5; }
+    pre { background: #0a0f1e; padding: 12px; border-radius: 6px; font-size: 11px;
+          text-align: left; margin: 10px 0; overflow: auto; max-height: 200px; }
+    button { background: #1e40af; border: 1px solid #3b82f6; color: #e0e0e0;
+             padding: 8px 24px; border-radius: 6px; font-size: 14px; cursor: pointer;
+             font-family: inherit; margin-top: 6px; }
+    button:hover { background: #2563eb; }
+
+    /* Red veils. Same px-positioned-via-svgRect scheme as #tc-gold. */
+    .bad-veil { position: absolute;
+                 background: rgba(239, 68, 68, 0.30);
+                 border-left:  1px solid rgba(220, 38, 38, 0.85);
+                 border-right: 1px solid rgba(220, 38, 38, 0.85);
+                 cursor: pointer; pointer-events: auto; }
+    .bad-veil:hover { background: rgba(239, 68, 68, 0.55); }
+    /* zoom-strip veils span full row height; positioned in figure-fraction
+       coords matching _render_ic_zoom's axis (left=0.04, width=0.92). */
+    .zoom-bad-veil { position: absolute; top: 0; bottom: 0;
+                     background: rgba(239, 68, 68, 0.30);
+                     border-left:  1px solid rgba(220, 38, 38, 0.85);
+                     border-right: 1px solid rgba(220, 38, 38, 0.85);
+                     pointer-events: none; }
+    .bad-veil .x { position: absolute; top: -16px; right: -2px;
+                    color: #b91c1c; font-weight: bold; font-size: 14px;
+                    background: white; border-radius: 4px;
+                    padding: 0 4px; display: none; }
+    .bad-veil:hover .x { display: block; }
+
+    /* Bad-segment modal */
+    #bs-modal { display: none; position: fixed; inset: 0;
+                background: rgba(0,0,0,.75); align-items: center;
+                justify-content: center; z-index: 110; }
+    #bs-modal.show { display: flex; }
+    #bs-box { background: #16213e; border: 2px solid #ef4444; padding: 24px;
+               border-radius: 12px; min-width: 360px; }
+    #bs-box h3 { font-size: 16px; margin-bottom: 8px; color: #fca5a5; }
+    #bs-box p  { font-size: 12px; color: #9ca3af; margin-bottom: 12px; }
+    .bs-row { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+    .bs-row label { width: 60px; }
+    .bs-row input { flex: 1; background: #0a0f1e; color: #e0e0e0;
+                    border: 1px solid #3b82f6; padding: 6px 8px;
+                    border-radius: 4px; font-family: inherit; font-size: 14px; }
+    #bs-err  { color: #fca5a5; font-size: 12px; min-height: 16px; margin: 4px 0 8px; }
+    .bs-btns { display: flex; gap: 10px; justify-content: flex-end; margin-top: 4px; }
+    .bs-btns button { margin-top: 0; padding: 6px 16px; font-size: 13px; }
+    .bs-cancel { background: #374151 !important; border-color: #6b7280 !important; }
+    /* Existing bad-segments list inside the modal. */
+    #bs-list { max-height: 180px; overflow-y: auto; margin-bottom: 12px;
+                background: #0a0f1e; border: 1px solid #2d2d2d; border-radius: 4px; }
+    #bs-list:empty::before {
+      content: '(no bad segments yet)';
+      display: block; padding: 8px 10px;
+      color: #6b7280; font-style: italic; font-size: 12px;
+    }
+    .bs-item { display: flex; align-items: center; justify-content: space-between;
+                padding: 5px 10px; font-size: 12px; font-family: 'Courier New', monospace;
+                border-bottom: 1px solid #1a1a2e; color: #e0e0e0; }
+    .bs-item:last-child { border-bottom: none; }
+    .bs-item button { margin: 0; padding: 0 8px; font-size: 13px; line-height: 18px;
+                       background: #5c1a1a; border: 1px solid #e05252; color: #fca5a5; }
+    .bs-item button:hover { background: #7f1d1d; }
+  </style>
+</head>
+<body>
+
+  <div id="top">
+    <div id="ic-id">IC 001 / __N_COMP_03D__</div>
+    <div id="flag-badge" class="ok">within thresholds</div>
+    <div id="dec" class="d-none">—</div>
+    <div id="pw"><div id="pu"></div><div id="pc" style="left:0%"></div></div>
+    <div id="ptip"></div>
+    <div id="cnt">0 bad &nbsp; 0 good &nbsp; __N_COMP__ left</div>
+    <div id="save-status"></div>
+  </div>
+
+  <div id="save-fail-banner">
+    <span>&#9888; Server unreachable &mdash; your latest decisions are <em>not</em> being saved on disk.</span>
+    <button onclick="browserDl()" type="button">Download label.txt</button>
+    <button onclick="downloadBads()" type="button">Download bads.txt</button>
+  </div>
+
+  <div id="img-wrap">
+    <div id="viewer">
+      <div id="main-wrap">
+        <img id="ic-img" src="__FIRST_IMG__" alt="IC 000" draggable="false" />
+        <div id="bad-veils"></div>
+        <div id="tc-area" title="Click to jump zoom window"></div>
+        <div id="tc-gold"></div>
+      </div>
+      <div id="zoom-wrap">
+        <img id="zoom-img" src="__FIRST_ZOOM__" alt="zoom" draggable="false" />
+        <div id="zoom-bad-veils"></div>
+        <span id="zoom-prev">‹</span>
+        <span id="zoom-next">›</span>
+      </div>
+    </div>
+  </div>
+
+  <div id="bot">
+    <div class="kh"><span class="k kj">K</span> Keep</div>
+    <div class="kh"><span class="k kn">⌫</span> Delete</div>
+    <div class="kh"><span class="k kk">J</span> Jury's out (keep but flag)</div>
+    <div class="kh"><span class="k kk">↑</span><span class="k kk">↓</span> Prev / Next IC</div>
+    <div class="kh"><span class="k kk">H</span><span class="k kk">L</span> Prev / Next zoom</div>
+    <div class="kh"><span class="k kn">B</span> Add bad segment</div>
+    <a id="view-link" class="kh view-link" href="between_ic.html" title="Switch view (V)">
+      <span class="k kk">V</span> Between ICs
+    </a>
+    <div id="scores-bar"></div>
+  </div>
+
+  <div id="bs-modal">
+    <div id="bs-box">
+      <h3>Bad segments</h3>
+      <p>Times in seconds, relative to recording start (0 - <span id="bs-total">0</span>)</p>
+      <div id="bs-list"></div>
+      <div class="bs-row"><label>Start:</label><input id="bs-start" type="number" step="0.01" min="0"/></div>
+      <div class="bs-row"><label>End:</label>  <input id="bs-end"   type="number" step="0.01" min="0"/></div>
+      <div id="bs-err"></div>
+      <div class="bs-btns">
+        <button class="bs-cancel" id="bs-cancel">Cancel</button>
+        <button id="bs-save">Save (Enter)</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="done">
+    <div id="dbox">
+      <button id="dclose" title="Close (Esc)">×</button>
+      <h2>&#10003; Review complete</h2>
+      <p>Subject: <strong>__SUBJECT__</strong> &nbsp;|&nbsp; __N_COMP__ components</p>
+      <div id="save-msg"></div>
+      <pre id="lpre"></pre>
+      <button id="dl-btn" style="display:none" onclick="browserDl()">
+        Download label.txt (fallback)
+      </button>
+    </div>
+  </div>
+
+  <script>
+    const imgs        = __IMG_LIST__;
+    const flags       = __FLAG_LIST__;
+    const scores      = __SCORES_LIST__;
+    const N           = imgs.length;
+    const N_ZOOM      = __N_ZOOM__;
+    const TOTAL_DUR   = __TOTAL_DUR__;
+    const ZOOM_WINDOW = __ZOOM_WINDOW__;
+
+    // ── shared state via URL hash so View links preserve position ─────────
+    function parseHash() {
+      const out = { ic: 0, w: 0 };
+      const h = (window.location.hash || '').replace(/^#/, '');
+      h.split('&').forEach(p => {
+        const [k, v] = p.split('=');
+        if (k === 'ic') out.ic = Math.max(0, Math.min(N - 1, parseInt(v) || 0));
+        if (k === 'w')  out.w  = Math.max(0, Math.min(Math.max(0, N_ZOOM - 1), parseInt(v) || 0));
+      });
+      return out;
+    }
+    function writeHash() {
+      const h = '#ic=' + cur + '&w=' + cur_zoom;
+      if (h !== window.location.hash) history.replaceState(null, '', h);
+      // Keep the View link in sync so clicking it preserves position.
+      const link = document.getElementById('view-link');
+      link.href = 'between_ic.html' + h;
+    }
+
+    let cur, cur_zoom;
+    {
+      const h = parseHash();
+      cur = h.ic; cur_zoom = h.w;
+    }
+    const lbl = new Array(N).fill(null);
+
+    const zoomUrl = (i, w) =>
+      'zoomed/ic_' + String(i).padStart(3, '0') +
+      '_w' + String(w).padStart(2, '0') + '.svg';
+
+    const imgEl      = document.getElementById('ic-img');
+    const zoomEl     = document.getElementById('zoom-img');
+    const tcAreaEl   = document.getElementById('tc-area');
+    const tcGoldEl   = document.getElementById('tc-gold');
+    const mainWrapEl = document.getElementById('main-wrap');
+    const zoomWrapEl = document.getElementById('zoom-wrap');
+
+    // SVGs are loaded as <img>; the browser preserves the SVG's intrinsic
+    // aspect (xMidYMid meet) and letterboxes inside the <img> box. Compute
+    // the actual SVG content rect inside `parentEl` so overlays sit on the
+    // SVG, not on the <img> box (which the layout may stretch).
+    function svgRect(parentEl, svgAspect) {
+      const r = parentEl.getBoundingClientRect();
+      const cw = r.width, ch = r.height;
+      if (cw <= 0 || ch <= 0) return { left: 0, top: 0, width: 0, height: 0 };
+      if (cw / ch > svgAspect) {
+        // letterbox left/right (container is wider than SVG)
+        const w = ch * svgAspect;
+        return { left: (cw - w) / 2, top: 0, width: w, height: ch };
+      } else {
+        const h = cw / svgAspect;
+        return { left: 0, top: (ch - h) / 2, width: cw, height: h };
+      }
+    }
+    const MAIN_ASPECT = 12 / 5;
+    const ZOOM_ASPECT = 12 / 1;
+    const icEl       = document.getElementById('ic-id');
+    const badgeEl    = document.getElementById('flag-badge');
+    const decEl      = document.getElementById('dec');
+    const pw         = document.getElementById('pw');
+    const pc         = document.getElementById('pc');
+    const pu         = document.getElementById('pu');
+    const cntEl      = document.getElementById('cnt');
+    const statusEl   = document.getElementById('save-status');
+    const scoresEl   = document.getElementById('scores-bar');
+    const doneEl     = document.getElementById('done');
+
+    // ── prefetch (single-IC view only — main + zoom SVGs) ─────────────────
+    const loaded = new Set();
+    let prefetching = false;
+
+    function _missingMain(i)  { return !loaded.has('m:' + i); }
+    function _missingZoom(i, w) { return !loaded.has('z:' + i + ',' + w); }
+
+    function _nextTarget() {
+      for (let w = 0; w < N_ZOOM; w++) {
+        if (_missingZoom(cur, w)) return { url: zoomUrl(cur, w), key: 'z:' + cur + ',' + w };
+      }
+      for (let off = 1; off < N; off++) {
+        const i = cur + off;
+        if (i >= N) break;
+        if (_missingMain(i)) return { url: imgs[i], key: 'm:' + i };
+        for (let w = 0; w < N_ZOOM; w++) {
+          if (_missingZoom(i, w)) return { url: zoomUrl(i, w), key: 'z:' + i + ',' + w };
+        }
+      }
+      for (let off = 1; off < N; off++) {
+        const i = cur - off;
+        if (i < 0) break;
+        if (_missingMain(i)) return { url: imgs[i], key: 'm:' + i };
+        for (let w = 0; w < N_ZOOM; w++) {
+          if (_missingZoom(i, w)) return { url: zoomUrl(i, w), key: 'z:' + i + ',' + w };
+        }
+      }
+      return null;
+    }
+
+    function prefetchNext() {
+      if (prefetching) return;
+      const t = _nextTarget();
+      if (!t) return;
+      prefetching = true;
+      const im = new Image();
+      const done = () => { loaded.add(t.key); prefetching = false; prefetchNext(); };
+      im.onload = done; im.onerror = done;
+      im.src = t.url;
+    }
+    imgEl.addEventListener('load',  () => { loaded.add('m:' + cur); prefetchNext(); });
+    zoomEl.addEventListener('load', () => { loaded.add('z:' + cur + ',' + cur_zoom); prefetchNext(); });
+
+    function renderScores() {
+      const s = scores[cur] || { eog: [] };
+      const parts = [];
+      if (s.ecg !== undefined) {
+        const cls = s.ecg_flag ? 'sc-bad' : 'sc-ok';
+        const mk  = s.ecg_flag ? '  ★' : '';
+        parts.push(`<span class="${cls}">ECG CTPS: ${s.ecg.toFixed(3)} / ${s.ecg_thr}${mk}</span>`);
+      } else { parts.push('<span class="sc-na">ECG: n/a</span>'); }
+      if (s.eog && s.eog.length) {
+        for (const e of s.eog) {
+          const cls = e.flag ? 'sc-bad' : 'sc-ok';
+          const mk  = e.flag ? '  ★' : '';
+          parts.push(`<span class="${cls}">${e.ch}: ${Math.abs(e.val).toFixed(3)} / ±${e.thr}${mk}</span>`);
+        }
+      } else { parts.push('<span class="sc-na">EOG: n/a</span>'); }
+      if (s.ga !== undefined) {
+        const cls = s.ga_flag ? 'sc-bad' : 'sc-ok';
+        const mk  = s.ga_flag ? '  ★' : '';
+        parts.push(`<span class="${cls}">GA: ${s.ga.toFixed(2)} / ${s.ga_thr}${mk}</span>`);
+      }
+      scoresEl.innerHTML = parts.join('');
+    }
+
+    // ── bad segments (bads.txt) ───────────────────────────────────────────
+    let bads = [];   // [{start, end}, ...] in seconds
+    const badVeilsEl     = document.getElementById('bad-veils');
+    const zoomBadVeilsEl = document.getElementById('zoom-bad-veils');
+    const bsModal    = document.getElementById('bs-modal');
+    const bsStart    = document.getElementById('bs-start');
+    const bsEnd      = document.getElementById('bs-end');
+    const bsErr      = document.getElementById('bs-err');
+    document.getElementById('bs-total').textContent = TOTAL_DUR.toFixed(2);
+
+    // _AX_TC_FULL = [left=0.04, bottom=0.08, w=0.92, h=0.10] in figure
+    // fractions. Within the SVG content rect, the row sits at:
+    //   x ∈ [0.04, 0.96],  y ∈ [0.82, 0.92]  (top-down)
+    function setMainTcStyle(el, ws, we) {
+      const sr = svgRect(mainWrapEl, MAIN_ASPECT);
+      const lFrac = ws / TOTAL_DUR;
+      const wFrac = (we - ws) / TOTAL_DUR;
+      el.style.left   = (sr.left + sr.width * (0.04 + lFrac * 0.92)) + 'px';
+      el.style.width  = (sr.width * wFrac * 0.92) + 'px';
+      el.style.top    = (sr.top  + sr.height * 0.82) + 'px';
+      el.style.height = (sr.height * 0.10) + 'px';
+    }
+
+    function positionTcArea() {
+      const sr = svgRect(mainWrapEl, MAIN_ASPECT);
+      tcAreaEl.style.left   = (sr.left + sr.width * 0.04) + 'px';
+      tcAreaEl.style.width  = (sr.width * 0.92) + 'px';
+      tcAreaEl.style.top    = (sr.top  + sr.height * 0.82) + 'px';
+      tcAreaEl.style.height = (sr.height * 0.10) + 'px';
+    }
+
+    function renderBadVeils() {
+      badVeilsEl.innerHTML = '';
+      if (TOTAL_DUR <= 0) return;
+      bads.forEach((b, idx) => {
+        const v = document.createElement('div');
+        v.className = 'bad-veil';
+        v.title = 'Bad: ' + b.start.toFixed(2) + '-' + b.end.toFixed(2) + ' s (click to delete)';
+        setMainTcStyle(v, b.start, b.end);
+        v.dataset.idx = idx;
+        v.innerHTML = '<span class="x">×</span>';
+        v.addEventListener('click', () => {
+          bads.splice(idx, 1);
+          renderBadVeils();
+          renderZoomBadVeils();
+          saveBads();
+        });
+        badVeilsEl.appendChild(v);
+      });
+    }
+
+    // Zoom SVG axis = [0.04, 0.34, 0.92, 0.62] (matplotlib): horizontally
+    // [0.04, 0.96] of the SVG; vertically full of the SVG content rect for
+    // visual prominence (matches the gold strip on the full row).
+    function renderZoomBadVeils() {
+      zoomBadVeilsEl.innerHTML = '';
+      if (N_ZOOM <= 0 || TOTAL_DUR <= 0) return;
+      const ws = cur_zoom * ZOOM_WINDOW;
+      const we = Math.min(ws + ZOOM_WINDOW, TOTAL_DUR);
+      const span = we - ws;
+      if (span <= 0) return;
+      const sr = svgRect(zoomWrapEl, ZOOM_ASPECT);
+      bads.forEach(b => {
+        const s = Math.max(b.start, ws);
+        const e = Math.min(b.end,   we);
+        if (e <= s) return;
+        const lFrac = (s - ws) / span;
+        const wFrac = (e - s) / span;
+        const v = document.createElement('div');
+        v.className = 'zoom-bad-veil';
+        v.style.left   = (sr.left + sr.width * (0.04 + lFrac * 0.92)) + 'px';
+        v.style.width  = (sr.width * wFrac * 0.92) + 'px';
+        v.style.top    = sr.top + 'px';
+        v.style.height = sr.height + 'px';
+        zoomBadVeilsEl.appendChild(v);
+      });
+    }
+
+    function buildBadsText() {
+      const lines = [
+        '# bad segments (seconds, relative to recording start)',
+        '# subject: __SUBJECT__',
+        '',
+      ];
+      bads.forEach(b => lines.push(b.start.toFixed(3) + '\t' + b.end.toFixed(3)));
+      return lines.join('\n') + '\n';
+    }
+
+    async function saveBads() {
+      try {
+        const r = await fetch('save_bads', {
+          method: 'POST',
+          headers: { 'Content-Type': 'text/plain; charset=utf-8' },
+          body: buildBadsText(),
+        });
+        setServerOk(r.ok);
+      } catch(e) { setServerOk(false); }
+    }
+
+    const bsListEl = document.getElementById('bs-list');
+    function renderBadList() {
+      bsListEl.innerHTML = '';
+      bads.forEach((b, idx) => {
+        const item = document.createElement('div');
+        item.className = 'bs-item';
+        item.innerHTML =
+          '<span>' + b.start.toFixed(2) + ' &ndash; ' + b.end.toFixed(2) + ' s</span>' +
+          '<button title="Remove">&times;</button>';
+        item.querySelector('button').addEventListener('click', () => {
+          bads.splice(idx, 1);
+          renderBadList();
+          renderBadVeils();
+          renderZoomBadVeils();
+          saveBads();
+        });
+        bsListEl.appendChild(item);
+      });
+    }
+
+    function openBadModal() {
+      bsErr.textContent = '';
+      bsStart.value = '';
+      bsEnd.value = '';
+      renderBadList();
+      bsModal.classList.add('show');
+      setTimeout(() => bsStart.focus(), 0);
+    }
+    function closeBadModal() { bsModal.classList.remove('show'); }
+    function submitBadModal() {
+      const s = parseFloat(bsStart.value);
+      const e = parseFloat(bsEnd.value);
+      if (!isFinite(s) || !isFinite(e)) { bsErr.textContent = 'Enter two numbers.'; return; }
+      if (s < 0 || e > TOTAL_DUR) { bsErr.textContent = 'Out of range (0 - ' + TOTAL_DUR.toFixed(2) + ').'; return; }
+      if (e <= s) { bsErr.textContent = 'End must be > start.'; return; }
+      bads.push({ start: s, end: e });
+      bads.sort((a, b) => a.start - b.start);
+      closeBadModal();
+      renderBadVeils();
+      renderZoomBadVeils();
+      saveBads();
+    }
+    document.getElementById('bs-cancel').addEventListener('click', closeBadModal);
+    document.getElementById('bs-save').addEventListener('click', submitBadModal);
+    bsModal.addEventListener('click', e => { if (e.target === bsModal) closeBadModal(); });
+    [bsStart, bsEnd].forEach(inp => inp.addEventListener('keydown', e => {
+      if (e.key === 'Enter') { e.preventDefault(); submitBadModal(); }
+    }));
+
+    async function loadBads() {
+      try {
+        const r = await fetch('bads.txt', { cache: 'no-store' });
+        if (!r.ok) return;
+        const text = await r.text();
+        bads = [];
+        text.split('\n').forEach(line => {
+          line = line.trim();
+          if (!line || line.startsWith('#')) return;
+          const m = line.split(/\s+/);
+          if (m.length >= 2) {
+            const s = parseFloat(m[0]), e = parseFloat(m[1]);
+            if (isFinite(s) && isFinite(e) && e > s) bads.push({ start: s, end: e });
+          }
+        });
+        bads.sort((a, b) => a.start - b.start);
+        renderBadVeils();
+        renderZoomBadVeils();
+      } catch(e) {}
+    }
+
+    function updateGold() {
+      if (TOTAL_DUR <= 0 || N_ZOOM <= 0) {
+        tcGoldEl.style.display = 'none';
+        return;
+      }
+      tcGoldEl.style.display = 'block';
+      const ws = cur_zoom * ZOOM_WINDOW;
+      const we = Math.min(ws + ZOOM_WINDOW, TOTAL_DUR);
+      setMainTcStyle(tcGoldEl, ws, we);
+    }
+
+    function render() {
+      imgEl.src  = imgs[cur];
+      imgEl.alt  = 'IC ' + String(cur).padStart(3, '0');
+      zoomEl.src = zoomUrl(cur, cur_zoom);
+      zoomEl.alt = 'IC ' + cur + ' zoom ' + cur_zoom;
+      // requestAnimationFrame so the new <img> dimensions have been laid out
+      // before svgRect measures the parent.
+      requestAnimationFrame(repositionAll);
+      writeHash();
+      icEl.textContent = 'IC ' + String(cur).padStart(3, '0') + ' / ' + String(N-1).padStart(3, '0');
+      if (flags[cur]) { badgeEl.textContent = '⚠ ECG/EOG/GA flagged'; badgeEl.className = 'flag'; }
+      else            { badgeEl.textContent = 'within thresholds';     badgeEl.className = 'ok';   }
+      const v = lbl[cur];
+      if (v === 'bad')         { decEl.textContent = '✗  REMOVE'; decEl.className = 'dec d-bad'; }
+      else if (v === 'good')   { decEl.textContent = '✓  RETAIN'; decEl.className = 'dec d-good'; }
+      else if (v === 'unsure') { decEl.textContent = '?  UNSURE'; decEl.className = 'dec d-unsure'; }
+      else                     { decEl.textContent = '—';         decEl.className = 'dec d-none'; }
+      const nBad    = lbl.filter(x => x === 'bad').length;
+      const nGood   = lbl.filter(x => x === 'good').length;
+      const nUnsure = lbl.filter(x => x === 'unsure').length;
+      const nLeft   = lbl.filter(x => x === null).length;
+      pc.style.left = ((cur + 0.5) / N * 100) + '%';
+      pu.innerHTML = '';
+      const segW = 100 / N;
+      for (let i = 0; i < N; i++) {
+        if (lbl[i] === null) continue;
+        const m = document.createElement('div');
+        m.className = 'pum pum-' + lbl[i];
+        m.style.left  = (i * segW) + '%';
+        m.style.width = segW + '%';
+        pu.appendChild(m);
+      }
+      cntEl.textContent =
+        nGood + ' keep   ' + nBad + ' del   ' + nUnsure + ' jury   ' + nLeft + ' left';
+      renderScores();
+    }
+
+    function advance() {
+      if (cur < N - 1) { cur++; render(); }
+      else { render(); if (lbl.every(x => x !== null)) showDone(); }
+    }
+
+    function seekTo(clientX) {
+      const r = pw.getBoundingClientRect();
+      cur = Math.min(N - 1, Math.max(0, Math.floor((clientX - r.left) / r.width * N)));
+      render();
+    }
+    const ptip = document.getElementById('ptip');
+    function _idxAt(clientX) {
+      const r = pw.getBoundingClientRect();
+      return Math.min(N - 1, Math.max(0, Math.floor((clientX - r.left) / r.width * N)));
+    }
+    pw.addEventListener('mousemove', e => {
+      const idx = _idxAt(e.clientX);
+      ptip.textContent = 'IC ' + String(idx).padStart(3, '0');
+      ptip.style.left = e.clientX + 'px';
+      ptip.style.top  = e.clientY + 'px';
+      ptip.style.display = 'block';
+    });
+    pw.addEventListener('mouseleave', () => { ptip.style.display = 'none'; });
+
+    zoomWrapEl.addEventListener('click', e => {
+      if (N_ZOOM <= 1) return;
+      // Halve relative to the SVG content rect, not the wrap (which
+      // letterboxes), so left/right halves stay symmetric on resize.
+      const wrapR = zoomWrapEl.getBoundingClientRect();
+      const sr    = svgRect(zoomWrapEl, ZOOM_ASPECT);
+      const x     = e.clientX - wrapR.left - sr.left;
+      const isLeft = x < sr.width / 2;
+      if (isLeft && cur_zoom > 0)              { cur_zoom -= 1; render(); }
+      else if (!isLeft && cur_zoom < N_ZOOM - 1) { cur_zoom += 1; render(); }
+    });
+
+    tcAreaEl.addEventListener('click', e => {
+      if (N_ZOOM <= 1 || TOTAL_DUR <= 0) return;
+      const r = tcAreaEl.getBoundingClientRect();
+      // tcAreaEl is itself px-positioned to hug the plot data x-range, so
+      // a uniform fraction maps directly to seconds.
+      const frac = (e.clientX - r.left) / r.width;
+      const t = Math.max(0, Math.min(TOTAL_DUR, frac * TOTAL_DUR));
+      const w = Math.max(0, Math.min(N_ZOOM - 1, Math.floor(t / ZOOM_WINDOW)));
+      if (w !== cur_zoom) { cur_zoom = w; render(); }
+    });
+
+    // Reposition every overlay; called on render() and on resize.
+    function repositionAll() {
+      positionTcArea();
+      updateGold();
+      renderBadVeils();
+      renderZoomBadVeils();
+    }
+    window.addEventListener('resize', () => requestAnimationFrame(repositionAll));
+
+    pw.addEventListener('click', e => seekTo(e.clientX));
+    pw.addEventListener('mousedown', e => {
+      e.preventDefault();
+      seekTo(e.clientX);
+      const onMove = e => seekTo(e.clientX);
+      const onUp   = () => {
+        document.removeEventListener('mousemove', onMove);
+        document.removeEventListener('mouseup',   onUp);
+      };
+      document.addEventListener('mousemove', onMove);
+      document.addEventListener('mouseup',   onUp);
+    });
+
+    function buildText() {
+      const lines = ['# ICA component labels', '# subject: __SUBJECT__', '# total ICs: ' + N, ''];
+      lbl.forEach((v, i) => lines.push('IC' + String(i).padStart(3, '0') + ': ' + (v || 'unlabeled')));
+      const bad = lbl.map((v, i) => v === 'bad' ? i : null).filter(i => i !== null);
+      lines.push('');
+      lines.push('bad_ics: [' + bad.join(', ') + ']');
+      return lines.join('\n');
+    }
+
+    let serverOk = true;
+    function setServerOk(ok) {
+      serverOk = ok;
+      const banner = document.getElementById('save-fail-banner');
+      if (ok) {
+        statusEl.textContent = '✓ saved';
+        statusEl.style.color = '#6ee7b7';
+        if (banner) banner.classList.remove('show');
+      } else {
+        statusEl.textContent = '⚠ NOT SAVED';
+        statusEl.style.color = '#fca5a5';
+        if (banner) banner.classList.add('show');
+      }
+    }
+    async function autoSave() {
+      try {
+        const r = await fetch('save_label', {
+          method: 'POST',
+          headers: { 'Content-Type': 'text/plain; charset=utf-8' },
+          body: buildText()
+        });
+        setServerOk(r.ok);
+      } catch(e) { setServerOk(false); }
+    }
+    function _dl(name, body) {
+      const blob = new Blob([body], { type: 'text/plain' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = name;
+      document.body.appendChild(a); a.click();
+      document.body.removeChild(a); URL.revokeObjectURL(a.href);
+    }
+    function browserDl()    { _dl('label.txt', buildText()); }
+    function downloadBads() { _dl('bads.txt',  buildBadsText()); }
+    async function showDone() {
+      document.getElementById('lpre').textContent = buildText();
+      document.getElementById('done').classList.add('show');
+      await autoSave();
+      const msg = document.getElementById('save-msg');
+      const dlBtn = document.getElementById('dl-btn');
+      if (serverOk) { msg.textContent = '✓ label.txt saved to server folder'; msg.className = 'ok'; }
+      else { msg.textContent = '⚠ Server not reachable — use download below'; msg.className = 'err'; dlBtn.style.display = ''; }
+    }
+    function closeDone() { doneEl.classList.remove('show'); }
+    document.getElementById('dclose').addEventListener('click', closeDone);
+    doneEl.addEventListener('click', e => { if (e.target === doneEl) closeDone(); });
+
+    document.addEventListener('keydown', e => {
+      if (e.repeat || e.target.tagName === 'BUTTON') return;
+      if (e.key === 'Escape') {
+        if (bsModal.classList.contains('show')) { closeBadModal(); return; }
+        if (doneEl.classList.contains('show'))  { closeDone();     return; }
+      }
+      // Don't fire shortcuts while typing in the modal.
+      if (bsModal.classList.contains('show')) return;
+      const k = e.key.toLowerCase();
+      if (k === 'k') { lbl[cur] = 'good'; advance(); autoSave(); }
+      else if (k === 'backspace') { e.preventDefault(); lbl[cur] = 'bad'; advance(); autoSave(); }
+      else if (k === 'j') { lbl[cur] = 'unsure'; advance(); autoSave(); }
+      else if (k === 'arrowup')   { if (cur > 0)     { cur--; render(); } }
+      else if (k === 'arrowdown') { if (cur < N - 1) { cur++; render(); } }
+      else if (k === 'h') { if (N_ZOOM > 1 && cur_zoom > 0)            { cur_zoom--; render(); } }
+      else if (k === 'l') { if (N_ZOOM > 1 && cur_zoom < N_ZOOM - 1)   { cur_zoom++; render(); } }
+      else if (k === 'v') { writeHash(); window.location.href = document.getElementById('view-link').href; }
+      else if (k === 'b') { e.preventDefault(); openBadModal(); }
+    });
+
+    (async () => {
+      try {
+        const r = await fetch('label.txt', { cache: 'no-store' });
+        if (r.ok) {
+          const text = await r.text();
+          text.split('\n').forEach(line => {
+            const m = line.match(/^IC(\d+):\s*(bad|good|unsure)/);
+            if (m) { const i = +m[1]; if (i < N) lbl[i] = m[2]; }
+          });
+          if (!window.location.hash) {
+            const next = lbl.indexOf(null);
+            if (next !== -1) cur = next;
+          }
+        }
+      } catch(e) {}
+      await loadBads();
+      render();
+    })();
+  </script>
+</body>
+</html>
