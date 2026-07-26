@@ -1741,7 +1741,7 @@ def find_template_subject(
     # Find a subject to use as a template
     template_index = sign_flipping.find_template_subject(covs, n_embeddings)
     template_subject = parc_files[template_index].split("/")[-3]
-    log_or_print("Template for sign flipping:", template_subject)
+    log_or_print(f"Template for sign flipping: {template_subject}")
 
     return template_subject
 

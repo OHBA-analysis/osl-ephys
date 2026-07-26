@@ -14,7 +14,7 @@ from osl_ephys.utils.logger import log_or_print
 
 
 def _get_parc_chans(raw):
-    """Get parcel channels names in an mne.Raw or mne.Epochs object.
+    """Gets parcel channel names in an mne.Raw or mne.Epochs object.
 
     Parameters
     ----------
@@ -24,7 +24,8 @@ def _get_parc_chans(raw):
     Returns
     -------
     parc_chans : list of str or str
-        Parcel channel names. If no channels called 'parcel_X' are found in the raw object then we return 'misc'.
+        Parcel channel names. If no channels called 'parcel_X' are found
+        in the raw object, then we return 'misc'.
     """
     # Parcel channels are those called 'parcel_X'
     parc_chans = [ch for ch in raw.ch_names if "parcel" in ch]
@@ -39,14 +40,15 @@ def find_flips(
     cov,
     template_cov,
     n_embeddings,
-    n_init,
+    n_restarts,
     n_iter,
     max_flips,
     use_tqdm=True,
 ):
-    """Find channels to flip.
+    """Finds channels to flip.
 
-    We search for the channels to flip by randomly flipping them and saving the flips that maximise the correlation of the covariance matrices between subjects.
+    We search for the channels to flip by randomly flipping them and saving the
+    flips that maximise the correlation of the covariance matrices between subjects.
 
     Parameters
     ----------
@@ -56,8 +58,8 @@ def find_flips(
         Template covariance matrix.
     n_embeddings : int
         Number of time-delay embeddings.
-    n_init : int
-        Number of initializations.
+    n_restarts : int
+        Number of independent random searches to perform.
     n_iter : int
         Number of sign flipping iterations per subject to perform.
     max_flips : int
@@ -70,7 +72,8 @@ def find_flips(
     best_flips : numpy.ndarray
         A (n_channels,) array of 1s and -1s indicating whether or not to flip a channels.
     metrics : numpy.ndarray
-        Evaluation metric (correlation between covariance matrices) as a function of iterations. Shape is (n_iter + 1,).
+        Evaluation metric (correlation between covariance matrices) as a function of
+        iterations. Shape is (n_iter + 1,).
     """
     log_or_print("find_flips")
 
@@ -85,20 +88,20 @@ def find_flips(
     best_flips = np.ones(n_channels)
     best_metric = 0
     metrics = []
-    for n in range(n_init):
+    for n in range(n_restarts):
         # Reset the flips and calculate the evaluation metric before sign flipping
         flips = np.ones(n_channels)
         metric = covariance_matrix_correlation(cov, template_cov, n_embeddings)
         if n == 0:
             metrics.append(metric)
-            log_or_print(f"init {n}, unflipped metric: {metric}")
+            log_or_print(f"restart #{n}, unflipped metric: {metric}")
 
         # Randomly permute the sign of different channels and calculate the metric
         if use_tqdm:
             iterator = trange(n_iter, desc="sign flipping")
         else:
             iterator = range(n_iter)
-        for j in iterator:
+        for _ in iterator:
             new_flips = randomly_flip(flips, max_flips)
             new_cov = apply_flips_to_covariance(cov, new_flips, n_embeddings)
             new_metric = covariance_matrix_correlation(new_cov, template_cov, n_embeddings)
@@ -107,14 +110,14 @@ def find_flips(
                 flips = new_flips
                 metric = new_metric
 
-        # Update best_flips if this was the best init
+        # Update best_flips if this was the best search
         if metric > best_metric:
             best_flips = flips
             best_metric = metric
 
-        # Save metric as a function of init
+        # Save metric as a function of restarts
         metrics.append(best_metric)
-        log_or_print(f"init {n}, current best metric: {best_metric}")
+        log_or_print(f"restart #{n}, current best metric: {best_metric}")
 
     return best_flips, metrics
 
@@ -176,16 +179,18 @@ def load_covariances(parc_files, n_embeddings=1, standardize=True, loader=None, 
 
 
 def find_template_subject(covs, diag_offset=0):
-    """Find a good template subject to use to align dipoles.
+    """Finds a good template subject to use to align dipoles.
 
-    We select the median subject after calculating the similarity between the covariances of each subject.
+    We select the median subject after calculating the similarity between the
+    covariances of each subject.
 
     Parameters
     ----------
     covs : numpy.ndarray
         Covariance of each subject. Shape much be (n_subjects, n_channels, n_channels).
     diag_offset : int
-        Offset to apply when getting the upper triangle of the covariance matrix before calculating the correlation between covariances.
+        Offset to apply when getting the upper triangle of the covariance matrix before
+        calculating the correlation between covariances.
 
     Returns
     -------
@@ -256,7 +261,7 @@ def randomly_flip(flips, max_flips):
     """
 
     # Select the number of channels to flip
-    n_channels_to_flip = np.random.choice(max_flips, size=1)
+    n_channels_to_flip = np.random.randint(1, max_flips + 1)
 
     # Select the channels to flip
     n_channels = flips.shape[0]
@@ -273,9 +278,11 @@ def apply_flips_to_covariance(cov, flips, n_embeddings=1):
     Parameters
     ----------
     cov : numpy.ndarray
-        Covariance matrix to apply flips to. Shape must be (n_channels*n_embeddings, n_channels*n_embeddings).
+        Covariance matrix to apply flips to.
+        Shape must be (n_channels*n_embeddings, n_channels*n_embeddings).
     flips : numpy.ndarray
-        Vector of 1s and -1s indicating whether or not to flip a channels. Shape must be (n_channels,).
+        Vector of 1s and -1s indicating whether or not to flip a channels.
+        Shape must be (n_channels,).
     n_embeddings : int
         Number of embeddings used when calculating the covariance.
 
@@ -303,7 +310,8 @@ def apply_flips(outdir, subject, flips, epoched=False, source_method="lcmv"):
     flips : numpy.ndarray
         Flips to apply.
     epoched : bool
-        Are we performing sign flipping on parc-raw.fif (epoched=False) or parc-epo.fif files (epoched=True)?
+        Are we performing sign flipping on parc-raw.fif (epoched=False)
+        or parc-epo.fif files (epoched=True)?
     source_method : str, optional
         Which parcellation file should we apply flips to.
     """
@@ -367,7 +375,7 @@ def time_embed(x, n_embeddings):
 
 
 def std_data(x):
-    """Standardize (z-transform) the data.
+    """Standardizes (z-transforms) the data.
 
     Parameters
     ----------
