@@ -6,6 +6,7 @@ section of a config.
 
 # Authors: Chetan Gohil <chetan.gohil@psych.ox.ac.uk>
 #          Mats van Es <mats.vanes@psych.ox.ac.uk>
+#          SungJun Cho <sungjun.cho@ndcn.ox.ac.uk>
 
 
 import os
@@ -1753,9 +1754,24 @@ def fix_sign_ambiguity(
     template,
     n_embeddings,
     standardize,
-    n_init,
-    n_iter,
-    max_flips,
+    n_init=3,
+    n_iter=2500,
+    max_flips=20,
+    method="random",
+    refine=True,
+    n_refine=5,
+    refine_strategy="best",
+    bp_n_iter=200,
+    beta=2.0,
+    damping=0.5,
+    prior_strength=1e-3,
+    tol=1e-6,
+    sdp_rank=None,
+    sdp_n_restarts=5,
+    sdp_max_iter=1000,
+    sdp_tol=1e-8,
+    gw_samples=500,
+    random_state=0,
     epoched=False,
     source_method="lcmv",
     reportdir=None,
@@ -1776,12 +1792,52 @@ def fix_sign_ambiguity(
         Number of time-delay embeddings that we will use (if we are doing any).
     standardize : bool
         Should we standardize (z-transform) the data before sign flipping?
-    n_init : int
-        Number of initializations.
-    n_iter : int
-        Number of sign flipping iterations per subject to perform.
-    max_flips : int
-        Maximum number of channels to flip in an iteration.
+    n_init : int, optional
+        Number of initializations. Only used by the ``"random"`` method.
+    n_iter : int, optional
+        Number of sign flipping iterations per subject to perform. Only used by the
+        ``"random"`` method.
+    max_flips : int, optional
+        Maximum number of channels to flip in an iteration. Only used by the
+        ``"random"`` method.
+    method : str, optional
+        Method used to find the channels to flip. One of ``"random"`` (stochastic
+        search, default), ``"spectral"`` (deterministic spectral synchronization),
+        ``"belief_propagation"`` (loopy belief propagation) or ``"sdp"`` (semidefinite
+        relaxation with Goemans-Williamson rounding).
+    refine : bool, optional
+        Should we polish the ``"spectral"`` / ``"belief_propagation"`` / ``"sdp"``
+        solution with greedy refinement of the exact metric? Defaults to True.
+    n_refine : int, optional
+        Maximum number of greedy refinement sweeps (only used if ``refine=True``).
+    refine_strategy : str, optional
+        Greedy refinement strategy. Can be ``"first"`` or ``"best"`` (default).
+    bp_n_iter : int, optional
+        Maximum number of message-passing iterations. Only used by the
+        ``"belief_propagation"`` method.
+    beta : float, optional
+        Inverse temperature for the ``"belief_propagation"`` method.
+    damping : float, optional
+        Damping factor for the ``"belief_propagation"`` method.
+    prior_strength : float, optional
+        Symmetry-breaking unary bias for the ``"belief_propagation"`` method.
+    tol : float, optional
+        Convergence tolerance for the ``"belief_propagation"`` method.
+    sdp_rank : int, optional
+        Rank of the mixing-method factorisation for the ``"sdp"`` method. Defaults to
+        ``ceil(sqrt(2 n)) + 1``.
+    sdp_n_restarts : int, optional
+        Number of random restarts for the ``"sdp"`` mixing method.
+    sdp_max_iter : int, optional
+        Maximum number of coordinate-descent sweeps per restart for the ``"sdp"`` method.
+    sdp_tol : float, optional
+        Convergence tolerance for the ``"sdp"`` mixing method.
+    gw_samples : int, optional
+        Number of random hyperplanes for Goemans-Williamson rounding in the ``"sdp"``
+        method.
+    random_state : int, optional
+        Seed for the ``"sdp"`` mixing-method restarts and hyperplane rounding, so the
+        result is reproducible.
     epoched : bool, optional
         Are we performing sign flipping on parc-raw.fif (epoched=False) or
         parc-epo.fif files (epoched=True)?
@@ -1810,15 +1866,60 @@ def fix_sign_ambiguity(
     )
 
     # Find the channels to flip
-    flips, metrics = sign_flipping.find_flips(
-        cov,
-        template_cov,
-        n_embeddings,
-        n_init,
-        n_iter,
-        max_flips,
-        use_tqdm=False,
-    )
+    if method == "random":
+        flips, metrics = sign_flipping.find_flips(
+            cov,
+            template_cov,
+            n_embeddings,
+            n_init,
+            n_iter,
+            max_flips,
+            use_tqdm=False,
+            random_state=random_state,
+        )
+    elif method == "spectral":
+        flips, metrics = sign_flipping.find_flips_spectral(
+            cov,
+            template_cov,
+            n_embeddings,
+            refine=refine,
+            n_refine=n_refine,
+            refine_strategy=refine_strategy,
+        )
+    elif method == "belief_propagation":
+        flips, metrics = sign_flipping.find_flips_belief_propagation(
+            cov,
+            template_cov,
+            n_embeddings,
+            n_iter=bp_n_iter,
+            beta=beta,
+            damping=damping,
+            prior_strength=prior_strength,
+            tol=tol,
+            refine=refine,
+            n_refine=n_refine,
+            refine_strategy=refine_strategy,
+        )
+    elif method == "sdp":
+        flips, metrics = sign_flipping.find_flips_sdp(
+            cov,
+            template_cov,
+            n_embeddings,
+            sdp_rank=sdp_rank,
+            sdp_n_restarts=sdp_n_restarts,
+            sdp_max_iter=sdp_max_iter,
+            sdp_tol=sdp_tol,
+            gw_samples=gw_samples,
+            refine=refine,
+            n_refine=n_refine,
+            refine_strategy=refine_strategy,
+            random_state=random_state,
+        )
+    else:
+        raise ValueError(
+            f"Invalid method '{method}'. Must be one of 'random', 'spectral', "
+            "'belief_propagation' or 'sdp'."
+        )
 
     # Apply flips to the parcellated data
     sign_flipping.apply_flips(outdir, subject, flips, epoched=epoched, source_method=source_method)
@@ -1829,6 +1930,7 @@ def fix_sign_ambiguity(
             f"{reportdir}/{subject}/data.pkl",
             {
                 "fix_sign_ambiguity": True,
+                "method": method,
                 "template": template,
                 "n_embeddings": n_embeddings,
                 "standardize": standardize,
