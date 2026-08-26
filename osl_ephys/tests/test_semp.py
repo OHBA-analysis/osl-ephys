@@ -17,8 +17,8 @@ mne.set_log_level("ERROR")
 
 from osl_ephys.preprocessing.batch import find_func
 from osl_ephys.preprocessing.semp.wrappers.epoching import (
-    create_epoch, create_TR_epoch, create_He_epoch, simulate_epoch,
-    _check_fixed_spacing)
+    create_epoch, create_TR_epoch, create_He_epoch, simulate_epoch, crop_TR,
+    crop_by_epoch, _check_fixed_spacing)
 from osl_ephys.preprocessing.semp.wrappers.ica import slice_reject
 from osl_ephys.preprocessing.semp.wrappers.aas import epoch_aas
 from osl_ephys.preprocessing.semp.wrappers.obs import epoch_obs
@@ -69,7 +69,70 @@ def test_removed_names_do_not_resolve():
 def test_create_TR_epoch_fixed_window():
     d = create_TR_epoch(_dataset(), {})
     ep = d["tr_ep"]
-    assert len(ep) == 14 and np.isclose(ep.tmax, 2.0)
+    assert len(ep) == 14
+    assert len(ep.times) == round(d["tr_interval"] * ep.info["sfreq"]) == 200
+    assert np.isclose(ep.tmax, 1.99)
+
+
+def test_create_TR_epoch_2p1_seconds_at_5khz_has_exactly_10500_samples():
+    raw = _synthetic_raw(T=5.0, sfreq=5000.0)
+    raw.set_annotations(mne.Annotations([1.0], [0.0], ["R128"]))
+    d = {
+        "raw": raw,
+        "tr_interval": 2.1,
+        "tr_event_key": ["R128"],
+    }
+
+    create_TR_epoch(d, {"correct_trig": False})
+
+    assert len(d["tr_ep"].times) == 10500
+    assert np.isclose(d["tr_ep"].tmax, 2.0998)
+
+
+def test_create_TR_epoch_deduplicates_repeated_annotation_samples():
+    d = _dataset()
+    duplicate = mne.Annotations([3.0, 7.0], [0.0, 0.0], ["R128", "R128"])
+    d["raw"].set_annotations(d["raw"].annotations + duplicate)
+
+    d = create_TR_epoch(d, {})
+
+    samples = d["tr_ep"].events[:, 0]
+    assert len(samples) == 14
+    assert len(np.unique(samples)) == len(samples)
+
+
+def test_crop_TR_invalidates_cached_epochs_and_reanchors_events():
+    """Cropping after an epoching pass must force fresh, cropped events."""
+    d = _dataset()
+    create_TR_epoch(d, {"correct_trig": False})
+    assert "tr_ep" in d
+
+    crop_TR(d, {"num_edge_TR": 1})
+    assert "tr_ep" not in d
+
+    create_TR_epoch(d, {"correct_trig": False})
+    raw = d["raw"]
+    starts = d["tr_ep"].events[:, 0] - raw.first_samp
+    assert len(d["tr_ep"]) == 12
+    assert starts[0] == 0
+    assert np.all(np.diff(starts) == int(2.0 * raw.info["sfreq"]))
+
+
+def test_crop_TR_preserves_valid_cached_epochs_when_requested():
+    """The intentional create-before-crop path keeps absolute epoch events."""
+    d = _dataset()
+    create_TR_epoch(d, {"correct_trig": False})
+    before = d["tr_ep"].events.copy()
+
+    crop_TR(d, {"preserve_epochs": True})
+
+    assert "tr_ep" in d
+    raw = d["raw"]
+    starts = d["tr_ep"].events[:, 0] - raw.first_samp
+    assert len(d["tr_ep"]) == len(before)
+    assert starts[0] == 0
+    assert np.all(np.diff(starts) == int(2.0 * raw.info["sfreq"]))
+    assert raw.n_times == len(d["tr_ep"]) * len(d["tr_ep"].times)
 
 
 def test_create_epoch_fixed_matches_TR_wrapper():
@@ -93,12 +156,47 @@ def test_create_He_epoch_auto_window():
 
 def test_simulate_epoch_grid_and_jitter():
     d = simulate_epoch(_dataset(), {"width": 1.0})
-    assert "sim_ep" in d and np.isclose(d["sim_ep"].tmax, 1.0)
+    assert "sim_ep" in d
+    assert len(d["sim_ep"].times) == 100
+    assert np.all(np.diff(d["sim_ep"].events[:, 0]) == 100)
+    assert d["sim_ep"].events[1, 0] - d["sim_ep"].events[0, 0] == len(d["sim_ep"].times)
     # jitter runs; edge onsets may be dropped, so allow a small count delta
     d2 = simulate_epoch(_dataset(), {"width": 1.0, "jitter": 0.2})
     assert abs(len(d2["sim_ep"]) - len(d["sim_ep"])) <= 2
     with pytest.raises(ValueError):
         simulate_epoch(_dataset(), {})            # width required
+
+
+def test_crop_by_epoch_retains_complete_final_simulated_epoch():
+    d = simulate_epoch(_dataset(), {"width": 1.0, "epoch_key": "tr_ep"})
+    d = crop_by_epoch(d, {"epoch_key": "tr_ep"})
+    ep = d["tr_ep"]
+    starts = ep.events[:, 0] - d["raw"].first_samp
+    assert starts[0] == 0
+    assert starts[-1] + len(ep.times) == d["raw"].n_times
+
+
+def test_simulated_tr_crop_then_aas_has_no_boundary_overrun():
+    """The 4c epoch order must leave every AAS write inside the cropped raw."""
+    raw = _synthetic_raw(T=84.5, sfreq=100.0)
+    d = {"raw": raw}
+    d = simulate_epoch(
+        d, {"width": 2.1, "jitter": 0.0, "epoch_key": "tr_ep"}
+    )
+    d = crop_by_epoch(d, {"epoch_key": "tr_ep"})
+    d = epoch_aas(
+        d,
+        {
+            "epoch_key": "tr_ep",
+            "picks": "all",
+            "window_length": 30,
+            "overwrite": "new",
+            "fit": False,
+        },
+    )
+
+    assert len(d["tr_ep"].times) == 210
+    assert d["picks_tr_ep"] == d["raw"].ch_names
 
 
 def test_create_epoch_rejects_old_event_and_simulate_mode():
@@ -176,6 +274,21 @@ def _capture_log_or_print(func, capsys):
     return capsys.readouterr().out + "\n".join(grabbed)
 
 
+def test_crop_TR_warns_when_run_before_epoch_creation(capsys):
+    d = _dataset()
+    out = _capture_log_or_print(lambda: crop_TR(d, {}), capsys)
+    assert "before TR epoch creation" in out
+
+
+def test_crop_TR_after_epoch_creation_has_no_order_warning(capsys):
+    d = _dataset()
+    create_TR_epoch(d, {"correct_trig": False})
+    out = _capture_log_or_print(
+        lambda: crop_TR(d, {"preserve_epochs": True}), capsys)
+    assert "after epoch creation" not in out
+    assert "before TR epoch creation" not in out
+
+
 def test_create_TR_epoch_warns_on_forgotten_trigger(capsys):
     raw = mne.io.RawArray(np.zeros((1, 2000)),
                           mne.create_info(["C1"], 100.0, "eeg"), verbose="ERROR")
@@ -245,6 +358,7 @@ def test_epoch_aas_removes_a_stationary_template():
     # a perfectly repeated per-volume template is almost entirely subtracted;
     # variance collapses by >10x (residual is only the epoch-overlap edges).
     assert post_var < 0.1 * pre_var
+    assert ds["picks_tr_ep"] == ["C1", "C2"]
 
 
 # -------------------------------------------------------------------- timer ---
@@ -320,6 +434,126 @@ def test_psd_and_temp_plot_smoke(tmp_path):
               event_name=["a", "b"], save_pth=str(tmp_path / "t2.png"))  # list of series
     temp_plot(data, 0, fs=200.0, save_pth=str(tmp_path / "t3.png"))    # no events
     assert all((tmp_path / f).exists() for f in ("t1.png", "t2.png", "t3.png"))
+
+
+def test_psd_plot_concatenates_bad_segments_without_nperseg_warnings(tmp_path):
+    """Bad annotations are removed before PSD, so short-span Welch warnings do not recur."""
+    import warnings
+    from osl_ephys.preprocessing.semp.vis import psd_plot
+
+    raw = mne.io.RawArray(
+        np.random.RandomState(3).randn(2, 4000) * 1e-5,
+        mne.create_info(["C1", "C2"], 200.0, "eeg"),
+        verbose="ERROR",
+    )
+    raw.set_annotations(mne.Annotations(
+        [2.0, 6.0, 10.0, 14.0],
+        [1.5, 1.5, 1.5, 1.5],
+        ["bad_segment"] * 4,
+    ))
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        spectrum = psd_plot(
+            raw,
+            fmax=80,
+            resolution=0.05,
+            save_pth=tmp_path / "bad_segments_psd",
+        )
+
+    assert spectrum.get_data().shape[0] == 2
+    assert not any("nperseg" in str(warning.message) for warning in caught)
+    assert (tmp_path / "bad_segments_psd.pdf").exists()
+
+
+def test_psd_plot_all_keeps_eeg_eog_and_ecg(tmp_path):
+    """Explicit all-channel PSD must not silently fall back to EEG only."""
+    from osl_ephys.preprocessing.semp.vis import psd_plot
+
+    channel_names = ["Cz", "VEOG", "HEOG", "ECG"]
+    raw = mne.io.RawArray(
+        np.random.RandomState(4).randn(4, 1000) * 1e-5,
+        mne.create_info(
+            channel_names, 200.0, ["eeg", "eog", "eog", "ecg"]
+        ),
+        verbose="ERROR",
+    )
+    spectrum = psd_plot(
+        raw,
+        picks="all",
+        fmax=80,
+        resolution=1.0,
+        save_pth=tmp_path / "all_channel_psd",
+    )
+
+    assert spectrum.ch_names == channel_names
+    assert (tmp_path / "all_channel_psd.pdf").exists()
+
+
+def test_pcs_plot_keeps_full_mapping_when_one_channel_is_bad(
+    tmp_path, monkeypatch
+):
+    """Bad-channel filtering must not shift later PC rows onto wrong names."""
+    import osl_ephys.preprocessing.semp.vis as vis
+
+    channel_names = ["Cz", "VEOG", "ECG"]
+    info = mne.create_info(
+        channel_names, 100.0, ["eeg", "eog", "ecg"]
+    )
+    info["bads"] = ["VEOG"]
+    pcs = np.stack([
+        np.full((20, 1), 1.0),
+        np.full((20, 1), 2.0),
+        np.full((20, 1), 3.0),
+    ])
+    captured = {}
+
+    def capture(component_data, channel_name, *args, **kwargs):
+        captured[channel_name] = np.asarray(component_data).copy()
+
+    monkeypatch.setattr(vis, "_plot_pc_panel", capture)
+    vis.pcs_plot(
+        pcs,
+        tmp_path,
+        ["Cz", "VEOG", "ECG"],
+        channel_names,
+        info,
+    )
+
+    assert set(captured) == {"Cz", "ECG"}
+    assert np.all(captured["Cz"] == 1.0)
+    assert np.all(captured["ECG"] == 3.0)
+
+
+def test_psd_plot_db_axis_has_no_linear_amplitude_unit():
+    """dB PSD plots must not claim linear amplitude units on the y-axis."""
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    from osl_ephys.preprocessing.semp.vis import psd_plot
+
+    raw = _synthetic_raw(T=10.0, sfreq=200.0)
+    raw.rename_channels({"C1": "Fp1", "C2": "Fp2"})
+    raw.set_montage("standard_1020")
+    psd_plot(raw, fmax=50, resolution=2.0, dB=True)
+    labels = [axis.get_ylabel() for axis in plt.gcf().axes]
+    assert labels
+    assert labels[0] == "dB"
+    assert all(label == "" for label in labels[1:])
+    plt.close("all")
+
+
+def test_temp_plot_uses_name_as_title():
+    """The temp_plot name argument should be visible as the figure title."""
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    from osl_ephys.preprocessing.semp.vis import temp_plot
+
+    raw = _synthetic_raw(T=2.0, sfreq=100.0)
+    temp_plot(raw, 0, length=raw.n_times, name="checkerout channel")
+    assert plt.gcf().axes[0].get_title() == "checkerout channel"
+    plt.close("all")
 
 
 # ------------------------------------------------------------- amplitude ticks -

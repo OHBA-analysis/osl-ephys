@@ -8,7 +8,12 @@ import mne
 from osl_ephys.report.preproc_report import plot_channel_dists
 from osl_ephys.utils.logger import log_or_print
 
-from osl_ephys.preprocessing.semp.utils import ensure_dir, proc_userargs, require_keys
+from osl_ephys.preprocessing.semp.utils import (
+    ensure_dir,
+    proc_userargs,
+    require_keys,
+    resolve_channel_names,
+)
 from ..metric import EEGTracer, psd_band_ratio, psd_band_stat
 from ..vis import psd_plot, temp_plot, temp_plot_diff, pcs_plot
 
@@ -56,19 +61,22 @@ def summary(dataset, userargs):
 
 
 def _plot_psd_panel(dataset, userargs, save_fdr, fs):
-    """The checkpoint PSD figure. If a per-key picks list exists
-    (``picks_<key_to_print>``, written by epoch_aas / epoch_obs) the *returned*
-    psd is over those channels and a separate ``psd.pdf`` over 'eeg' is also
-    written; otherwise the eeg psd is both returned and saved. Returns
-    ``(psd, picks)``."""
-    if f"picks_{userargs['key_to_print']}" in dataset:
-        picks = dataset[f"picks_{userargs['key_to_print']}"]
-        psd = psd_plot(dataset['raw'], resolution=userargs['resolution'], fs=fs, figsize=userargs['psd_figsize'], fmax=userargs['max_freq'], picks=picks, dB=userargs['dB'])
-        psd_plot(dataset['raw'], resolution=userargs['resolution'], fs=fs, figsize=userargs['psd_figsize'], fmax=userargs['max_freq'], save_pth=save_fdr / f"psd.pdf", picks='eeg', dB=userargs['dB'])
-    else:
-        picks = 'eeg'
-        psd = psd_plot(dataset['raw'], resolution=userargs['resolution'], fs=fs, figsize=userargs['psd_figsize'], fmax=userargs['max_freq'], save_pth=save_fdr / f"psd.pdf", picks='eeg', dB=userargs['dB'])
-    return psd, picks
+    """Render and return the checkpoint's display PSD.
+
+    The display spectrum is deliberately independent of AAS/OBS PC metadata.
+    It defaults to EEG for a readable report, while ``picks_<key>`` stores the
+    exact channel mapping for artifact arrays.
+    """
+    return psd_plot(
+        dataset['raw'],
+        resolution=userargs['resolution'],
+        fs=fs,
+        figsize=userargs['psd_figsize'],
+        fmax=userargs['max_freq'],
+        save_pth=save_fdr / "psd.pdf",
+        picks=userargs['psd_picks'],
+        dB=userargs['dB'],
+    )
 
 
 def _plot_channel_dist(dataset, userargs, save_fdr):
@@ -121,11 +129,58 @@ def _select_channels(dataset, userargs, psd):
     return np.unique(np.concatenate([np.array(userargs['always_print']), channel_to_print]))
 
 
-def _print_pcs(dataset, userargs, subject, channel_to_print, psd):
+def _artifact_channel_names(dataset, key):
+    """Return and validate the ordered names for an artifact channel axis."""
+    pc_key = f"pc_{key}"
+    picks_key = f"picks_{key}"
+    require_keys(dataset, [pc_key, picks_key], 'ckpt_report')
+
+    mapping = dataset[picks_key]
+    if isinstance(mapping, (list, tuple, np.ndarray)) and all(
+        isinstance(name, str) for name in mapping
+    ):
+        channel_names = list(mapping)
+    else:
+        # Safe support for datasets produced before AAS/OBS began storing the
+        # exact list. The axis-length check below prevents guessed alignment.
+        channel_names = resolve_channel_names(dataset['raw'].info, mapping)
+
+    n_pc_channels = np.asarray(dataset[pc_key]).shape[-3]
+    if len(channel_names) != n_pc_channels:
+        raise ValueError(
+            f"{pc_key} has {n_pc_channels} channels, but {picks_key} resolves "
+            f"to {len(channel_names)} names. Refusing to guess the alignment."
+        )
+    return channel_names
+
+
+def _select_artifact_channels(channel_to_print, channel_names, info):
+    """Keep report picks that have PCs; fall back to up to three PC channels."""
+    bad_channels = set(info.get('bads', []))
+    selected = [
+        name for name in channel_to_print
+        if name in channel_names and name not in bad_channels
+    ]
+    if selected:
+        return selected
+    return [
+        name for name in channel_names if name not in bad_channels
+    ][:3]
+
+
+def _print_pcs(dataset, userargs, subject, channel_to_print, channel_names):
     """Render the AAS/OBS principal-component templates (``pc_<key_to_print>``)."""
     pc_fdr_name = dataset['target_pth'] / "ckpt" / subject / f"pc_{userargs['key_to_print']}"
     ensure_dir(pc_fdr_name)
-    pcs_plot(dataset[f"pc_{userargs['key_to_print']}"], pc_fdr_name, channel_to_print, psd.ch_names, info=psd.info, resolution=userargs['resolution'], psd_lim=(0, userargs['max_freq']))
+    pcs_plot(
+        dataset[f"pc_{userargs['key_to_print']}"],
+        pc_fdr_name,
+        channel_to_print,
+        channel_names,
+        info=dataset['raw'].info,
+        resolution=userargs['resolution'],
+        psd_lim=(0, userargs['max_freq']),
+    )
 
 
 def _print_noise(dataset, userargs, subject, channel_to_print, fs):
@@ -140,7 +195,7 @@ def _print_noise(dataset, userargs, subject, channel_to_print, fs):
     psd_plot(dataset[f"noise_{userargs['key_to_print']}"], resolution=userargs['resolution'], fs=fs, figsize=userargs['psd_figsize'], fmax=userargs['max_freq'], save_pth=noise_fdr_name / f"noise_psd.pdf", picks='eeg', dB=userargs['dB'])
 
 
-def _log_tracer(dataset, userargs, psd, picks):
+def _log_tracer(dataset, userargs, psd):
     """Log this checkpoint's EEG + PSD into the EEGTracer, **if one exists**.
 
     The tracer is optional: it is only present when a project ran ``init_tracer``
@@ -149,11 +204,15 @@ def _log_tracer(dataset, userargs, psd, picks):
     """
     if 'tracer' not in dataset:
         return
-    if picks in ['eeg', 'all', 'data'] or 'eeg' in picks:
+    eeg_names = resolve_channel_names(dataset['raw'].info, 'eeg')
+    if set(eeg_names).issubset(psd.ch_names):
         dataset['tracer'].checkpoint(dataset['raw'].get_data(picks='eeg'), name=userargs['ckpt_name'])
         dataset['tracer'].checkpoint_psd(psd, name=userargs['ckpt_name'])
     else:
-        log_or_print(f"Warning: EEG channels not fully included in picks for checkpointing tracer. Current picks: {picks}. Tracer logging skipped for this checkpoint.")
+        log_or_print(
+            "Warning: the display PSD does not contain every usable EEG "
+            "channel, so tracer logging was skipped for this checkpoint."
+        )
 
 
 def ckpt_report(dataset, userargs):
@@ -185,6 +244,7 @@ def ckpt_report(dataset, userargs):
         'focus_range': [100, 110],  # in seconds, for temp_plot
         'log_tracer': True,
         'psd_figsize': (10, 3),
+        'psd_picks': 'eeg',  # display only; PC alignment uses picks_<key>
     }
     userargs = proc_userargs(userargs, default_args)
     require_keys(dataset, ['subject', 'target_pth'], 'ckpt_report')
@@ -197,7 +257,7 @@ def ckpt_report(dataset, userargs):
     if userargs['key_to_print'] is None:
         userargs['print_noise'] = userargs['print_pcs'] = False
 
-    psd, picks = _plot_psd_panel(dataset, userargs, save_fdr, fs)
+    psd = _plot_psd_panel(dataset, userargs, save_fdr, fs)
     _plot_channel_dist(dataset, userargs, save_fdr)
 
     channel_to_print = _select_channels(dataset, userargs, psd)
@@ -206,17 +266,36 @@ def ckpt_report(dataset, userargs):
 
     ### Print PCs of OBS or AAS if requested.
     if userargs['print_pcs']:
-        _print_pcs(dataset, userargs, subject, channel_to_print, psd)
+        artifact_names = _artifact_channel_names(
+            dataset, userargs['key_to_print']
+        )
+        artifact_channels = _select_artifact_channels(
+            channel_to_print, artifact_names, dataset['raw'].info
+        )
+        _print_pcs(
+            dataset,
+            userargs,
+            subject,
+            artifact_channels,
+            artifact_names,
+        )
 
     ### Print noise components if requested.
     if userargs['print_noise']:
-        _print_noise(dataset, userargs, subject, channel_to_print, fs)
+        if not userargs['print_pcs']:
+            artifact_names = _artifact_channel_names(
+                dataset, userargs['key_to_print']
+            )
+            artifact_channels = _select_artifact_channels(
+                channel_to_print, artifact_names, dataset['raw'].info
+            )
+        _print_noise(dataset, userargs, subject, artifact_channels, fs)
 
     ### Store the current raw data for diff comparison in the next checkpoint
     dataset['last_ckpt_raw'] = copy.deepcopy(dataset['raw'])
 
     ### Log tracer metrics if requested
     if userargs['log_tracer']:
-        _log_tracer(dataset, userargs, psd, picks)
+        _log_tracer(dataset, userargs, psd)
 
     return dataset

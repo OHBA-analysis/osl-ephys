@@ -3,7 +3,12 @@ import copy
 import numpy as np
 import mne
 
-from ..utils import proc_userargs, require_keys, mne_epoch2raw
+from ..utils import (
+    mne_epoch2raw,
+    proc_userargs,
+    require_keys,
+    resolve_channel_names,
+)
 
 
 def _lower_median(x, axis=None):
@@ -44,14 +49,16 @@ def epoch_obs(dataset, userargs):
     })
     epoch_key = userargs['epoch_key']
     npc = userargs['npc']
-    picks = userargs['picks']
+    require_keys(dataset, epoch_key, 'epoch_obs')
+    picks = resolve_channel_names(
+        dataset[epoch_key].info, userargs['picks']
+    )
     overwrite = userargs['overwrite']
     remove_mean = userargs['remove_mean']
     pc_from_spurious = userargs['pc_from_spurious']
     apply_to_spurious = userargs['apply_to_spurious']
     screen_high_power = userargs['screen_high_power']
 
-    require_keys(dataset, epoch_key, 'epoch_obs')
     if pc_from_spurious:
         orig_data = np.asarray(dataset[epoch_key].get_data(picks=picks))  # #ep, #ch, len(ep)
     else:
@@ -110,6 +117,7 @@ def epoch_obs(dataset, userargs):
 
     dataset[noise_name] = copy.deepcopy(dataset['raw'].get_data())
     dataset[pc_name] = all_pcs
+    # This list is the exact ordered name mapping for all_pcs' channel axis.
     dataset[picks_name] = picks
     dataset['raw'] = mne_epoch2raw(dataset[epoch_key], dataset['raw'], cleaned, tmin=dataset[epoch_key].tmin, overwrite=overwrite, picks=picks)
     dataset[noise_name] = dataset[noise_name] - dataset['raw'].get_data()

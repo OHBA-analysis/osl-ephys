@@ -125,82 +125,28 @@ pf = Pathfinder(
 #%%
 # That gives you a small, explicit API used throughout a semp project:
 #
-# - ``pf.ids`` --- every recording id discovered by globbing the anchor on disk (e.g. ``'11'`` for sub-01/ses-01).
-# - ``pf.id2path('preproc', file_id)`` --- the path of any kind for a recording.
+# - ``pf.ids`` --- the fixed recording-id snapshot discovered by globbing the anchor during construction (e.g. ``'11'`` for sub-01/ses-01). ``pf.scan()`` validates every configured kind for those ids and returns rows with concrete ``Path`` values only when files exist; missing rows show ``path=None`` and a ``*`` pattern. It does not change the anchor or rediscover ids.
+# - ``pf.id2path(file_id, 'preproc')`` --- the path of any kind for a recording.
 # - ``pf.path2id('raw', some_path)`` --- the inverse: recover the id from a filename (used to set ``dataset['subject']``).
-# - ``pf.exists('raw', file_id)`` --- check a kind is on disk before using it.
-# - ``pf.id2field(file_id)`` --- the integer fields (``{'subject': 1, 'session': 1}``), handy when you must glob something the templates don't cover (e.g. the ``anat/`` T1w for later source recon).
+# - ``pf.id2path(file_id, 'raw')`` --- resolve a kind and raise if it is missing.
+# - ``pf.id2field(file_id)`` --- the string fields (for example ``{'subject': '1', 'session': '1'}``), handy when you must glob something the templates don't cover (e.g. the ``anat/`` T1w for later source recon).
 
 #%%
-# **Scaling up: one pathfinder for a whole study, with** ``derive``. Above we used a *single-task* pathfinder (only ``task-rest``), so the id only had to encode subject and session. A larger study has many task types per recording --- NATVIEW has a dozen: the run-less ``rest``, ``checker``, ``checkeroff``, ``checkerout``, ``inscapes``, ``peer``, and the run-paired ``dme``, ``dmh``, ``tp``, ``monkey1``, ``monkey2``, ``monkey5`` (each recorded as both ``_run-01`` *and* ``_run-02``) --- and you have a choice. Keeping one small pathfinder per task (``rest_pf``, ``monkey1_pf``, ...) is perfectly fine. Or you can drive everything from *one* pathfinder whose id also encodes the task (and run).
-#
-# You probably do not want a verbose id like ``'01-01-dme-02'`` though --- you want a compact code. ``Pathfinder`` supports that with ``derive``: an ``f(fields, kind) -> extra_fields`` hook that fills in a placeholder *computed* from the id (and, going the other way, recovers the id's code from what is on disk). The trick is to fold the variable part of the filename --- the task token *and* its optional ``_run-NN`` --- into a single derived ``stem`` field, so the path template needs no explicit ``task`` or ``run`` placeholder at all. The id then reads as ``<subject><session><task><run>``, where the task is a short **letters-only** code sitting between the leading digits and the trailing run digit --- so it splits cleanly at the digit/letter boundary, with no separators and no zero-padding. For example,
-#
-# ::
-#
-#     .../sub-01/ses-01/eeg/sub-01_ses-01_task-dme_run-02_eeg.set       <->  id '11d2'
-#     .../sub-01/ses-01/eeg/sub-01_ses-01_task-monkey1_run-02_eeg.set   <->  id '11ka2'
-#     .../sub-01/ses-01/eeg/sub-01_ses-01_task-rest_eeg.set             <->  id '11r1'
-#
-# How does ``derive`` know that ``dme`` files carry a ``_run-NN`` while ``rest`` files do not? It does **not** hold a hard-coded list of run-less tasks. It reads it off the disk: a given task's recordings either *all* carry ``_run-NN`` or none do, so one glob settles it. And going the other way (disk ``->`` id), a filename with no ``_run-NN`` simply **defaults its run to 1**. So the whole run-less story is "no ``_run-`` on disk => run defaults to 1", never a maintained set:
-
-import glob
-from functools import lru_cache
-
-# one short LETTERS-ONLY code per task (your choice); the inverse recovers the
-# full token. Codes are letters (monkey1 -> 'ka', not 'k1') so the id splits
-# unambiguously at the digit/letter boundary -- see the note below.
-ABBR = {'rest': 'r', 'checker': 'c', 'checkeroff': 'cf', 'checkerout': 'co',
-        'inscapes': 'i', 'peer': 'p', 'dme': 'd', 'dmh': 'h',
-        'monkey1': 'ka', 'monkey2': 'kb', 'monkey5': 'ke', 'tp': 't'}
-FULL = {v: k for k, v in ABBR.items()}
-
-@lru_cache(maxsize=None)
-def _has_run(task):
-    # A task's recordings either ALL carry _run-NN or none do; discover which
-    # from the disk once, rather than enumerating a run-less set by hand.
-    return bool(glob.glob(f"{RAW}/sub-*/ses-*/eeg/*_task-{task}_run-*_eeg.set"))
-
-def derive(fields, kind):
-    f, out = dict(fields), {}
-    # disk -> id: split the stem into task code + run. A filename with no
-    # _run-NN defaults its run to 1 (there is no run segment to read).
-    if 'stem' in f and 'tk' not in f:
-        task, _, runpart = str(f['stem']).partition('_run-')
-        if task in ABBR:
-            out['tk'] = ABBR[task]
-            out['run'] = int(runpart) if runpart else 1
-    # id -> disk: rebuild the stem, adding _run-NN only for tasks that carry
-    # it on disk (discovered above -- not from a hard-coded run-less set). A
-    # run-less task exists only at run 1, so any other run gets a _run-NN stem
-    # that simply won't resolve -- '11r1' finds the rest file, '11r2' fails.
-    if 'tk' in f and 'stem' not in f:
-        task, run = FULL[str(f['tk'])], int(f['run'])
-        out['stem'] = task if (not _has_run(task) and run == 1) \
-            else f"{task}_run-{run:02d}"
-    return out
-
-big_pf = Pathfinder(
-    paths={'raw': f"{RAW}/sub-{{subject:02d}}/ses-{{session:02d}}/eeg/"
-                  f"sub-{{subject:02d}}_ses-{{session:02d}}_task-{{stem}}_eeg.set"},
-    id="{subject:d}{session:1d}{tk:l}{run:1d}",   # sub-01/ses-01 dme run-02 -> '11d2'
-    anchor='raw',
-    derive=derive,
-)
-
-# big_pf.id2path('raw', '11d2')          # -> ...task-dme_run-02_eeg.set, for subject 1
-# big_pf.id2path('raw', '111ka2')         # -> ...task-monkey1_run-02_eeg.set, for subject 11
-# big_pf.id2path('raw', '211r1')          # -> ...task-rest_eeg.set   (run-less), for subject 21
-# big_pf.path2id('raw', some_dme_file)   # -> id like '11d2'
-# sorted(big_pf.ids)                     # all subjects x sessions x tasks, from disk
+# **Scaling up: keep entity names explicit and consistent.** If a study has
+# several task types, use one Pathfinder per task or include explicit
+# ``task``/``run`` fields in one template. Pathfinder deliberately does not
+# transform a value that is named differently in another modality. Correct the
+# dataset names when possible; otherwise create a soft-link directory with
+# consistent names and point the templates at that layer.
 
 #%%
-# **A word on how the id stays parseable.** The id fields are concatenated with **no separators** (``11ka2``), so ``Pathfinder`` must be able to split the string back into fields. Adjacent fields need a *decidable boundary*, and there are two kinds: a **fixed-width** field (which consumes a known number of characters), or a **character-class change** (digits give way to letters, or vice versa). This id leans on the second: ``subject`` and ``session`` are digits (``{subject:d}`` / ``{session:1d}``), the task code ``tk`` is **letters** (``{tk:l}``), and ``run`` is a digit again (``{run:1d}``). So the parser reads the leading digit-run as ``subject`` + ``session`` (subject is all but the last digit, session the last), then the letters as ``tk``, then the final digit as ``run`` --- every boundary lands on a digit/letter transition or a known width. That is why the task codes are **letters-only** (``monkey1 -> ka``, not ``k1``): a digit inside the code would blur into the subject/run digits and make the split ambiguous.
+# **A word on how the id stays parseable.** Keep separators between variable
+# width fields, or give all but one adjacent field a fixed width. For example,
+# ``{subject:d}{session:1d}{run:1d}`` is unambiguous because the final fields
+# have known widths, while two adjacent ``:d`` fields are rejected. Pathfinder
+# returns every parsed field as a string, so an id such as ``"1111"`` remains a
+# string even when its fields use numeric format specs.
 #
-# .. note::
-#    Two upshots of the digit/letter rule. (i) ``subject`` needs **no** zero-padding: ``{subject:d}`` is fine because the letters of ``tk`` mark exactly where the subject+session digits end --- so ``sub-1`` gives ``'11...'`` and ``sub-10`` gives ``'101...'``, both unambiguous. (ii) If you gave ``tk`` a numeric code, or put two variable-width digit fields side by side with no fixed width between them, ``Pathfinder`` would refuse to build and raise an ``ambiguous id template`` error naming the offending fields. Keep the code letters-only and every id round-trips. (This class-aware disambiguation needs ``osl-pathfinder >= 0.4.1``; earlier versions required all-but-one field in a separator-free id to be fixed-width, e.g. a zero-padded ``{subject:02d}`` with a fixed ``{run:1d}``.)
-#
-# ``derive`` is consulted in **both** directions: with the file ``kind`` when rendering a path (``id2path`` / ``exists``), and with ``kind=None`` when mapping between the id and its fields (``id2field`` / ``field2id``, and therefore ``path2id`` / ``scan`` / ``pf.ids``). As long as your hook is idempotent and can fill either side from the other --- here, ``stem -> (tk, run)`` and ``(tk, run) -> stem`` --- ids and paths round-trip, and ``scan`` discovers every recording on disk just as it does for the simple single-task pathfinder. (This is a recent capability; older ``osl-pathfinder`` applied ``derive`` only on the id ``->`` path direction.) Run this ``big_pf`` against a real NATVIEW download and it discovers every recording across all 12 tasks x subjects x sessions and round-trips each one. Keeping separate per-task pathfinders is still a perfectly good choice --- this is just the tool for when you want one compact id space across the whole study.
 
 #%%
 # Step 2 --- Discover your acquisition metadata
@@ -237,14 +183,14 @@ print(f"n_unique_slices={len(uniq)}  step values={dict(zip(vals, counts))}  "
 # You can sanity-check the locator against the data: the GA shows up as tall, regularly spaced peaks at harmonics of ``1/slice_interval`` Hz in the PSD of an *uncleaned* raw file::
 #
 #     import mne
-#     raw = mne.io.read_raw_eeglab(pf.id2path('raw', '11'), preload=True)
+#     raw = mne.io.read_raw_eeglab(pf.id2path('11', 'raw'), preload=True)
 #     raw.compute_psd(picks='eeg', fmin=0, fmax=50).plot()   # peaks near 18, 36 Hz ...
 #
 # **2c. ``tr_event_key`` --- the volume (TR) trigger label.** The amplifier records a marker at every fMRI volume onset. Find which annotation label that is by listing the labels and looking for the one whose *inter-event interval* equals the TR with near-zero jitter:
 
 import mne, numpy as np
 
-raw = mne.io.read_raw_eeglab(pf.id2path('raw', '11'), preload=False, verbose='ERROR')
+raw = mne.io.read_raw_eeglab(pf.id2path('11', 'raw'), preload=False, verbose='ERROR')
 events, event_id = mne.events_from_annotations(raw, verbose='ERROR')
 sfreq = raw.info['sfreq']                                  # NATVIEW: 5000 Hz
 
@@ -299,9 +245,10 @@ def initialize(dataset, userargs):
 
     # --- pathfinder + a stable recording id ---
     # manual_ica / apply_ica / the report stages key their output folders on
-    # dataset['subject']; set it here, NEVER via userargs (a shared batch
-    # userargs dict would make every recording overwrite the same folder).
-    dataset['pf']      = userargs['pf']
+    # dataset['subject']; use the imported module-level Pathfinder directly.
+    # Do not put it in userargs/config: run_proc_batch deep-copies config and
+    # Pathfinder is an immutable object containing a mapping proxy.
+    dataset['pf']      = pf
     dataset['subject'] = dataset['pf'].path2id('raw', dataset['raw'].filenames[0])
 
     dataset['orig_sfreq'] = dataset['raw'].info['sfreq']
@@ -338,7 +285,7 @@ config = {
     'preproc': [
 
         # -- 4.1  Init, tracer, channel types, montage, notch, TR crop -------
-        {'initialize': {'target_pth': target_pth, 'pf': pf}},   # Step 3
+        {'initialize': {'target_pth': target_pth}},             # Step 3
         {'init_tracer': {}},
         # EEGLAB .set carries no channel types: name NATVIEW's ECG/EOG channels.
         {'set_channel_types': {'ECG': 'ecg', 'EOGL': 'eog', 'EOGU': 'eog'}},
@@ -432,7 +379,7 @@ config = {
 
 if __name__ == '__main__':
     subject_list = sorted(pf.ids)                               # e.g. ['11', '21']
-    file_list = [str(pf.id2path('raw', s)) for s in subject_list]
+    file_list = [str(pf.id2path(s, 'raw')) for s in subject_list]
 
     # resumable: skip recordings that already produced a preproc fif or errored
     finished = {p.parts[-2] for p in target_pth.glob('*/*_preproc-raw.fif')}

@@ -13,12 +13,11 @@ Documentation: https://osl-ephys.readthedocs.io/en/latest/.
 > edges. To install **this** version rather than the released osl-ephys, check
 > out the `semp` branch and install from it; the commands below already do that
 > (`git clone -b semp ...`). The env files pull in one extra runtime dependency,
-> [`osl-pathfinder`](https://test.pypi.org/project/osl-pathfinder/) — which semp
+> [`osl-pathfinder`](https://pypi.org/project/osl-pathfinder/) — which semp
 > pipelines use to map recording ids to file paths (see the EEG-fMRI tutorial).
-> Note `osl-pathfinder` is published on **TestPyPI**, not PyPI; the env files add
-> `--extra-index-url https://test.pypi.org/simple/` so `mamba env create` fetches
-> it automatically. To install it by hand:
-> `pip install --extra-index-url https://test.pypi.org/simple/ osl-pathfinder`.
+> The SEMP branch currently targets `osl-pathfinder==0.6.0` from PyPI. To install
+> it by hand:
+> `pip install osl-pathfinder==0.6.0`.
 
 We recommend installing osl-ephys in a conda environment.
 
@@ -37,9 +36,12 @@ osl-ephys can be installed from source code in a conda environment using the fol
 
 ```
 git clone -b semp https://github.com/OHBA-analysis/osl-ephys.git
-cd osl-ephys
-mamba env create -f envs/osle.yml
+git clone https://github.com/OHBA-analysis/pathfinder.git
+mamba env create -f osl-ephys/envs/osle.yml
 conda activate osle
+cd pathfinder
+pip install -e .
+cd ../osl-ephys
 pip install -e .
 ```
 
@@ -55,7 +57,7 @@ If you are installing on an OHBA workstation computer (hbaws) use:
 git clone -b semp https://github.com/OHBA-analysis/osl-ephys.git
 cd osl-ephys
 mamba env create -f envs/hbaws.yml
-conda activate osle
+conda activate semp
 pip install -e .
 ```
 
@@ -64,7 +66,7 @@ Or on the BMRC cluster:
 git clone -b semp https://github.com/OHBA-analysis/osl-ephys.git
 cd osl-ephys
 mamba env create -f envs/bmrc.yml
-conda activate osle
+conda activate semp
 pip install -e .
 ```
 

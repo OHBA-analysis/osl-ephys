@@ -75,10 +75,10 @@ def slice_reject(dataset, userargs):
     key is still honoured).
     """
     default_args = {
-        'noise2base_threshold': 4.0,
-        'noise_window': 1.0,
+        'noise2base_threshold': 5.0,
+        'noise_window': 0.5,
         'base_window': 5.0,
-        'epoch_frange': [1, 40],
+        'epoch_frange': [1, None],
         'apply': True,
     }
     userargs = proc_userargs(userargs, default_args)
@@ -114,7 +114,7 @@ def slice_reject(dataset, userargs):
         data,
         sfreq=dataset['raw'].info['sfreq'],
         fmin=epoch_frange[0],
-        fmax=epoch_frange[1],
+        fmax=epoch_frange[1] if epoch_frange[1] is not None else dataset['raw'].info['sfreq']/ 2,
         n_fft=int(round(dataset['raw'].info['sfreq'] * 20)),
     )
 

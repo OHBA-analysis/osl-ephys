@@ -3,7 +3,12 @@ import copy
 import numpy as np
 import mne
 
-from ..utils import proc_userargs, require_keys, mne_epoch2raw
+from ..utils import (
+    mne_epoch2raw,
+    proc_userargs,
+    require_keys,
+    resolve_channel_names,
+)
 
 
 def epoch_aas(dataset, userargs):
@@ -17,12 +22,14 @@ def epoch_aas(dataset, userargs):
     })
     epoch_key = userargs['epoch_key']
     window_length = userargs['window_length']
-    picks = userargs['picks']
+    require_keys(dataset, epoch_key, 'epoch_aas')
+    picks = resolve_channel_names(
+        dataset[epoch_key].info, userargs['picks']
+    )
     overwrite = userargs['overwrite']
     fit = userargs['fit']
     pre_pad = userargs['pre_pad']
 
-    require_keys(dataset, epoch_key, 'epoch_aas')
     orig_data = np.asarray(dataset[epoch_key].get_data(picks=picks))  # 29+#win, #ch, len(ep)
     # sliding window over epochs (np equivalent of torch's unfold(0, w, 1)):
     # appends the window axis as the last dim -> #win, #ch, len(ep), len(win)=#ep
@@ -71,6 +78,9 @@ def epoch_aas(dataset, userargs):
 
     dataset[noise_name] = copy.deepcopy(dataset['raw'].get_data())
     dataset[pc_name] = all_pcs
+    # Store the exact ordered names represented by the PC channel axis.  A
+    # selector such as "all" is not stable enough for later alignment because
+    # channel types and bad-channel state can change after this stage.
     dataset[picks_name] = picks
     dataset['raw'] = mne_epoch2raw(dataset[epoch_key], dataset['raw'], cleaned, tmin=dataset[epoch_key].tmin, overwrite=overwrite, picks=picks)
     dataset[noise_name] = dataset[noise_name] - dataset['raw'].get_data()

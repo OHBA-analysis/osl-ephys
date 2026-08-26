@@ -35,6 +35,42 @@ def _events_from_timepoints(timepoints):
     return np.concatenate([col, np.zeros_like(col), np.ones_like(col)], axis=1)
 
 
+def _duration_to_n_samples(duration, sfreq, name):
+    """Convert a positive duration to its nearest integer sample count."""
+    duration = float(duration)
+    if not np.isfinite(duration) or duration <= 0:
+        raise ValueError(f"{name} must be a positive finite duration in seconds.")
+    n_samples = int(round(duration * sfreq))
+    if n_samples < 1:
+        raise ValueError(f"{name} is shorter than one sample at {sfreq:g} Hz.")
+    return n_samples
+
+
+def _deduplicate_event_samples(events, event_id, name):
+    """Select one event code and retain one row per absolute sample.
+
+    Some EEGLAB files contain the same annotation more than once at one sample.
+    MNE refuses to construct epochs from repeated event samples.  Selecting the
+    requested code first prevents unrelated simultaneous annotations from
+    interfering; stable sample sorting and first-row retention then remove only
+    exact duplicates, never merely close events.
+    """
+    selected = np.asarray(events)[np.asarray(events)[:, -1] == event_id]
+    if not len(selected):
+        raise ValueError(f"{name}: no events remain for event id {event_id!r}.")
+
+    order = np.argsort(selected[:, 0], kind="stable")
+    selected = selected[order]
+    keep = np.r_[True, np.diff(selected[:, 0]) != 0]
+    n_duplicates = int((~keep).sum())
+    if n_duplicates:
+        log_or_print(
+            f"{name}: removed {n_duplicates} duplicate event(s) occurring at "
+            "an already-used sample."
+        )
+    return selected[keep]
+
+
 def _check_fixed_spacing(onsets, sfreq, expected_interval=None, first_samp=0,
                          jitter_tol=0.1, name='create_epoch', max_report=6):
     """Sanity-check fixed-mode trigger spacing; warn on likely forgotten /
@@ -132,6 +168,16 @@ def crop_TR(dataset, userargs):
     Crops the dataset to the TRs of the fMRI data.
     userargs{event_reference: bool} - If True, after cropping, the event would be overwritten to the event in dataset["raw"].
 
+    Create the TR epochs before this stage when possible.  If no epoch source
+    is present, a warning is emitted because cropping first can leave the
+    trigger-correction search asymmetric at the new raw boundary.  Cropping
+    can also drop a trigger whose complete TR window exceeds that boundary.
+    By default cached epochs are invalidated because their raw coordinates are
+    no longer guaranteed to match.  For an intentional
+    ``create_TR_epoch -> crop_TR`` sequence, pass ``preserve_epochs=True``:
+    epoch windows are checked against the cropped raw, invalid windows are
+    dropped with a warning, and valid epochs retain their absolute samples.
+
     ``TR`` defaults to ``dataset['tr_interval']`` and ``event_name`` to
     ``dataset['tr_event_key']`` (both set by the project ``initialize``).
     """
@@ -140,16 +186,29 @@ def crop_TR(dataset, userargs):
         'tmin': 0.0,
         'event_name': dataset.get('tr_event_key'),
         'num_edge_TR': 0,
+        'preserve_epochs': False,
     })
     TR = userargs['TR']
     tmin = userargs['tmin']
     event_name = userargs['event_name']
     num_edge_TR = userargs['num_edge_TR']
+    preserve_epochs = userargs['preserve_epochs']
 
     if TR is None:
         raise ValueError("crop_TR needs 'TR' (or dataset['tr_interval']).")
     if event_name is None:
         raise ValueError("crop_TR needs 'event_name' (or dataset['tr_event_key']).")
+
+    cached_epoch_keys = [
+        key for key, value in dataset.items()
+        if key != "raw" and isinstance(value, mne.BaseEpochs)
+    ]
+    if not cached_epoch_keys:
+        log_or_print(
+            "Warning: crop_TR is running before TR epoch creation. Create "
+            "the TR epochs before cropping so trigger correction can use the "
+            "full recording and the AAS epoch source remains aligned."
+        )
 
     freq = dataset['raw'].info['sfreq']
     _, event_name = _resolve_event(dataset['raw'], event_name)   # -> single label
@@ -164,7 +223,7 @@ def crop_TR(dataset, userargs):
             raise ValueError(f"No TR events ({event_name}) found in raw annotations.")
 
         n_samples = eeg.n_times  # recording length in samples
-        tr_in_samples = TR * freq
+        tr_in_samples = _duration_to_n_samples(TR, freq, "crop_TR TR")
 
         # Drop TR onsets that fall outside the recording window:
         #   * onset < 0                       -> annotation lies before data start
@@ -183,6 +242,18 @@ def crop_TR(dataset, userargs):
                 f"Possible causes: last TR truncated, TR value wrong, stray "
                 f"annotation outside data window, or first_samp drift."
             )
+            if any(isinstance(value, mne.BaseEpochs)
+                   for key, value in dataset.items() if key != "raw"):
+                cache_action = (
+                    "will be checked and filtered when preserve_epochs=True"
+                    if preserve_epochs else
+                    "will be invalidated"
+                )
+                log_or_print(
+                    "crop_TR: an existing epoch set may now be missing the "
+                    "dropped TR event(s); cached epochs {}. Recreate epochs "
+                    "after checking the boundary if needed.".format(cache_action)
+                )
             # Strip the offending annotations so downstream stages don't see them.
             def _is_outside(onset_s, desc):
                 if str(desc) != str(event_name):
@@ -201,20 +272,93 @@ def crop_TR(dataset, userargs):
                 )
 
         start_point = kept[0]
-        end_point = kept[-1] + tr_in_samples
+        # ``end_point`` is the final included sample, not the first sample
+        # after the final TR.  Each retained TR therefore spans exactly
+        # ``tr_in_samples`` samples: [onset, onset + tr_in_samples - 1].
+        end_point = kept[-1] + tr_in_samples - 1
 
         new_tmin = max(start_point / freq + tmin + num_edge_TR * TR, 0.0)
         tmax = min(end_point / freq - num_edge_TR * TR, eeg.times[-1])
-        eeg = eeg.crop(tmin=new_tmin, tmax=tmax, include_tmax=False)
+        # ``tmax`` names the exact final sample we want, so retain it.
+        eeg = eeg.crop(tmin=new_tmin, tmax=tmax, include_tmax=True)
         return eeg
 
     dataset["raw"] = crop_eeg_to_tr(dataset["raw"], tmin=tmin, num_edge_TR=num_edge_TR)
+
+    # Cropping changes the raw sample window (including ``first_samp``).  The
+    # default is to invalidate cached epochs/events.  An intentional
+    # create-before-crop pipeline may preserve preloaded epochs whose absolute
+    # event windows still fit the cropped raw.
+    invalidated = []
+    preserved = []
+    for key, value in list(dataset.items()):
+        if key == "raw":
+            continue
+        if isinstance(value, mne.BaseEpochs):
+            if not preserve_epochs:
+                invalidated.append(key)
+                del dataset[key]
+                continue
+
+            epoch_sfreq = value.info['sfreq']
+            if not np.isclose(epoch_sfreq, dataset['raw'].info['sfreq']):
+                invalidated.append(key)
+                del dataset[key]
+                log_or_print(
+                    "crop_TR: cannot preserve {} because its sampling rate "
+                    "differs from the cropped raw; recreate it.".format(key)
+                )
+                continue
+
+            starts = (
+                value.events[:, 0]
+                + int(round(value.tmin * epoch_sfreq))
+                - dataset['raw'].first_samp
+            )
+            # MNE Epochs exposes the epoch length through ``times`` rather
+            # than a Raw-like ``n_times`` attribute.
+            ends = starts + len(value.times)
+            keep = (starts >= 0) & (ends <= dataset['raw'].n_times)
+            n_drop = int((~keep).sum())
+            if n_drop:
+                log_or_print(
+                    "crop_TR: dropping {} cached epoch(s) from {} because "
+                    "their complete windows do not fit the cropped raw.".format(
+                        n_drop, key
+                    )
+                )
+                value = value[keep]
+                dataset[key] = value
+            if len(value):
+                preserved.append(key)
+            else:
+                invalidated.append(key)
+                del dataset[key]
+    if isinstance(dataset.get("events"), np.ndarray):
+        dataset["events"] = None
+        dataset["event_id"] = None
+        invalidated.append("events")
+    if invalidated:
+        log_or_print(
+            "crop_TR: raw window changed; invalidated cached "
+            + ", ".join(invalidated)
+            + ". Recreate epochs from the cropped raw."
+        )
+    if preserved:
+        log_or_print(
+            "crop_TR: preserved validated cached epoch(s): "
+            + ", ".join(preserved)
+            + ". Their event samples remain absolute."
+        )
     return dataset
 
 
 def crop_by_epoch(dataset, userargs):
-    """
-    Crops the dataset to the epochs of the EEG data.
+    """Crop raw to the complete sample span covered by cached epochs.
+
+    Epoch event samples are absolute MNE sample numbers.  Deriving the crop
+    from ``len(epoch.times)`` avoids the inclusive-``tmax`` off-by-one that can
+    otherwise remove the last sample of the final epoch.
     """
     userargs = proc_userargs(userargs, {
         'epoch_key': 'sim_ep',
@@ -226,15 +370,28 @@ def crop_by_epoch(dataset, userargs):
     epoch = dataset[epoch_key]
     events = copy.deepcopy(epoch.events)
     events = events[np.argsort(events[:, 0])]  # sort events by timepoint
+    if not len(events):
+        raise ValueError(f"{epoch_key!r} contains no epochs to crop around.")
 
-    start_point = events[0,0] - dataset['raw'].first_samp
-    end_point = events[-1,0] + epoch.tmax*dataset['raw'].info['sfreq'] - dataset['raw'].first_samp
+    raw = dataset['raw']
+    sfreq = raw.info['sfreq']
+    epoch_start_shift = int(round(epoch.tmin * sfreq))
+    first_sample = events[0, 0] + epoch_start_shift
+    last_sample = events[-1, 0] + epoch_start_shift + len(epoch.times) - 1
 
-    edge_time_crop = num_edge_epoch*(epoch.tmax-epoch.tmin)
-    new_tmin = max(start_point/dataset['raw'].info['sfreq']+epoch.tmin, dataset['raw'].tmin) + edge_time_crop
-    tmax = min(end_point/dataset['raw'].info['sfreq'], dataset['raw'].tmax) - edge_time_crop
+    edge_samples = num_edge_epoch * len(epoch.times)
+    first_sample += edge_samples
+    last_sample -= edge_samples
+    if first_sample > last_sample:
+        raise ValueError(
+            "num_edge_epoch removes the complete epoch-covered data span."
+        )
 
-    dataset["raw"] = dataset["raw"].crop(tmin=new_tmin, tmax=tmax, include_tmax=False)
+    first_sample = max(first_sample, raw.first_samp)
+    last_sample = min(last_sample, raw.last_samp)
+    tmin = (first_sample - raw.first_samp) / sfreq
+    tmax = (last_sample - raw.first_samp) / sfreq
+    dataset["raw"] = raw.crop(tmin=tmin, tmax=tmax, include_tmax=True)
     return dataset
 
 
@@ -287,6 +444,7 @@ def create_epoch(dataset, userargs):
         'correct_trig': False,
         'epoch_key': None,
         'check_spacing': True,   # fixed mode: warn on forgotten/spurious triggers
+        'expected_interval': None,
     })
     
     mode = userargs['mode']
@@ -302,6 +460,7 @@ def create_epoch(dataset, userargs):
     correct_trig = userargs['correct_trig']
     epoch_key = userargs['epoch_key']
     check_spacing = userargs['check_spacing']
+    expected_interval = userargs['expected_interval']
     sfreq = dataset['raw'].info['sfreq']
 
     if event_key is None:
@@ -328,9 +487,13 @@ def create_epoch(dataset, userargs):
                                      tmin=tmin, tmax=tmax, template='mid',
                                      channel=0, hwin=3)
 
+    # Work only with the requested event code and remove exact repeated sample
+    # annotations before interval diagnostics or MNE Epochs construction.
+    events = _deduplicate_event_samples(events, event_id, epoch_key)
+
     if mode == 'auto':
         # size the window from the trigger spacing (period unknown a priori)
-        gaps = np.diff(events[events[:, -1] == event_id][:, 0])
+        gaps = np.diff(events[:, 0])
         tmax = min(np.median(gaps) * 1.02, np.max(gaps)) / sfreq
     elif tmax is None:
         raise ValueError("mode='fixed' needs 'tmin' and 'tmax' (the epoch window in s).")
@@ -338,12 +501,14 @@ def create_epoch(dataset, userargs):
     # fixed mode assumes a periodic trigger (window ~= period): warn if the
     # spacing looks like it has forgotten / spurious events (diagnostic only).
     if mode == 'fixed' and check_spacing and not random:
+        if expected_interval is None:
+            expected_interval = tmax - tmin
         _check_fixed_spacing(
-            events[events[:, -1] == event_id][:, 0], sfreq, expected_interval=tmax,
+            events[:, 0], sfreq, expected_interval=expected_interval,
             first_samp=int(dataset['raw'].first_samp), name=epoch_key)
 
     if random:
-        tps = events[events[:, -1] == event_id][:, 0]
+        tps = events[:, 0]
         surrogate = np.sort(np.random.choice(
             np.arange(tps.min(), tps.max()), size=len(tps), replace=False))
         events, event_id = _events_from_timepoints(surrogate), 1
@@ -360,9 +525,12 @@ def create_epoch(dataset, userargs):
 def create_TR_epoch(dataset, userargs):
     """TR-locked epochs, the easy way: one epoch per fMRI-volume trigger, window
     = one TR. A thin, less-customizable :func:`create_epoch` (mode='fixed') that
-    reads ``dataset['tr_interval']`` (epoch length) and ``dataset['tr_event_key']``
+    reads ``dataset['tr_interval']`` (epoch duration) and ``dataset['tr_event_key']``
     (trigger label), so in the common case a config only needs
-    ``{'create_TR_epoch': {}}``. Override any of ``tmin`` / ``tmax`` /
+    ``{'create_TR_epoch': {}}``. A duration of ``TR`` seconds at sampling rate
+    ``sfreq`` always produces exactly ``round(TR * sfreq)`` samples; adjacent
+    regularly spaced TR epochs therefore do not share a boundary sample.
+    Override any of ``tmin`` / ``duration`` /
     ``event_key`` / ``epoch_key`` / ``correct_trig`` / ``random`` /
     ``check_spacing`` as needed, or drop to ``create_epoch`` for a non-TR window.
 
@@ -373,14 +541,21 @@ def create_TR_epoch(dataset, userargs):
     userargs = proc_userargs(userargs, {
         'event_key': dataset.get('tr_event_key'),
         'tmin': 0.0,
-        'tmax': dataset.get('tr_interval'),
+        'duration': dataset.get('tr_interval'),
         'epoch_key': 'tr_ep',
         'correct_trig': True,
         'random': False,
         'check_spacing': True,
     })
-    if userargs['tmax'] is None:
-        raise KeyError("create_TR_epoch needs dataset['tr_interval'] (or an explicit tmax).")
+    duration = userargs.pop('duration')
+    if duration is None:
+        raise KeyError(
+            "create_TR_epoch needs dataset['tr_interval'] (or an explicit duration)."
+        )
+    sfreq = dataset['raw'].info['sfreq']
+    n_samples = _duration_to_n_samples(duration, sfreq, "create_TR_epoch duration")
+    userargs['tmax'] = userargs['tmin'] + (n_samples - 1) / sfreq
+    userargs['expected_interval'] = float(duration)
     return create_epoch(dataset, {'mode': 'fixed', **userargs})
 
 
@@ -410,7 +585,7 @@ def simulate_epoch(dataset, userargs):
     means two things.
 
     userargs:
-      * ``width``      -- epoch width == grid spacing, in seconds (required).
+      * ``width``      -- epoch span == grid spacing, in seconds (required).
       * ``jitter``     -- fraction of ``width`` to randomly shift each onset by
                           (default 0.0 == a perfectly regular grid).
       * ``tmin``       -- epoch start relative to each grid point (default 0.0).
@@ -430,13 +605,22 @@ def simulate_epoch(dataset, userargs):
     epoch_key = userargs['epoch_key']
 
     sfreq = dataset['raw'].info['sfreq']
-    step = width * sfreq
-    tps = np.arange(dataset['raw'].first_samp, dataset['raw'].last_samp, step)
+    step = _duration_to_n_samples(width, sfreq, "simulate_epoch width")
+    tps = np.arange(
+        dataset['raw'].first_samp,
+        dataset['raw'].last_samp + 1,
+        step,
+        dtype=np.int64,
+    )
     jitter = int(step * jitter_frac)
     if jitter > 0:
         tps = tps + np.random.randint(-jitter, jitter, size=len(tps))
 
+    # MNE includes both tmin and tmax.  A tmax equal to width would therefore
+    # add one shared boundary sample to adjacent epochs.  End one sample early
+    # so jitter=0 produces exact, non-overlapping [onset, onset + width) spans.
+    tmax = tmin + (step - 1) / sfreq
     dataset[epoch_key] = mne.Epochs(
-        dataset['raw'], events=_events_from_timepoints(tps), tmin=tmin, tmax=width,
-        event_id=1, baseline=None, proj=False, preload=True)
+        dataset['raw'], events=_events_from_timepoints(tps), tmin=tmin,
+        tmax=tmax, event_id=1, baseline=None, proj=False, preload=True)
     return dataset

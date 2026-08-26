@@ -2,6 +2,7 @@
 # manual_ica subpackage, so they live once in osl_ephys.utils. Re-exported here
 # for the semp wrappers' ``from ..utils import proc_userargs`` imports.
 from osl_ephys.utils import ensure_dir, proc_userargs  # noqa: F401
+from mne._fiff.pick import _picks_to_idx
 
 
 #: The implicit dataset "schema" the semp wrappers read. These keys are not on
@@ -24,6 +25,19 @@ DATASET_SCHEMA = {
     # epoch keys ('tr_ep', 'he_ep', 'sim_ep', ...) are produced by the
     # create_*_epoch / simulate_epoch wrappers and read by epoch_aas / epoch_obs.
 }
+
+
+def resolve_channel_names(info, picks):
+    """Resolve an MNE picks expression to its exact ordered channel names.
+
+    This deliberately uses the same MNE picker as ``get_data``.  Recording the
+    resolved names beside a channel-axis array is safer than recording only a
+    selector such as ``'all'``: later reporting can then validate the array
+    axis without guessing from current channel types or bad-channel state.
+    """
+    exclude = () if picks is None else "bads"
+    indices = _picks_to_idx(info, picks, none="all", exclude=exclude)
+    return [info["ch_names"][index] for index in indices]
 
 
 def require_keys(dataset, keys, stage):
