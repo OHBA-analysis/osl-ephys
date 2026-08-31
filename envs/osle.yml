@@ -19,7 +19,7 @@ dependencies:
   - mne
   - scikit-learn
   - fslpy
-  - sails
+  - sails==1.7.0
   - tabulate
   - pyyaml
   - neurokit2

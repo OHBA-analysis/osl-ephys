@@ -10,7 +10,7 @@ README = (HERE / "README.md").read_text()
 
 # Requirement categories
 reqs = ['numpy', 'scipy', 'matplotlib', 'mne', 'scikit-learn', 'fslpy',
-        'sails', 'tabulate', 'pyyaml', 'neurokit2', 'jinja2',
+        'sails==1.7.0', 'tabulate', 'pyyaml', 'neurokit2', 'jinja2',
         'glmtools', 'numba', 'nilearn', 'dask', 'distributed', 'parse',
         'opencv-python', 'panel', 'h5io', 'osl-pathfinder==1.0.0']
 doc_reqs = ['sphinx', 'numpydoc', 'sphinx_gallery', 'pydata-sphinx-theme']
