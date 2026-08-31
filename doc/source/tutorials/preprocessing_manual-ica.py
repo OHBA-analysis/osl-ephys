@@ -1,144 +1,343 @@
-'''
-Manual ICA review in the browser
-================================
+# -*- coding: utf-8 -*-
 
-In the :doc:`preprocessing_automatic` tutorial you saw osl-ephys flag and remove artefactual ICA components *automatically*, using EOG/ECG correlations. That is the right default for large, clean MEG datasets. But there are situations where you want a human in the loop:
+"""
+Manual ICA review for the NATVIEW SEMP pipeline
+===============================================
 
-- **Noisy or unusual data** --- e.g. simultaneous EEG-fMRI, where residual gradient and pulse artefacts produce components that no simple EOG/ECG correlation will catch.
-- **Small studies** where you can afford to eyeball every subject and want full control over what is removed.
-- **Method development / QA**, where you need to *see* exactly which components were dropped and why.
-
-``osl_ephys.preprocessing.manual_ica`` supports this with a **browser-based** review tool. It fits the ICA during your normal preprocessing batch and renders a self-contained web page per subject; you then click through the components in your browser, label each one ``good`` / ``bad`` / ``unsure``, and a small command-line tool applies your decisions. No notebook, no blocking matplotlib window --- the review is just static files plus a tiny local server, which means it works fine over SSH and can be done long after (and on a different machine from) the batch run.
-
-This tutorial looks as follows:
-
-1. **The fit / review / apply split**
-2. **Adding** ``manual_ica`` **to a config**
-3. **Reviewing components in the browser**
-4. **Applying the decisions:** ``osl-ica-apply``
-5. **Programmatic access to the labels**
-6. **Concluding remarks**
-
-.. note::
-   As with the EEG-fMRI tutorial, the snippets here are **illustrative** --- the interesting part is an interactive browser step and a per-subject HTML page, neither of which renders in a static gallery. Point the paths at your own preprocessed data to try it for real.
-
-'''
+This tutorial uses the same NATVIEW ``sub-01/ses-01`` recording, Pathfinder,
+``initialize`` function, and pre-ICA stages as the simultaneous EEG-fMRI
+tutorial. The difference begins at ICA: ``manual_ica`` fits and renders the
+components, but does not apply any exclusions. A user reviews the components
+before a separate command creates the cleaned file.
+"""
 
 #%%
-# The fit / review / apply split
-# ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-# Manual review is inherently a three-step process, because a human has to act *in the middle*. ``manual_ica`` makes that split explicit:
+# 1. Download the same NATVIEW recording
+# --------------------------------------
 #
-# 1. **Fit (inside the batch).** The ``manual_ica`` preprocessing stage fits an ICA on your data, scores each component (EOG/ECG correlations, variance, and --- for EEG-fMRI --- residual gradient-artefact power), renders a diagnostic SVG per component, and writes two HTML review pages. Crucially it **does not remove anything**: at batch time your keep/delete decisions don't exist yet. The batch therefore outputs a preprocessed-but-uncleaned ``<subject>_preproc-raw.fif`` alongside the fitted ``<subject>_ica.fif`` and the review pages.
-# 2. **Review (in your browser).** You serve the review folder, click through the components, and label them. Your labels are saved to plain-text ``label.txt`` (and ``bads.txt`` for any bad time-segments you mark) per subject.
-# 3. **Apply (a separate command).** ``osl-ica-apply`` reads ``label.txt`` + ``bads.txt``, sets the bad components in ``ica.exclude``, applies the ICA to the preproc fif, and writes the final cleaned ``<subject>_after_ica-raw.fif``.
+# Skip this download if ``sub-01/ses-01`` was already downloaded for the
+# preceding EEG-fMRI tutorial.
 #
-# This is why, in the EEG-fMRI config from the previous tutorial, the batch *ended* at ``manual_ica`` and the average re-reference / interpolation were deferred --- they belong *after* the components have actually been removed, i.e. in (or after) the apply step.
+# .. code-block:: bash
+#
+#     python -m pip install awscli
+#     mkdir -p /path/to/natview/raw_data
+#     aws s3 sync \
+#       s3://fcp-indi/data/Projects/NATVIEW_EEGFMRI/raw_data/sub-01/ses-01/ \
+#       /path/to/natview/raw_data/sub-01/ses-01/ \
+#       --no-sign-request
 
 #%%
-# Adding ``manual_ica`` to a config
-# ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-# ``manual_ica`` is a registered osl-ephys wrapper, so it works in a **plain** ``osl_ephys.preprocessing.run_proc_batch`` config, by name, with no special import or ``extra_funcs`` entry (the semp EEG-fMRI wrappers are registered the same way):
+# Configure the same project roots
+# ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+#%%
+NATVIEW_RAW_ROOT = '/path/to/natview/raw_data'
+SEMP_TUTORIAL_RESULTS_ROOT = '/path/to/semp_tutorial_results'
+
+print('NATVIEW_RAW_ROOT:', NATVIEW_RAW_ROOT)
+print('SEMP_TUTORIAL_RESULTS_ROOT:', SEMP_TUTORIAL_RESULTS_ROOT)
+
+#%%
+# Use the same Pathfinder
+# ^^^^^^^^^^^^^^^^^^^^^^^
+#
+# The input and metadata templates are identical to the automatic tutorial.
+# Three additional kinds describe the manual-ICA output files.
+
+#%%
+from osl_pathfinder import Pathfinder
+
+pf = Pathfinder(
+    templates={
+        'checker': (
+            NATVIEW_RAW_ROOT
+            + '/sub-{subject:02d}/ses-{session:02d}/eeg/'
+            + '{foo}-checker_eeg.set'
+        ),
+        'checkerout': (
+            NATVIEW_RAW_ROOT
+            + '/sub-{subject:02d}/ses-{session:02d}/eeg/'
+            + '{foo}-checkerout_eeg.set'
+        ),
+        'checker_eeg_json': (
+            NATVIEW_RAW_ROOT
+            + '/sub-{subject:02d}/ses-{session:02d}/eeg/'
+            + '{foo}-checker_eeg.json'
+        ),
+        'checker_channels': (
+            NATVIEW_RAW_ROOT
+            + '/sub-{subject:02d}/ses-{session:02d}/eeg/'
+            + '{foo}-checker_channels.tsv'
+        ),
+        'checker_events': (
+            NATVIEW_RAW_ROOT
+            + '/sub-{subject:02d}/ses-{session:02d}/eeg/'
+            + '{foo}-checker_events.tsv'
+        ),
+        'checkerout_events': (
+            NATVIEW_RAW_ROOT
+            + '/sub-{subject:02d}/ses-{session:02d}/eeg/'
+            + '{foo}-checkerout_events.tsv'
+        ),
+        'checker_bold_json': (
+            NATVIEW_RAW_ROOT
+            + '/sub-{subject:02d}/ses-{session:02d}/func/'
+            + '{foo}-checker_bold.json'
+        ),
+        'checker_preproc': (
+            SEMP_TUTORIAL_RESULTS_ROOT
+            + '/checker/{subject}{session}/'
+            + '{subject}{session}_preproc-raw.fif'
+        ),
+        'checkerout_preproc': (
+            SEMP_TUTORIAL_RESULTS_ROOT
+            + '/checkerout/{subject}{session}/'
+            + '{subject}{session}_preproc-raw.fif'
+        ),
+        'checker_manual_preproc': (
+            SEMP_TUTORIAL_RESULTS_ROOT
+            + '/checker_manual/{subject}{session}/'
+            + '{subject}{session}_preproc-raw.fif'
+        ),
+        'checker_manual_ica': (
+            SEMP_TUTORIAL_RESULTS_ROOT
+            + '/checker_manual/{subject}{session}/'
+            + '{subject}{session}_ica.fif'
+        ),
+        'checker_manual_after_ica': (
+            SEMP_TUTORIAL_RESULTS_ROOT
+            + '/checker_manual/{subject}{session}/'
+            + '{subject}{session}_after_ica-raw.fif'
+        ),
+    },
+    id='{subject:d}{session:1d}',
+    anchor='checker',
+)
+
+file_id = '11'  # sub-01/ses-01
+if file_id not in pf.ids:
+    raise FileNotFoundError('sub-01/ses-01 checker data were not found')
+print('checker:', pf.id2path(file_id, 'checker'))
+print('future manual output:', pf.id2path(
+    file_id, 'checker_manual_preproc', require_existence=False,
+))
+
+#%%
+# 2. Run the same pipeline up to manual ICA
+# -----------------------------------------
+#
+# These acquisition values are the values derived for NATVIEW in the EEG-fMRI
+# tutorial. The initializer is the same: it attaches acquisition timing,
+# project paths, the recording ID, and optional QA metrics.
+
+#%%
+from functools import partial
+from pathlib import Path
+
+import numpy as np
+
+from osl_ephys.preprocessing import run_proc_batch
+from osl_ephys.preprocessing.semp.metric import psd_band_ratio
+
+TR_INTERVAL = 2.1
+SLICE_INTERVAL = 0.055
+TR_EVENT_KEY = ['R128']
+HE_EVENT_KEY = []
+
+
+def initialize(dataset, userargs):
+    dataset['tr_interval'] = userargs.get('tr_interval', TR_INTERVAL)
+    dataset['slice_interval'] = userargs.get(
+        'slice_interval', SLICE_INTERVAL
+    )
+    dataset['tr_event_key'] = userargs.get('tr_event_key', TR_EVENT_KEY)
+    dataset['he_event_key'] = userargs.get('he_event_key', HE_EVENT_KEY)
+    dataset['target_pth'] = userargs['target_pth']
+    dataset['pf'] = pf
+    dataset['subject'] = pf.path2id(
+        dataset['raw'].filenames[0], 'checker'
+    )
+    dataset['orig_sfreq'] = dataset['raw'].info['sfreq']
+    si = dataset['slice_interval']
+    dataset['tracer'] = {
+        'psd_slice': partial(
+            psd_band_ratio,
+            band1=[1 / si - 1, 1 / si + 1],
+            band2='beta',
+            fn1=np.mean,
+        ),
+        'psd_2slice': partial(
+            psd_band_ratio,
+            band1=[2 / si - 1, 2 / si + 1],
+            band2=[20, 35],
+            fn1=np.mean,
+        ),
+    }
+    return dataset
+
+
+target_pth = Path(SEMP_TUTORIAL_RESULTS_ROOT) / 'checker_manual'
+ica_review_pth = Path(SEMP_TUTORIAL_RESULTS_ROOT) / 'checker_manual_ica_review'
 
 config = {
     'preproc': [
-        # ... your filtering / bad-segment / bad-channel stages ...
-        {'manual_ica': {'n_components': 0.999,
-                        'picks': 'eeg',
-                        'l_freq': 1.0}},
+        {'initialize': {'target_pth': target_pth}},
+        {'init_tracer': {}},
+        {'set_channel_types': {
+            'ECG': 'ecg', 'EOGL': 'eog', 'EOGU': 'eog',
+        }},
+        {'create_TR_epoch': {}},
+        {'crop_TR': {'preserve_epochs': True}},
+        {'ckpt_report': {'ckpt_name': 'raw', 'dB': False}},
+        {'notch_filter': {'freqs': '60 120'}},
+        {'epoch_aas': {
+            'epoch_key': 'tr_ep',
+            'overwrite': 'new',
+            'picks': 'all',
+            'window_length': 30,
+            'fit': False,
+        }},
+        {'ckpt_report': {
+            'ckpt_name': 'after_aas_removal',
+            'key_to_print': 'tr_ep',
+            'dB': False,
+        }},
+        {'filter': {
+            'l_freq': 0.5,
+            'h_freq': 125,
+            'method': 'iir',
+            'iir_params': {'order': 5, 'ftype': 'butter'},
+        }},
+        {'mid_crop': {'edge': 5}},
+        {'resample': {'sfreq': 250}},
+        {'ckpt_report': {'ckpt_name': 'after_filt', 'dB': False}},
+        {'bad_segments': {
+            'segment_len': 500,
+            'picks': 'eeg',
+            'significance_level': 0.1,
+            'detect_zeros': False,
+        }},
+        {'bad_segments': {
+            'segment_len': 500,
+            'picks': 'eeg',
+            'mode': 'diff',
+            'significance_level': 0.1,
+            'detect_zeros': False,
+        }},
+        {'bad_channels': {
+            'picks': 'eeg',
+            'significance_level': 0.1,
+        }},
+        {'bad_segments': {
+            'segment_len': 2500,
+            'picks': 'eog',
+            'detect_zeros': False,
+        }},
+        {'manual_ica': {
+            'outdir': ica_review_pth,
+            'n_components': 0.999,
+            'picks': 'eeg',
+            'l_freq': 1.0,
+            'seed': 42,
+            'psd_resolution': 0.05,
+        }},
+        # This removes non-signal QA objects before run_proc_batch serializes
+        # the dataset. It does not alter the fitted ICA or preprocessed Raw.
+        {'cleanup': {'keywords': ['noise_', 'pf']}},
     ]
 }
 
-#%%
-# The one requirement is that ``dataset['subject']`` is set by an upstream stage (it names the per-subject review folder). In a plain osl-ephys pipeline ``subject`` is already threaded through ``run_proc_batch(..., subjects=[...])``; in a semp pipeline the project ``initialize`` extra_func sets it (see the previous tutorial). Note that ``subject`` is deliberately **rejected** as a userarg, so that a shared batch ``userargs`` dict can't make every subject write to the same folder.
-#
-# The full userarg schema lives in ``osl_ephys.preprocessing.manual_ica.config.DEFAULT_USERARGS`` and is enforced strictly (an unknown key raises immediately). The ones you will actually reach for:
-#
-# - **ICA fit**: ``n_components`` (float = variance fraction, int = count; default ``0.999``), ``method`` (``'fastica'``), ``l_freq`` (high-pass applied before fitting; ``1.0`` Hz), ``picks`` (``'eeg'``), ``seed``.
-# - **Auto-flag thresholds** (these *pre-suggest* labels; you still decide): ``ecg_threshold``, ``eog_threshold``, and ``ga_threshold`` for the EEG-fMRI gradient-artefact score. ``ecg_ch`` / ``eog_ch`` let you name the reference channels explicitly instead of auto-picking from ``raw.info``.
-# - **Plotting knobs**: ``spec_freq_max`` (top of the spectrum panel, 45 Hz), ``zoom_window`` (length in seconds of each zoomed timecourse window, 20 s), ``psd_resolution``, ``spec_type`` (``'linear'`` / ``'db'``).
-# - **Output**: ``outdir`` --- the *root* under which per-subject review folders are created. If omitted it falls back to ``dataset['target_pth']/ica`` then the cwd. It is safe to set in shared batch userargs precisely because it is the root, not a per-subject path.
-#
-# .. note::
-#    The gradient-artefact (``GA``) score only appears if ``dataset['slice_interval']`` and ``dataset['tr_interval']`` are set (i.e. EEG-fMRI data). For ordinary EEG/MEG those keys are absent and the GA score is silently skipped --- ``ga_threshold`` then has no effect.
+subject_list = [file_id]
+file_list = [str(pf.id2path(file_id, 'checker'))]
+
+RUN_BATCH = False
+if RUN_BATCH:
+    run_proc_batch(
+        config,
+        file_list,
+        subjects=subject_list,
+        outdir=str(target_pth),
+        extra_funcs=[initialize],
+        gen_report=False,
+        overwrite=False,
+        random_seed=42,
+    )
 
 #%%
-# Reviewing components in the browser
-# ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-# After the batch, each subject has a folder under the review root containing the per-component SVGs and two pages: ``single_ic.html`` (one component at a time, with topography, spectrum, variance and full + zoomed timecourse) and ``between_ic.html`` (several components stacked, for comparing them against each other). Because browsers won't load sibling files straight off disk, serve the folder with the bundled server (a thin wrapper that also handles saving your labels back):
+# The fit batch intentionally stops here. It writes:
+#
+# - ``checker_manual/11/11_preproc-raw.fif``;
+# - ``checker_manual/11/11_ica.fif``;
+# - ``checker_manual_ica_review/11/`` containing the review pages and labels.
+#
+# It does not run ``ica_autoreject``, ``slice_reject``, a second bad-channel
+# pass, interpolation, or re-referencing. ``manual_ica`` displays EOG, ECG, and
+# residual gradient-artefact scores as review aids, but applies no components.
+
+#%%
+# 3. Review the fitted components
+# --------------------------------
+#
+# Serve the review root:
 #
 # .. code-block:: bash
 #
-#     # run from the review root (the folder that contains the per-subject dirs)
+#     cd /path/to/semp_tutorial_results/checker_manual_ica_review
 #     osl-ica-review 8000
 #
-#     # then open, per subject:
-#     #   http://localhost:8000/<subject>/single_ic.html
-#
-# Working over SSH, forward the port (``ssh -L 8000:localhost:8000 ...``) and open the URL on your laptop --- the heavy rendering already happened during the batch, so the review itself is light.
-#
-# In the page you step through components and label them with the keyboard. The labels are the three you'd expect:
-#
-# - **good** --- keep (brain or otherwise harmless).
-# - **bad** --- remove this component when applying.
-# - **unsure** --- kept (not removed), but counted separately so you can come back to it.
-#
-# You can also mark **bad time-segments** (a modal that writes start/stop times), which are applied as ``BAD_manual`` annotations at the apply step. The on-page key legend lists the navigation/label bindings; any auto-suggested labels from the thresholds above are shown as a starting point that you confirm or override. Your decisions are written, per subject, to ``label.txt`` (one ``IC<nnn>: good|bad|unsure|unlabeled`` line per component) and ``bads.txt`` (the bad segments). Any component you never touch stays ``unlabeled`` --- which, as we'll see, blocks the apply step until you finish.
+# Open ``http://localhost:8000/11/single_ic.html`` and label every component
+# ``good``, ``bad``, or ``unsure``. Bad time intervals can also be recorded.
 
 #%%
-# Applying the decisions: ``osl-ica-apply``
-# ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-# Once a subject is fully labelled, apply the decisions with the bundled command-line tool:
+# 4. Apply the reviewed decisions
+# --------------------------------
+#
+# Apply subject 11 after every component has a label:
 #
 # .. code-block:: bash
 #
-#     osl-ica-apply <ica_root> <raw_root> [subject ...] [--overwrite] [--purge-svgs]
+#     osl-ica-apply \
+#       /path/to/semp_tutorial_results/checker_manual_ica_review \
+#       /path/to/semp_tutorial_results/checker_manual \
+#       11
 #
-# where ``<ica_root>`` is the review root (holding ``<subject>/label.txt``) and ``<raw_root>`` holds ``<subject>/<subject>_preproc-raw.fif`` and ``<subject>/<subject>_ica.fif``. With no subjects listed it processes every subject under ``<ica_root>`` that has a ``label.txt``. For each one it:
-#
-# 1. parses ``label.txt`` and ``bads.txt``;
-# 2. **refuses to proceed** if the review isn't finished (any ``unlabeled`` component) or if ``label.txt`` has malformed lines or references a component index beyond the fit --- it prints a ``skip --- ...`` reason rather than silently doing the wrong thing;
-# 3. loads the preproc fif, appends the bad segments as ``BAD_manual`` annotations, sets the bad components in ``ica.exclude``, applies the ICA, and saves ``<subject>_after_ica-raw.fif``.
-#
-# The ``--purge-svgs`` flag deletes the (large) per-component SVGs and the HTML pages after a successful apply, keeping the small ``label.txt`` / ``bads.txt`` so the decisions remain reproducible --- this frees a lot of disk per subject on big studies. Use ``--overwrite`` to regenerate an existing ``_after_ica-raw.fif``.
-#
-# After this step the ``_after_ica-raw.fif`` is your final, component-cleaned sensor data. Stages that should only run on cleaned data --- interpolating bad channels, applying an average reference --- belong here, after the apply, not in the fit batch:
+# This reads ``11_preproc-raw.fif`` and ``11_ica.fif``, applies components
+# labelled bad, adds reviewed bad intervals as annotations, and writes
+# ``11_after_ica-raw.fif``. Incomplete or malformed reviews are skipped.
 
+#%%
+# 5. Interpolate and re-reference after review
+# --------------------------------------------
+#
+# These operations are intentionally outside the fit batch because they belong
+# after the reviewed ICA exclusions have been applied.
+
+#%%
 import mne
 
-cleaned = mne.io.read_raw_fif(
-    '/path/<subject>/<subject>_after_ica-raw.fif', preload=True)
-cleaned.interpolate_bads()
-cleaned.set_eeg_reference('average', projection=True)
-cleaned.apply_proj()
-cleaned.save('/path/<subject>/<subject>_after_ica-raw.fif', overwrite=True)
+RUN_FINISH = False
+if RUN_FINISH:
+    cleaned_path = pf.id2path(file_id, 'checker_manual_after_ica')
+    cleaned = mne.io.read_raw_fif(cleaned_path, preload=True)
+    cleaned.interpolate_bads()
+    cleaned.set_eeg_reference('average', projection=False)
+    cleaned.save(cleaned_path, overwrite=True)
 
 #%%
-# Programmatic access to the labels
-# ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-# If you want to drive the apply step from your own script --- to add bespoke logging, custom subject filtering, or to fold it into a larger pipeline --- use the package's public API rather than re-parsing the text files yourself (a hand-rolled regex is exactly the kind of thing that silently drifts out of sync):
-
-from osl_ephys.preprocessing.manual_ica import (
-    parse_label_txt, parse_bads_txt, apply_manual_ica)
-
-# Inspect one subject's decisions without applying anything:
-bad_ics, n_unsure, n_unlabeled, warnings = parse_label_txt(
-    '/path/ica_root/<subject>/label.txt')
-bad_segments = parse_bads_txt('/path/ica_root/<subject>/bads.txt')
-
-# Apply one subject programmatically (same logic as the CLI, returns a
-# human-readable status string: 'ok ...' / 'skip ...'):
-status = apply_manual_ica(
-    '/path/ica_root', '/path/raw_root', '<subject>',
-    overwrite=True, purge_svgs=False)
-print(status)
+# The public Python API provides the same apply operation when a project needs
+# custom orchestration:
 
 #%%
-# ``parse_label_txt`` returning a non-empty ``warnings`` or a non-zero ``n_unlabeled`` is your signal that a subject's review isn't clean/finished --- handy for a quick "who still needs reviewing?" sweep across a study before you batch-apply.
+from osl_ephys.preprocessing.manual_ica import apply_manual_ica
 
-#%%
-# Concluding remarks
-# ^^^^^^^^^^^^^^^^^^
-# You have seen the manual-ICA workflow end to end: ``manual_ica`` *fits* the decomposition and renders browser review pages during your normal preprocessing batch; you *review* and label the components in your browser via ``osl-ica-review``; and ``osl-ica-apply`` (or ``apply_manual_ica`` in Python) *applies* your decisions to produce the final cleaned ``_after_ica-raw.fif``. The deliberate fit/review/apply split is what lets the human step happen whenever --- and wherever --- is convenient, without holding a Python process open.
-#
-# This pairs naturally with the :doc:`preprocessing_eeg-fmri` tutorial, where automatic component labelling is least reliable and a manual pass is most worth the effort; but nothing about the tool is EEG-fMRI specific --- it is a general-purpose manual ICA reviewer for any osl-ephys pipeline.
+RUN_PYTHON_APPLY = False
+if RUN_PYTHON_APPLY:
+    status = apply_manual_ica(
+        ica_review_pth,
+        target_pth,
+        file_id,
+        overwrite=False,
+        purge_svgs=False,
+    )
+    print(status)

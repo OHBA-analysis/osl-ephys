@@ -12,43 +12,36 @@ README = (HERE / "README.md").read_text()
 reqs = ['numpy', 'scipy', 'matplotlib', 'mne', 'scikit-learn', 'fslpy',
         'sails', 'tabulate', 'pyyaml', 'neurokit2', 'jinja2',
         'glmtools', 'numba', 'nilearn', 'dask', 'distributed', 'parse',
-        'opencv-python', 'panel', 'h5io']
+        'opencv-python', 'panel', 'h5io', 'osl-pathfinder==1.0.0']
 doc_reqs = ['sphinx', 'numpydoc', 'sphinx_gallery', 'pydata-sphinx-theme']
 dev_reqs = ['setuptools', 'pytest', 'pytest-cov', 'coverage', 'flake8']
 
 name = 'osl-ephys'
 
 setup(name=name,
-      version='2.5.dev0',
+      version='2.5.0.dev1+semp.1',
       description='OHBA Software Library for the analysis of electrophysiological data',
       long_description=README,
       long_description_content_type="text/markdown",
       author='OHBA Analysis Group',
-      license='MIT',
+      license='Apache-2.0',
 
-      # Choose your license
-      # See https://pypi.python.org/pypi?%3Aaction=list_classifiers
       classifiers=[
           'Development Status :: 4 - Beta',
 
-          # Indicate who your project is intended for
           'Intended Audience :: Science/Research',
           'Topic :: Scientific/Engineering :: Bio-Informatics',
           'Topic :: Scientific/Engineering :: Information Analysis',
           'Topic :: Scientific/Engineering :: Mathematics',
 
-          # Specify the Python versions you support here. In particular, ensure
-          # that you indicate whether you support Python 2, Python 3 or both.
           'Programming Language :: Python :: 3',
-          'Programming Language :: Python :: 3.7',
-          'Programming Language :: Python :: 3.8',
           'Programming Language :: Python :: 3.9',
           'Programming Language :: Python :: 3.10',
           'Programming Language :: Python :: 3.11',
           'Programming Language :: Python :: 3.12',
       ],
 
-      python_requires='>=3.7',
+      python_requires='>=3.9',
       install_requires=reqs,
       extras_require={
           'dev': dev_reqs,

@@ -44,4 +44,4 @@ dependencies:
   - pyvista[jupyter]
   - osl-ephys
   # semp (simultaneous EEG-fMRI) drives file lookup through osl_pathfinder.Pathfinder.
-  - osl-pathfinder==0.6.0
+  - osl-pathfinder==1.0.0

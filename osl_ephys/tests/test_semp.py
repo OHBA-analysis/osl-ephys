@@ -596,6 +596,25 @@ def test_mne_epoch2raw_new_overwrites_at_seam():
     assert d[149] == 1.0 and d[150] == 2.0 and d[199] == 2.0
 
 
+def test_mne_epoch2raw_does_not_modify_input_epochs():
+    """Picking output channels must not remove channels from the caller's data."""
+    raw = mne.io.RawArray(
+        np.zeros((2, 1000)),
+        mne.create_info(["C1", "EOG"], 100.0, ["eeg", "eog"]),
+        verbose="ERROR",
+    )
+    events = np.array([[100, 0, 1]])
+    epochs = mne.Epochs(
+        raw.copy(), events, tmin=0, tmax=0.99,
+        baseline=None, preload=True, verbose="ERROR",
+    )
+    original_ch_names = epochs.ch_names.copy()
+
+    mne_epoch2raw(epochs, raw, tmin=0, overwrite="new", picks="eeg")
+
+    assert epochs.ch_names == original_ch_names
+
+
 def test_mne_epoch2raw_even_seam_at_midpoint():
     # 'even' keeps the datapoint closer to its event onset -> seam at the
     # midpoint between the two epoch centres (samples 151 and 201 -> 177)

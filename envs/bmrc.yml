@@ -347,7 +347,7 @@ dependencies:
       - opencv-python==4.11.0.86
       - osfclient==0.0.5
       # semp file lookup through the released Pathfinder API:
-      - osl-pathfinder==0.6.0
+      - osl-pathfinder==1.0.0
       - overrides==7.7.0
       - pandas==2.2.3
       - pandocfilters==1.5.1

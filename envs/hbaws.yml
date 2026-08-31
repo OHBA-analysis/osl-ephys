@@ -426,3 +426,4 @@ dependencies:
     - zict==3.0.0
     - zipp==3.21.0
     - zstandard==0.23.0
+    - osl-pathfinder==1.0.0

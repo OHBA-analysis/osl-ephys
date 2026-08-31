@@ -1,451 +1,692 @@
-'''
-Preprocessing simultaneous EEG-fMRI with semp
+# -*- coding: utf-8 -*-
+
+"""
+Preprocessing simultaneous EEG-fMRI with SEMP
 =============================================
 
-The preprocessing tutorials so far have dealt with "clean-room" MEG/EEG: data recorded outside a scanner, where the main artefacts are physiological (blinks, heartbeat, muscle) plus the odd bad channel. **Simultaneous EEG-fMRI** is a different game. The EEG is recorded *inside* a running MR scanner, so on top of the usual artefacts it carries two enormous, structured artefacts that are orders of magnitude larger than the brain signal:
+1. Set up files for the SEMP tutorial
+-------------------------------------
 
-1. **The gradient artefact (GA)** --- induced every time the scanner switches its field gradients to acquire a slice. It is periodic, locked to the volume repetition time (TR) and to the within-volume slice timing, and can be ~100x the EEG amplitude.
-2. **The ballistocardiogram (BCG / pulse artefact)** --- induced by tiny head/electrode movements with every heartbeat in the static field. Roughly locked to the cardiac cycle, but more variable than the GA.
-
-``osl_ephys.preprocessing.semp`` ("**S**imultaneous **E**EG-f**M**RI **P**reprocessing") is a subpackage that adds the wrappers needed to remove these artefacts and slots them into the same ``run_proc_chain`` / ``run_proc_batch`` machinery you already know. If you have done the :doc:`preprocessing_manual`, :doc:`preprocessing_automatic` and :doc:`preprocessing_batch` tutorials, you already understand most of how to drive it.
-
-Unlike the other tutorials (which use the Wakeman & Henson dataset --- recorded *outside* a scanner, so it has no gradient or pulse artefact), this one uses a **real, openly available simultaneous EEG-fMRI dataset**: `NATVIEW_EEGFMRI <https://github.com/NathanKlineInstitute/NATVIEW_EEGFMRI/tree/main>`_ from the Nathan Kline Institute, hosted on AWS S3. We will walk it end-to-end, in the order you would actually do it:
-
-0. **Get the data**
-1. **The semp subpackage: stages resolved by name**
-2. **The artefact-removal strategy: epoch, average, subtract**
-3. **Step 1 --- Locate your files: a pathfinder**
-4. **Step 2 --- Discover your acquisition metadata** (TR, slice timing, trigger, mains)
-5. **Step 3 --- The** ``initialize`` **extra_func**
-6. **Step 4 --- The preprocessing config, stage by stage**
-7. **Running the batch and reading the diagnostics**
-8. **Concluding remarks**
-
-.. note::
-   Every concrete number, channel name and trigger label below was read off the real NATVIEW files. Swap them for your own dataset's values where indicated. The heavy stages (loading 5 kHz ``.set`` files, ICA on EEG-fMRI) are not run inside this rendered page, but the code is exactly what you would execute.
-
-'''
+This is an OSL-Ephys SEMP tutorial using NATVIEW. We use osl-pathfinder to keep the paired ``checker``, MR-artifact-free ``checkerout``, metadata, and output paths aligned by subject/session.
+"""
 
 #%%
-# Step 0 --- Get the data
-# ^^^^^^^^^^^^^^^^^^^^^^^
-# NATVIEW lives in a public, requester-free S3 bucket. Grab it with the AWS CLI (the ``--no-sign-request`` flag means no AWS account is needed):
+# Install SEMP and download NATVIEW
+# ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+#
+# Start from a new environment, install the ``semp`` branch of `OSL-Ephys <https://github.com/OHBA-analysis/osl-ephys/tree/semp>`_.
+#
+# NATVIEW is openly available from ``s3://fcp-indi/data/Projects/NATVIEW_EEGFMRI/``. This tutorial needs only one or two complete subject/session directories. Install the AWS command-line client, choose a local data root, and download two example sessions without an AWS account:
 #
 # .. code-block:: bash
 #
-#     pip install awscli
+#     python -m pip install awscli
+#     mkdir -p /path/to/natview/raw_data
 #
-#     # everything (large -- many subjects x sessions x tasks):
-#     aws s3 sync s3://fcp-indi/data/Projects/NATVIEW_EEGFMRI/raw_data/ \
-#         /path/to/natview/raw_data --no-sign-request
+#     aws s3 sync \
+#       s3://fcp-indi/data/Projects/NATVIEW_EEGFMRI/raw_data/sub-01/ses-01/ \
+#       /path/to/natview/raw_data/sub-01/ses-01/ \
+#       --no-sign-request
 #
-# The full dataset is big, so for this tutorial pull a **subset** --- a couple of subjects is plenty to build and check a pipeline:
+#     aws s3 sync \
+#       s3://fcp-indi/data/Projects/NATVIEW_EEGFMRI/raw_data/sub-05/ses-01/ \
+#       /path/to/natview/raw_data/sub-05/ses-01/ \
+#       --no-sign-request
 #
-# .. code-block:: bash
-#
-#     aws s3 sync s3://fcp-indi/data/Projects/NATVIEW_EEGFMRI/raw_data/ \
-#         /path/to/natview/raw_data --no-sign-request \
-#         --exclude "*" --include "sub-01/*" --include "sub-05/*"
-#
-# Pick one ``base_path`` for the project; we keep the raw download and the output we are about to create side by side under it. In this tutorial:
-
-BASE = "/path/to/natview"      # <- your base_path
-RAW  = f"{BASE}/raw_data"      # the S3 download
-OUT  = f"{BASE}/semp_output"   # where this pipeline writes
+# You may omit the second command for a one-recording walkthrough or replace the subject/session numbers with another available pair. Downloading the complete session keeps the EEG sidecars, events, channel table, BOLD metadata, and T1w image together. We read the EEGLAB ``.set`` file because the public release does not include the BrainVision ``.eeg`` binary. For the complete project contents and full-dataset download routes, see the `NATVIEW project page <https://fcon_1000.projects.nitrc.org/indi/retro/nat_view.html>`_.
 
 #%%
-# **What's in it.** NATVIEW is BIDS-organised: ``sub-XX/ses-XX/{eeg,func,anat}/``. The EEG for each task comes as both BrainVision (``.vhdr``/``.vmrk``) and EEGLAB (``.set``); the S3 download ships the ``.set`` (data inline) and the ``.vhdr``/``.vmrk`` header+markers, but **not** the BrainVision ``.eeg`` binary --- so read the ``.set`` (osl-ephys / MNE handle EEGLAB natively). Each subject did several tasks (``rest``, ``checker``, ``inscapes``, movie clips, ...). We use rest as an example.
+# Configure the two project roots
+# ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+#
+# Edit these constants before running the notebook. Keep outputs separate from the downloaded NATVIEW tree.
 
 #%%
-# The semp subpackage: stages resolved by name
-# ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-# Recall from the batch tutorial that osl-ephys resolves a stage name in a config (e.g. ``{'filter': {...}}``) through ``find_func``, which looks, in order: at any ``extra_funcs`` you passed, then at the built-in ``run_osl_<name>`` wrappers, then ``run_mne_<name>``, then plain MNE ``Raw`` / ``Epochs`` methods.
-#
-# Every semp wrapper (``crop_TR``, ``create_epoch``, ``epoch_aas``, ``epoch_obs``, ``slice_reject``, ...) is registered with ``find_func`` as a ``run_osl_<name>`` built-in --- exactly like ``manual_ica`` (see the :doc:`preprocessing_manual-ica` tutorial). So you reference any semp stage in a config *by name*, using the plain osl-ephys runner, with no special import and no ``extra_funcs`` entry:
+NATVIEW_RAW_ROOT = '/path/to/natview/raw_data'
+SEMP_TUTORIAL_RESULTS_ROOT = '/path/to/semp_tutorial_results'
 
-from osl_ephys.preprocessing import run_proc_batch, run_proc_chain
+print('NATVIEW_RAW_ROOT:', NATVIEW_RAW_ROOT)
+print('SEMP_TUTORIAL_RESULTS_ROOT:', SEMP_TUTORIAL_RESULTS_ROOT)
 
 #%%
-# (For backward compatibility ``from osl_ephys.preprocessing.semp import run_proc_batch`` still works --- it is now literally the same function.) You still pass your own *project* functions --- like the ``initialize`` extra_func below --- via ``extra_funcs=``; only the semp library wrappers are resolved automatically.
+# Describe the files used by SEMP
+# ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 #
-# The semp wrappers fall into a few groups:
-#
-# - **Cropping / epoching**: ``crop_TR`` (trim to the fMRI acquisition window), ``create_epoch`` (cut trigger-locked epochs; ``create_TR_epoch`` / ``create_He_epoch`` are the easy per-TR / per-helium-pump variants, and ``simulate_epoch`` lays a triggerless grid), ``crop_by_epoch``, ``mid_crop``.
-# - **Artefact templates**: ``epoch_aas`` (average artefact subtraction --- the GA), ``epoch_obs`` (optimal basis sets --- the BCG), ``epoch_ssp``.
-# - **ICA**: ``slice_reject`` (flag + reject the residual slice-harmonic components of the ICA fitted by ``ica_raw``), ``manual_ica`` (browser review --- see the :doc:`preprocessing_manual-ica` tutorial), ``apply_ica``.
-# - **Housekeeping / QA**: ``voltage_correction``, ``cleanup``, and the diagnostic ``init_tracer`` / ``ckpt_report`` / ``summary`` trio.
-#
-# .. note::
-#    semp uses a few dependencies beyond core osl-ephys (``pandas`` / ``seaborn`` / ``nibabel`` / ``nilearn``, mostly for its plotting and source-recon helpers; the artefact-template maths is plain ``numpy``). The ``run_osl_<name>`` registration imports semp **lazily**, only when a semp stage actually runs, so core ``osl_ephys.preprocessing`` keeps a minimal dependency surface: a vanilla install without those extras still imports and runs non-semp pipelines fine, and you only need them once a semp stage executes.
+# ``checker`` is the anchor that fixes the subject/session cohort. Each ``{foo}`` independently absorbs unimportant BIDS filename text and is never part of the recording ID. In a multi-file analysis project, move this definition into ``pathfinder.py`` and import its shared ``pf``.
 
 #%%
-# The artefact-removal strategy: epoch, average, subtract
-# ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-# The GA and the BCG are both (quasi-)periodic, and that is exactly what semp exploits. The recipe for both is the same three moves:
-#
-# 1. **Epoch** the continuous raw data on the artefact's own clock --- one epoch per scanner volume (TR) for the GA, one epoch per heartbeat for the BCG. This is what ``create_epoch`` does; the resulting ``mne.Epochs`` is stashed back into the ``dataset`` dict under a key like ``'tr_ep'``.
-# 2. **Estimate an artefact template** from those epochs. For the GA, the template is a *local sliding average* across neighbouring volumes (average artefact subtraction, AAS --- ``epoch_aas``): because brain activity is not time-locked to the gradients but the artefact is, averaging a window of volumes cancels the brain signal and leaves the artefact. For the BCG, the template is the leading principal components of the heartbeat epochs (optimal basis sets, OBS --- ``epoch_obs``).
-# 3. **Subtract** the template from every epoch and stitch the cleaned epochs back into the continuous ``dataset['raw']``.
-#
-# A few semp-specific details worth knowing:
-#
-# - ``epoch_aas`` slides a window of ``window_length`` volumes and subtracts the windowed mean. With ``fit=False`` it subtracts the raw average template; with ``fit=True`` it least-squares-fits the template's amplitude per channel before subtracting (useful when the artefact amplitude drifts). ``pre_pad`` controls how the window is centred at the start/end of the recording.
-# - ``epoch_obs`` keeps ``npc`` principal components (default 3). ``remove_mean`` should be ``True`` for TR- or heartbeat-length epochs and ``False`` for very short slice-length epochs (removing the mean of a sub-0.1 s epoch would eat real signal). The ``screen_high_power`` / ``pc_from_spurious`` knobs let you keep residual-GA or motion epochs out of the PC estimate so the BCG template is not contaminated.
-# - Both wrappers stash the artefact template (``pc_<epoch_key>``) and the removed noise (``noise_<epoch_key>``) back into the ``dataset`` so the diagnostic ``ckpt_report`` can plot exactly what was taken out.
-#
-# After template subtraction there is usually a residual *slice* artefact at high harmonics of the slice-timing frequency (because AAS assumes a perfectly stationary template, which never quite holds). ``slice_reject`` mops this up: rather than fit its own ICA, it **reuses the one fitted by** ``ica_raw`` in the general-ICA stage (below), measures each component's power at the slice harmonics relative to a baseline band, and adds the components whose ratio exceeds ``noise2base_threshold`` to ``ica.exclude`` (alongside the EOG/ECG ones). It needs ``dataset['slice_interval']`` and ``dataset['tr_interval']`` set --- which brings us to the practical part.
-
-#%%
-# Step 1 --- Locate your files: a pathfinder
-# ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-# An EEG-fMRI study has many files per recording scattered across folders. Hard-coding paths gets unmanageable fast, so semp pipelines drive file lookup through a **pathfinder**: you declare a template per *kind* of file with named placeholders, and it maps a compact recording id to the path of any kind. NATVIEW is already consistently named (BIDS), so no renaming is needed --- we just describe the layout.
-#
-# The modern pathfinder is ``osl_pathfinder.Pathfinder`` (``pip install osl-pathfinder``): template-based, no subclassing. Give it a ``paths`` dict (kind -> template), an ``id`` template saying how the placeholder fields concatenate into a compact id, and an ``anchor`` kind that is globbed to discover which recordings exist on disk:
-
 from osl_pathfinder import Pathfinder
 
 pf = Pathfinder(
-    paths={
-        # anchor: the input EEG (.set) --- here the rest recording. We only use
-        # one task, so the kind is just "raw" rather than "rest" (the outputs
-        # below would otherwise be "rest_preproc"/"rest_afterica" --- redundant
-        # when there is nothing else to disambiguate from). {subject:02d}/
-        # {session:02d} pad to the BIDS "sub-01"/"ses-01" form and consume the
-        # pad on parse, so ids round-trip both ways.
-        "raw":      f"{RAW}/sub-{{subject:02d}}/ses-{{session:02d}}/eeg/"
-                    f"sub-{{subject:02d}}_ses-{{session:02d}}_task-rest_eeg.set",
-        # per-recording outputs we will create:
-        "preproc":  f"{OUT}/{{subject}}{{session}}/{{subject}}{{session}}_preproc-raw.fif",
-        "afterica": f"{OUT}/{{subject}}{{session}}/{{subject}}{{session}}_after_ica-raw.fif",
+    templates={
+        'checker': (
+            NATVIEW_RAW_ROOT
+            + '/sub-{subject:02d}/ses-{session:02d}/eeg/'
+            + '{foo}-checker_eeg.set'
+        ),
+        'checkerout': (
+            NATVIEW_RAW_ROOT
+            + '/sub-{subject:02d}/ses-{session:02d}/eeg/'
+            + '{foo}-checkerout_eeg.set'
+        ),
+        'checker_eeg_json': (
+            NATVIEW_RAW_ROOT
+            + '/sub-{subject:02d}/ses-{session:02d}/eeg/'
+            + '{foo}-checker_eeg.json'
+        ),
+        'checker_channels': (
+            NATVIEW_RAW_ROOT
+            + '/sub-{subject:02d}/ses-{session:02d}/eeg/'
+            + '{foo}-checker_channels.tsv'
+        ),
+        'checker_events': (
+            NATVIEW_RAW_ROOT
+            + '/sub-{subject:02d}/ses-{session:02d}/eeg/'
+            + '{foo}-checker_events.tsv'
+        ),
+        'checkerout_events': (
+            NATVIEW_RAW_ROOT
+            + '/sub-{subject:02d}/ses-{session:02d}/eeg/'
+            + '{foo}-checkerout_events.tsv'
+        ),
+        'checker_bold_json': (
+            NATVIEW_RAW_ROOT
+            + '/sub-{subject:02d}/ses-{session:02d}/func/'
+            + '{foo}-checker_bold.json'
+        ),
+        'checker_preproc': (
+            SEMP_TUTORIAL_RESULTS_ROOT
+            + '/checker/{subject}{session}/'
+            + '{subject}{session}_preproc-raw.fif'
+        ),
+        'checkerout_preproc': (
+            SEMP_TUTORIAL_RESULTS_ROOT
+            + '/checkerout/{subject}{session}/'
+            + '{subject}{session}_preproc-raw.fif'
+        ),
     },
-    id="{subject:d}{session:1d}",   # sub-01 ses-01 -> "11"; sub-10 ses-02 -> "102"
-    anchor="raw",
+    id='{subject:d}{session:1d}',
+    anchor='checker',
 )
 
 #%%
-# That gives you a small, explicit API used throughout a semp project:
+# Minimal Pathfinder API used here
+# ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 #
-# - ``pf.ids`` --- the fixed recording-id snapshot discovered by globbing the anchor during construction (e.g. ``'11'`` for sub-01/ses-01). ``pf.scan()`` validates every configured kind for those ids and returns rows with concrete ``Path`` values only when files exist; missing rows show ``path=None`` and a ``*`` pattern. It does not change the anchor or rediscover ids.
-# - ``pf.id2path(file_id, 'preproc')`` --- the path of any kind for a recording.
-# - ``pf.path2id('raw', some_path)`` --- the inverse: recover the id from a filename (used to set ``dataset['subject']``).
-# - ``pf.id2path(file_id, 'raw')`` --- resolve a kind and raise if it is missing.
-# - ``pf.id2field(file_id)`` --- the string fields (for example ``{'subject': '1', 'session': '1'}``), handy when you must glob something the templates don't cover (e.g. the ``anat/`` T1w for later source recon).
+# - ``pf.ids`` --- fixed checker recording IDs discovered at construction.
+# - ``pf.id2field(file_id)`` --- recover subject/session strings.
+# - ``pf.id2path(file_id, kind)`` --- resolve an existing input path.
+# - ``pf.id2path(file_id, kind, require_existence=False)`` --- construct a
+#   future output path.
+# - ``pf.path2id(path, kind)`` --- recover the recording ID from an input
+#   filename.
+# - ``pf.scan()`` --- validate all configured kinds and return a table.
 
 #%%
-# **Scaling up: keep entity names explicit and consistent.** If a study has
-# several task types, use one Pathfinder per task or include explicit
-# ``task``/``run`` fields in one template. Pathfinder deliberately does not
-# transform a value that is named differently in another modality. Correct the
-# dataset names when possible; otherwise create a soft-link directory with
-# consistent names and point the templates at that layer.
+ids = sorted(pf.ids)
+if not ids:
+    raise FileNotFoundError('No checker recordings match NATVIEW_RAW_ROOT')
 
-#%%
-# **A word on how the id stays parseable.** Keep separators between variable
-# width fields, or give all but one adjacent field a fixed width. For example,
-# ``{subject:d}{session:1d}{run:1d}`` is unambiguous because the final fields
-# have known widths, while two adjacent ``:d`` fields are rejected. Pathfinder
-# returns every parsed field as a string, so an id such as ``"1111"`` remains a
-# string even when its fields use numeric format specs.
-#
+file_id = ids[0]
+print('checker recordings:', len(ids))
+print('example ID and fields:', file_id, pf.id2field(file_id))
+print('checker:', pf.id2path(file_id, 'checker'))
+print('future output:', pf.id2path(file_id, 'checker_preproc', require_existence=False))
 
-#%%
-# Step 2 --- Discover your acquisition metadata
-# ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-# Several semp wrappers need numbers specific to *your* scan. NATVIEW (being BIDS) hands most of them to you in JSON sidecars; the trigger label is easiest to read off the data. Do this once for a representative recording, then bake the answers into ``initialize`` (Step 3). The values printed in the comments below are the **actual NATVIEW values**.
-#
-# **2a. ``tr_interval`` --- the TR (seconds).** Straight out of the BOLD JSON:
-
-import json, numpy as np
-
-bold = json.load(open(f"{RAW}/sub-01/ses-01/func/sub-01_ses-01_task-rest_bold.json"))
-tr_interval = bold["RepetitionTime"]                       # NATVIEW: 2.1 s
-
-#%%
-# **2b. ``slice_interval`` --- the time between slice acquisitions (seconds).** The naive ``TR / len(SliceTiming)`` is a **trap**: with a multiband sequence several slices are acquired *simultaneously*, so ``SliceTiming`` repeats those values and ``len()`` over-counts by the multiband factor. Always collapse to the *unique* slice onset times first, then look at the spacing between them:
-
-st = np.array(bold["SliceTiming"])
-uniq = np.sort(np.unique(st))            # collapse multiband duplicates
-steps = np.diff(uniq)                    # gap between successive slice acquisitions
-vals, counts = np.unique(np.round(steps, 6), return_counts=True)
-slice_interval = vals[counts.argmax()]   # the mode -- robust to a little jitter
-print(f"n_unique_slices={len(uniq)}  step values={dict(zip(vals, counts))}  "
-      f"slice_interval~{slice_interval:.4f}s  GA~({1/slice_interval:.2f}Hz harmonics + {1/tr_interval:.2f}Hz harmonics)")
-
-# NATVIEW rest:  38 unique slices, steps {0.055: 30, 0.0575: 7}  -> ~0.055 s, GA ~18.2 Hz
-# A multiband-4 sequence (e.g. TR=1.14, 64 entries) would show only 16 UNIQUE slices, step {0.07: 15} -> 0.07 s (GA ~14.3 Hz).
-
-#%%
-# Two things this print teaches that a single number would hide:
-#
-# - **The slice timing is not perfectly regular.** NATVIEW's steps are mostly 0.055 s but occasionally 0.0575 s. So ``slice_interval`` is **not an exact period** --- treat ``1/slice_interval`` as a *locator* for roughly where the gradient-artefact residual harmonics sit in the spectrum (~18 Hz, 36 Hz, ...), which is all ``slice_reject`` needs (it searches a window around each harmonic, not a single bin).
-# - **Why semp does volume-level AAS, not slice-level.** A slice-by-slice average artefact subtraction (as in FASTR) assumes every slice epoch has the *same length*; with the jittered timing above they don't, so per-slice templates misalign. semp instead averages whole **volume** (TR) epochs --- whose length *is* stable, set by the rock-steady ``R128`` trigger (Step 2c) --- and then mops up the residual slice harmonics with ``slice_reject``. That combination is robust to exactly this slice-timing instability.
-#
-# You can sanity-check the locator against the data: the GA shows up as tall, regularly spaced peaks at harmonics of ``1/slice_interval`` Hz in the PSD of an *uncleaned* raw file::
-#
-#     import mne
-#     raw = mne.io.read_raw_eeglab(pf.id2path('11', 'raw'), preload=True)
-#     raw.compute_psd(picks='eeg', fmin=0, fmax=50).plot()   # peaks near 18, 36 Hz ...
-#
-# **2c. ``tr_event_key`` --- the volume (TR) trigger label.** The amplifier records a marker at every fMRI volume onset. Find which annotation label that is by listing the labels and looking for the one whose *inter-event interval* equals the TR with near-zero jitter:
-
-import mne, numpy as np
-
-raw = mne.io.read_raw_eeglab(pf.id2path('11', 'raw'), preload=False, verbose='ERROR')
-events, event_id = mne.events_from_annotations(raw, verbose='ERROR')
-sfreq = raw.info['sfreq']                                  # NATVIEW: 5000 Hz
-
-for label, code in event_id.items():
-    t = events[events[:, 2] == code, 0]
-    if len(t) < 2:
+paired_ids = []
+for candidate in ids:
+    try:
+        pf.id2path(candidate, 'checkerout')
+    except FileNotFoundError:
         continue
-    d = np.diff(t) / sfreq
-    print(f"{label!r}: n={len(t)} mean_int={d.mean():.4f}s jitter={d.std():.4f}s")
-    if abs(d.mean() - tr_interval) < 0.05 and d.std() < 0.01:
-        print(f"   ^^^ tr_event_key: {label!r}")
-# NATVIEW prints: 'R128': n=288 mean_int=2.1000s jitter=0.0000s  <- the TR trigger
-# (R128 is BrainVision's standard MR volume-trigger label; the others are
-#  stimulus / 'Sync On' markers.)
+    paired_ids.append(candidate)
+print('paired checker/checkerout recordings:', len(paired_ids))
 
 #%%
-# Pass ``tr_event_key`` as a *list* of candidate labels --- the wrappers use the first one present in a given recording, which is robust to the label drifting between sessions or sites.
+# 2. Explore one NATVIEW recording
+# --------------------------------
 #
-# **2d. Other knobs you can read from the sidecars.**
+# The purpose of this section is to fill the project ``initialize`` function.
+# Four entries must be learned from the acquisition; the others come directly
+# from the loaded file or the project objects already defined in Part 1.
 #
-# - **Mains frequency** for the notch. Two ways to be sure, and you should agree both before trusting it: (i) *provenance* --- the EEG JSON ``PowerLineFrequency`` says 60, and NATVIEW was recorded at the Nathan Kline Institute in New York, i.e. a 60 Hz country (Europe is 50 Hz); (ii) *the data* --- find the mains peak in the PSD, which doesn't rely on the sidecar being correct::
+# .. list-table:: Values stored by ``initialize``
+#    :header-rows: 1
 #
-#       psd = raw.compute_psd(picks='eeg', fmin=45, fmax=65)
-#       freqs, p = psd.freqs, psd.get_data().mean(0)
-#       print("mains peak near", round(freqs[p.argmax()]))   # NATVIEW: 60
-#
-#   So notch ``60 120`` (the fundamental + first harmonic), *not* the European ``50 100``.
-# - **Channel types**: NATVIEW has 61 EEG channels (referenced to FCz), one ECG channel named ``ECG``, and two EOG channels ``EOGL`` / ``EOGU``, no EMG. EEGLAB ``.set`` files don't carry MNE channel *types*, so we re-assign them in the config (Step 4).
-# - **Electrode positions**: NATVIEW ships ``*_electrodes.tsv`` per session, but the channels use standard 10-05 names, so a standard montage (``set_montage='standard_1005'``) is the simplest route for the ICA topographies and later source recon --- no custom montage extra_func needed.
-# - **``he_event_key``** (helium-pump trigger, optional, for an OBS pass on >30 Hz content): NATVIEW has no helium-pump marker, so we leave it unset.
+#    * - Dataset entry
+#      - Source
+#      - Used for
+#    * - ``tr_interval``
+#      - BOLD ``RepetitionTime``, checked against volume-trigger spacing
+#      - TR epoch duration and scanner-volume crop
+#    * - ``slice_interval``
+#      - Spacing in BOLD ``SliceTiming``
+#      - Locating residual slice-frequency peaks
+#    * - ``tr_event_key``
+#      - MNE annotation label for each acquired volume
+#      - Selecting volume triggers
+#    * - ``he_event_key``
+#      - MNE annotation label for a helium-pump trigger, or ``[]`` if absent
+#      - Optional helium-pump epoching
+#    * - ``target_pth``
+#      - Output root passed to ``initialize``
+#      - Checkpoint and summary files
+#    * - ``pf``
+#      - Pathfinder constructed in Part 1
+#      - File and recording-ID lookup
+#    * - ``subject``
+#      - ``pf.path2id`` applied to the input filename
+#      - Per-recording output name
+#    * - ``orig_sfreq``
+#      - ``raw.info['sfreq']``
+#      - Sampling-rate provenance
+#    * - ``tracer``
+#      - Optional functions for monitoring data cleaness
+#      - e.g. variance, psd peak at slice-frequency, psd kurtosis, etc.
 
 #%%
-# Step 3 --- The ``initialize`` extra_func
-# ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-# semp does not guess the Step-2 numbers --- you hand them over in a small project ``initialize`` extra_func that runs as the very first stage of the chain. It seeds ``dataset`` with everything the later wrappers read out of it:
+# 2.1 Select one recording
+# ^^^^^^^^^^^^^^^^^^^^^^^^^^
+#
+# Derive the acquisition constants from one recording first. Check additional
+# recordings before applying the config to the full dataset.
 
+#%%
+import json
+import numpy as np
+import pandas as pd
+
+import mne
+from osl_ephys.preprocessing.semp import psd_plot, temp_plot
+
+file_id = sorted(pf.ids)[0]
+print('recording:', file_id, pf.id2field(file_id))
+
+#%%
+# 2.2 Load metadata and restore channel types
+# ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+#
+# NATVIEW's channels TSV distinguishes EEG, EOG, and ECG channels. Apply those
+# types after EEGLAB import so later ``picks='eeg'`` calls select EEG only.
+
+#%%
+checker_eeg = json.loads(pf.id2path(file_id, 'checker_eeg_json').read_text())
+bold = json.loads(pf.id2path(file_id, 'checker_bold_json').read_text())
+channels = pd.read_csv(pf.id2path(file_id, 'checker_channels'), sep='\t')
+channel_type_map = dict(zip(channels['name'], channels['type'].str.lower()))
+raw = mne.io.read_raw_eeglab(pf.id2path(file_id, 'checker'), preload=False, verbose='ERROR')
+if set(raw.ch_names) != set(channel_type_map):
+    raise ValueError('checker channel names do not match checker_channels.tsv')
+raw.set_channel_types(channel_type_map)
+print('raw sampling rate:', raw.info['sfreq'])
+print('sidecar sampling rate:', checker_eeg['SamplingFrequency'])
+print('MNE channel types:', pd.Series(raw.get_channel_types()).value_counts().to_dict())
+
+#%%
+# 2.3 Find ``tr_event_key`` and ``tr_interval``
+# ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+#
+# SEMP reads volume triggers from the loaded Raw annotations. For the selected
+# recording, inspect the available labels, select the volume label, and verify
+# that its median spacing agrees with the BOLD ``RepetitionTime``.
+
+#%%
+mne_events, mne_event_id = mne.events_from_annotations(raw, verbose='ERROR')
+print('annotation labels:', sorted(mne_event_id))
+
+TR_EVENT_KEY = ['R128']
+if TR_EVENT_KEY[0] not in mne_event_id:
+    raise ValueError('{} is absent from the Raw annotations'.format(TR_EVENT_KEY[0]))
+tr_samples = np.unique(
+    mne_events[mne_events[:, 2] == mne_event_id[TR_EVENT_KEY[0]], 0]
+    - raw.first_samp
+)
+tr_onsets = tr_samples / raw.info['sfreq']
+observed_tr_interval = float(np.median(np.diff(tr_onsets)))
+TR_INTERVAL = float(bold['RepetitionTime'])
+print('TR_EVENT_KEY:', TR_EVENT_KEY)
+print('BOLD RepetitionTime: {:.4f} s'.format(TR_INTERVAL))
+print('median trigger spacing: {:.4f} s'.format(observed_tr_interval))
+if not np.isclose(TR_INTERVAL, observed_tr_interval, atol=0.5 / raw.info['sfreq']):
+    raise ValueError('BOLD RepetitionTime and Raw trigger spacing disagree')
+
+# The events TSV is not used as the trigger source. This selected-recording
+# check only confirms that its relative R128 sequence agrees with the Raw
+# annotations.
+checker_events = pd.read_csv(pf.id2path(file_id, 'checker_events'), sep='\t')
+tsv_r128 = checker_events.loc[
+    checker_events['value'].astype(str).eq(TR_EVENT_KEY[0]), 'onset'
+].dropna().to_numpy(float)
+tsv_relative = tsv_r128 - tsv_r128[0]
+mne_relative = tr_onsets - tr_onsets[0]
+same_relative_timing = len(tsv_relative) == len(mne_relative) and np.allclose(
+    tsv_relative, mne_relative, atol=0.5 / raw.info['sfreq']
+)
+print('events TSV matches relative Raw trigger timing:', same_relative_timing)
+
+#%%
+# 2.4 Find ``slice_interval``
+# ^^^^^^^^^^^^^^^^^^^^^^^^^^
+#
+# ``slice_reject`` uses this value to locate residual peaks near the slice
+# frequency. Inspect the spacings between distinct entries in the BOLD
+# ``SliceTiming`` array and use the most frequent spacing.
+
+#%%
+slice_timing = np.unique(np.round(np.asarray(bold['SliceTiming'], dtype=float), 6))
+slice_steps = np.diff(slice_timing)
+slice_steps = slice_steps[slice_steps > 0]
+SLICE_INTERVAL = float(pd.Series(np.round(slice_steps, 4)).mode().iloc[0])
+print('slice spacings:', pd.Series(np.round(slice_steps, 4)).value_counts().sort_index().to_dict())
+print('SLICE_INTERVAL: {:.4f} s ({:.2f} Hz)'.format(SLICE_INTERVAL, 1 / SLICE_INTERVAL))
+
+#%%
+# 2.5 Find ``he_event_key``
+# ^^^^^^^^^^^^^^^^^^^^^^^^^
+#
+# A helium-pump event is optional. None of the selected recording's annotation
+# labels represents that trigger, so this pipeline disables helium epoching.
+
+#%%
+HE_EVENT_KEY = []
+print('HE_EVENT_KEY:', HE_EVENT_KEY)
+
+#%%
+# 2.6 Fill ``initialize``
+# ^^^^^^^^^^^^^^^^^^^^^^^
+#
+# The four acquisition constants now come from the checks above. All remaining
+# entries are derived directly from the current input and project objects.
+
+#%%
 from functools import partial
-from pathlib import Path
-from osl_ephys.preprocessing.semp.utils import psd_band_ratio
+from osl_ephys.preprocessing.semp.metric import psd_band_ratio
 
 def initialize(dataset, userargs):
-    """Populate dataset with the metadata the semp wrappers expect (NATVIEW)."""
-    # --- Step 2 values ---
-    dataset['tr_interval']    = userargs.get('tr_interval', 2.1)        # 2a
-    dataset['slice_interval'] = userargs.get('slice_interval', 0.055)   # 2b (mode of the
-    #   slice-onset steps; a *locator* for the ~18 Hz GA harmonic, not an exact period)
-    dataset['tr_event_key']   = userargs.get('tr_event_key', ['R128'])  # 2c
-    dataset['he_event_key']   = userargs.get('he_event_key', [])       # 2d (none here)
-
-    # --- where per-recording output goes ---
-    dataset['target_pth'] = userargs.get('target_pth', Path(OUT))
-
-    # --- pathfinder + a stable recording id ---
-    # manual_ica / apply_ica / the report stages key their output folders on
-    # dataset['subject']; use the imported module-level Pathfinder directly.
-    # Do not put it in userargs/config: run_proc_batch deep-copies config and
-    # Pathfinder is an immutable object containing a mapping proxy.
-    dataset['pf']      = pf
-    dataset['subject'] = dataset['pf'].path2id('raw', dataset['raw'].filenames[0])
-
+    dataset['tr_interval'] = userargs.get('tr_interval', TR_INTERVAL)
+    dataset['slice_interval'] = userargs.get('slice_interval', SLICE_INTERVAL)
+    dataset['tr_event_key'] = userargs.get('tr_event_key', TR_EVENT_KEY)
+    dataset['he_event_key'] = userargs.get('he_event_key', HE_EVENT_KEY)
+    dataset['target_pth'] = userargs['target_pth']
+    # Use the shared Pathfinder imported above; do not pass it through
+    # the batch config/userargs, which are deep-copied by run_proc_batch.
+    dataset['pf'] = pf
+    dataset['subject'] = dataset['pf'].path2id(dataset['raw'].filenames[0], 'checker')
     dataset['orig_sfreq'] = dataset['raw'].info['sfreq']
-
-    # --- extra diagnostic tracers for ckpt_report / summary (optional; {} is
-    #     fine to just use semp's defaults). Here: slice-harmonic band ratios,
-    #     so the report shows the GA collapsing as the pipeline proceeds. ---
     si = dataset['slice_interval']
     dataset['tracer'] = {
-        'psd_slice':  partial(psd_band_ratio, band1=[1/si - 1, 1/si + 1],
-                              band2='beta', fn1=np.mean),
-        'psd_2slice': partial(psd_band_ratio, band1=[2/si - 1, 2/si + 1],
-                              band2=[20, 35], fn1=np.mean),
+        'psd_slice': partial(psd_band_ratio, band1=[1 / si - 1, 1 / si + 1], band2='beta', fn1=np.mean),
+        'psd_2slice': partial(psd_band_ratio, band1=[2 / si - 1, 2 / si + 1], band2=[20, 35], fn1=np.mean),
     }
+    return dataset
 
-    # --- per-recording acquisition quirks would live here, keyed on the id,
-    #     each with a one-line "why". (None needed for this NATVIEW subset.) ---
-    # if dataset['subject'] == '42':   # e.g. crop a bad tail for sub-04/ses-02
-    #     dataset['raw'].crop(tmin=0, tmax=400)
+print('initialize values:', TR_INTERVAL, SLICE_INTERVAL, TR_EVENT_KEY, HE_EVENT_KEY)
 
+#%%
+# 2.7 Plot the initial and reference spectra
+# ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+#
+# These spectra are used by the sensor-space comparison after preprocessing.
+# ``checkerout`` is the paired recording acquired outside the scanner; it is a
+# subject-level reference, not a time-aligned target.
+
+#%%
+rawout = mne.io.read_raw_eeglab(
+    pf.id2path(file_id, 'checkerout'), preload=False, verbose='ERROR'
+)
+if set(rawout.ch_names) != set(channel_type_map):
+    raise ValueError('checkerout channel names do not match checker_channels.tsv')
+rawout.set_channel_types(channel_type_map)
+
+psd_checker = psd_plot(
+    raw, name='checker | PSD', picks='eeg',
+    fmin=1, fmax=125, resolution=0.05, dB=True,
+)
+temp_plot(raw, channel=raw.ch_names[0], name='checker | ' + raw.ch_names[0])
+
+#%%
+psd_checkerout = psd_plot(
+    rawout, name='checkerout | PSD', picks='eeg',
+    fmin=1, fmax=125, resolution=0.05, dB=True,
+)
+temp_plot(rawout, channel=rawout.ch_names[0], name='checkerout | ' + rawout.ch_names[0])
+
+#%%
+# 3. SEMP stages: remove one artefact at a time
+# ---------------------------------------------
+#
+# Run the SEMP pipeline one stage at a time before using its batch config. The
+# order is: define TR epochs, retain the scanner-on interval, subtract the
+# gradient template, filter and resample, detect bad data, apply one ICA fit,
+# then interpolate and re-reference.
+#
+# ``find_func`` resolves both SEMP stages and ordinary MNE/OSL stages, so every
+# call below uses the same stage name and arguments as the final config.
+
+#%%
+# 3.1 Create one direct-stage dataset
+# ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+#
+# Create the OSL-Ephys dataset and a helper that runs one config-style stage.
+
+#%%
+from pathlib import Path
+
+from osl_ephys.preprocessing.batch import find_func
+
+RESULTS_ROOT = SEMP_TUTORIAL_RESULTS_ROOT
+PLOT_CHANNEL = 'Fp1'
+
+dataset = {
+    'raw': raw, 'events': None, 'epochs': None, 'event_id': None,
+    'ica': None, 'fig': {},
+}
+
+def stage(name, **kwargs):
+    """Run one stage directly, without a config or batch runner."""
+    func = find_func(name, extra_funcs=[initialize])
+    if func is None:
+        raise RuntimeError('Could not resolve stage: {}'.format(name))
+    print('-- {} {}'.format(name, kwargs))
+    dataset.update(func(dataset, kwargs))
     return dataset
 
 #%%
-# Note that, unlike a dataset with digitised electrodes, NATVIEW needs no custom ``set_channel_montage`` function --- a standard montage is applied as an ordinary MNE stage in the config below. So ``initialize`` is the only project extra_func we pass.
+# Checkpoint plots
+# ^^^^^^^^^^^^^^^^
+#
+# The initial, post-AAS, post-ICA, and final plots are sufficient for this
+# walkthrough. Every PSD uses 0.05 Hz bins.
 
 #%%
-# Step 4 --- The preprocessing config, stage by stage
-# ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-# Here is a complete resting-state config for NATVIEW. It is an ordinary osl-ephys ``config`` dict --- a list of single-key dicts under ``'preproc'`` --- mixing built-in osl-ephys/MNE stages (``notch_filter``, ``filter``, ``resample``, ``bad_segments``, ``bad_channels``, ``set_channel_types``, ``set_montage``) with the semp wrappers. Read it top to bottom: it tells the whole story. The comments explain *why* each choice is made and where the NATVIEW-specific values came from.
+# 3.2 Stage 0: initialise the dataset
+# ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+#
+# Add the project and acquisition values derived in Part 2.
 
-target_pth = Path(OUT)
+#%%
+stage('initialize', target_pth=Path(RESULTS_ROOT) / 'checker', tr_interval=TR_INTERVAL, slice_interval=SLICE_INTERVAL, tr_event_key=TR_EVENT_KEY)
+print(dataset['subject'], dataset['tr_interval'], dataset['slice_interval'])
 
+#%%
+# 3.3 Name channels and preserve the embedded montage
+# ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+#
+# Restore ECG/EOG channel types and retain the sensor positions embedded in the
+# EEGLAB file. The positions are required for ICA topographies.
+
+#%%
+stage('set_channel_types', ECG='ecg', EOGL='eog', EOGU='eog')
+montage = dataset['raw'].get_montage()
+if montage is None or not montage.get_positions()['ch_pos']:
+    raise ValueError('NATVIEW input has no embedded sensor montage.')
+print('embedded montage channels:', len(montage.get_positions()['ch_pos']))
+
+#%%
+# 3.4 Create TR epochs, crop scanner volumes, and remove line noise
+# ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+#
+# Use the fixed order ``create_TR_epoch -> crop_TR -> notch_filter``. Epochs are
+# created from the complete trigger sequence before the recording boundaries
+# change. ``preserve_epochs=True`` then retains the valid pre-created epochs
+# through the crop. Inspect the epoch and trigger counts before continuing.
+
+#%%
+stage('create_TR_epoch')
+expected_tr_samples = round(dataset['tr_interval'] * dataset['raw'].info['sfreq'])
+assert len(dataset['tr_ep'].times) == expected_tr_samples
+print('TR epochs:', len(dataset['tr_ep']), dataset['tr_ep'].get_data().shape)
+print('first TR epoch relative onset (s):', (
+    dataset['tr_ep'].events[0, 0] - dataset['raw'].first_samp
+) / dataset['raw'].info['sfreq'])
+print('last TR epoch relative onset (s):', (
+    dataset['tr_ep'].events[-1, 0] - dataset['raw'].first_samp
+) / dataset['raw'].info['sfreq'])
+
+#%%
+# 3.5 Crop, then notch
+# ^^^^^^^^^^^^^^^^^^^^
+#
+# Retain the scanner-on interval, confirm how many R128 annotations remain, then
+# remove the 60 and 120 Hz line components.
+
+#%%
+stage('crop_TR', preserve_epochs=True)
+print('cropped duration:', dataset['raw'].times[-1])
+cropped_events, cropped_event_id = mne.events_from_annotations(dataset['raw'], verbose='ERROR')
+if 'R128' in cropped_event_id:
+    cropped_events = cropped_events[cropped_events[:, 2] == cropped_event_id['R128']]
+else:
+    cropped_events = np.empty((0, 3), dtype=int)
+print('cropped R128 count:', len(cropped_events))
+
+stage('notch_filter', freqs='60 120')
+psd_plot(
+    dataset['raw'], name='after TR crop and notch filter | PSD', picks='eeg',
+    fmin=0, fmax=125, resolution=0.05, dB=False,
+)
+
+#%%
+# 3.6 Remove the gradient artefact with AAS
+# ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+#
+# ``epoch_aas`` forms a sliding template from 30 TR epochs and subtracts it with
+# ``fit=False``. The removed signal is retained as ``noise_tr_ep`` for QA.
+
+#%%
+stage('epoch_aas', epoch_key='tr_ep', overwrite='new', picks='all', window_length=30, fit=False)
+print('AAS removed:', 'noise_tr_ep' in dataset)
+psd_plot(
+    dataset['raw'], name='after AAS | PSD', picks='eeg',
+    fmin=0, fmax=125, resolution=0.05, dB=False,
+)
+temp_plot(dataset['raw'], channel=PLOT_CHANNEL, name='after AAS | ' + PLOT_CHANNEL)
+
+#%%
+# 3.7 Filter, edge-crop, and resample
+# ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+#
+# Filter only after AAS. Apply the 0.5-125 Hz IIR filter, remove five seconds
+# from each filtered edge, then resample to 250 Hz.
+
+#%%
+stage('filter', l_freq=0.5, h_freq=125, method='iir', iir_params={'order': 5, 'ftype': 'butter'})
+stage('mid_crop', edge=5)
+stage('resample', sfreq=250)
+print('new sfreq:', dataset['raw'].info['sfreq'])
+
+#%%
+# 3.8 Detect bad segments and channels
+# ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+#
+# Mark noisy/flat intervals and channels. Bad-channel interpolation is deferred
+# until after ICA.
+
+#%%
+stage('bad_segments', segment_len=500, picks='eeg', significance_level=0.1, detect_zeros=False)
+stage('bad_segments', segment_len=500, picks='eeg', mode='diff', significance_level=0.1, detect_zeros=False)
+stage('bad_channels', picks='eeg', significance_level=0.1)
+stage('bad_segments', segment_len=2500, picks='eog', detect_zeros=False)
+print('bad channels:', dataset['raw'].info['bads'])
+
+#%%
+# 3.9 One ICA fit, one combined apply
+# ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+#
+# Fit ICA once. ``ica_autoreject(apply=False)`` selects EOG/ECG components
+# without applying them. ``slice_reject`` adds components selected by residual
+# slice-frequency power, then applies the combined exclusion list once.
+
+#%%
+stage('ica_raw', n_components=0.999, picks='eeg', l_freq=1, random_state=42)
+stage('ica_autoreject', eogmeasure='correlation', eogthreshold=0.35, ecgmethod='ctps', ecgthreshold=0.1, apply=False)
+print('ICA exclusions before slice test:', dataset['ica'].exclude)
+stage('slice_reject')   # slice_reject defaults to apply=True
+print('ICA exclusions after slice test:', dataset['ica'].exclude)
+psd_plot(
+    dataset['raw'], name='after ICA and slice rejection | PSD', picks='eeg',
+    fmin=0, fmax=125, resolution=0.05, dB=False,
+)
+temp_plot(
+    dataset['raw'], channel=PLOT_CHANNEL,
+    name='after ICA and slice rejection | ' + PLOT_CHANNEL,
+)
+
+#%%
+# 3.10 Interpolate and re-reference
+# ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+#
+# Only after ICA has removed the selected components do we interpolate bad EEG channels, then apply the average reference directly.
+
+#%%
+stage('interpolate_bads')
+stage('set_eeg_reference', projection=False)
+print('final bad channels:', dataset['raw'].info['bads'])
+psd_final = psd_plot(
+    dataset['raw'], name='final re-referenced output | PSD', picks='eeg',
+    fmin=0, fmax=125, resolution=0.05, dB=False,
+)
+temp_plot(
+    dataset['raw'], channel=PLOT_CHANNEL,
+    name='final re-referenced output | ' + PLOT_CHANNEL,
+)
+
+#%%
+# 3.11 A compact sensor-space validation
+# ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+#
+# A successful run should suppress scanner harmonics without destroying the
+# overall EEG spectrum. Compare the initial ``checker``, cleaned ``checker``,
+# and paired ``checkerout`` spectra on the same 0.05 Hz grid. The correlation
+# and R-squared below compare standardized log-PSD *shape*; they are not
+# sample-wise accuracy measures because the paired recordings are not
+# time-aligned.
+
+#%%
+import matplotlib.pyplot as plt
+
+def mean_log_psd(spectrum, grid):
+    """Interpolate the channel-mean log PSD onto one frequency grid."""
+    power = np.mean(spectrum.get_data(), axis=0)
+    power_db = 10 * np.log10(np.maximum(power, np.finfo(float).tiny))
+    return np.interp(grid, spectrum.freqs, power_db)
+
+grid = np.arange(1.0, 125.0 + 0.025, 0.05)
+curves = {
+    'checker before SEMP': mean_log_psd(psd_checker, grid),
+    'checker after SEMP': mean_log_psd(psd_final, grid),
+    'checkerout reference': mean_log_psd(psd_checkerout, grid),
+}
+
+fig, axes = plt.subplots(1, 2, figsize=(14, 4))
+for ax, upper in zip(axes, (45, 125)):
+    keep = grid <= upper
+    for label, curve in curves.items():
+        ax.plot(grid[keep], curve[keep], label=label)
+    ax.set(xlabel='Frequency (Hz)', ylabel='Mean PSD (dB)', xlim=(1, upper))
+    ax.grid(alpha=0.25)
+axes[0].legend()
+fig.tight_layout()
+
+keep = grid <= 45
+clean_shape = curves['checker after SEMP'][keep]
+reference_shape = curves['checkerout reference'][keep]
+clean_z = (clean_shape - clean_shape.mean()) / clean_shape.std()
+reference_z = (reference_shape - reference_shape.mean()) / reference_shape.std()
+spectral_r = float(np.corrcoef(clean_z, reference_z)[0, 1])
+spectral_r2 = float(1 - np.sum((clean_z - reference_z) ** 2) / np.sum(reference_z ** 2))
+
+slice_ratio_before = float(np.median(psd_band_ratio(
+    psd_checker, band1=[1 / SLICE_INTERVAL - 1, 1 / SLICE_INTERVAL + 1],
+    band2='beta', fn1=np.mean,
+)))
+slice_ratio_after = float(np.median(psd_band_ratio(
+    psd_final, band1=[1 / SLICE_INTERVAL - 1, 1 / SLICE_INTERVAL + 1],
+    band2='beta', fn1=np.mean,
+)))
+print('cleaned vs checkerout log-PSD shape: r={:.3f}, R^2={:.3f}'.format(
+    spectral_r, spectral_r2,
+))
+print('median slice-band / beta ratio: {:.3f} -> {:.3f}'.format(
+    slice_ratio_before, slice_ratio_after,
+))
+
+#%%
+# 3.12 The batch version
+# ^^^^^^^^^^^^^^^^^^^^^^
+#
+# The config below repeats the direct-stage order for every ``checker`` ID.
+# Checkpoints and tracer values provide batch QA. Process ``checkerout`` with a
+# separate ordinary-EEG reference config. For human-reviewed ICA, use the
+# manual-ICA tutorial and defer interpolation/re-referencing until review has
+# been applied.
+
+#%%
+from osl_ephys.preprocessing import run_proc_batch
+
+# This is the same order used above. If you have downloaded more subjects, you can run this for a batch process
+target_pth = Path(RESULTS_ROOT) / 'checker'
 config = {
     'preproc': [
-
-        # -- 4.1  Init, tracer, channel types, montage, notch, TR crop -------
-        {'initialize': {'target_pth': target_pth}},             # Step 3
+        {'initialize': {'target_pth': target_pth}},
         {'init_tracer': {}},
-        # EEGLAB .set carries no channel types: name NATVIEW's ECG/EOG channels.
         {'set_channel_types': {'ECG': 'ecg', 'EOGL': 'eog', 'EOGU': 'eog'}},
-        # standard montage (NATVIEW uses 10-05 names; on_missing ignores ECG/EOG):
-        {'set_montage': {'montage': 'standard_1005', 'on_missing': 'ignore'}},
-        # mains notch -- NATVIEW PowerLineFrequency is 60 Hz (US), so 60 + 120:
-        {'notch_filter': {'freqs': '60 120'}},
-        # trim to whole TR intervals using the R128 volume trigger:
-        {'crop_TR': {}},   # trims to whole TRs; TR + trigger come from dataset (tr_interval / tr_event_key)
-        {'ckpt_report': {'ckpt_name': 'raw', 'focus_range': [0, 10], 'dB': False}},
-
-        # -- 4.2  Gradient artefact removal (AAS) ---------------------------
-        # epoch one window per fMRI volume, then subtract a 30-volume
-        # sliding-average template. create_TR_epoch is the easy variant of
-        # create_epoch: fixed window = one TR (dataset['tr_interval']), trigger
-        # = dataset['tr_event_key'], correct_trig (pearson-align) on by default.
         {'create_TR_epoch': {}},
-        {'epoch_aas': {'epoch_key': 'tr_ep', 'overwrite': 'new',
-                       'picks': 'all', 'window_length': 30, 'fit': False}},
-        {'ckpt_report': {'ckpt_name': 'after_aas_removal',
-                         'key_to_print': 'tr_ep', 'dB': False}},
-
-        # -- 4.3  Band-pass + edge-crop + resample --------------------------
-        # Use an IIR Butterworth, NOT FIR: FIR does not fully attenuate the
-        # huge out-of-band GA residual here. Band-pass before resampling.
-        # NATVIEW samples at 5000 Hz, so 125 Hz is well below Nyquist.
-        {'filter': {'l_freq': 0.5, 'h_freq': 125, 'method': 'iir',
-                    'iir_params': {'order': 5, 'ftype': 'butter'}}},
-        # drop 5 s from each edge to remove filter ring-up before downsampling:
+        {'crop_TR': {'preserve_epochs': True}},
+        {'ckpt_report': {'ckpt_name': 'raw', 'dB': False}},
+        {'notch_filter': {'freqs': '60 120'}},
+        {'epoch_aas': {
+            'epoch_key': 'tr_ep', 'overwrite': 'new', 'picks': 'all',
+            'window_length': 30, 'fit': False,
+        }},
+        {'ckpt_report': {
+            'ckpt_name': 'after_aas_removal', 'key_to_print': 'tr_ep',
+            'dB': False,
+        }},
+        {'filter': {
+            'l_freq': 0.5, 'h_freq': 125, 'method': 'iir',
+            'iir_params': {'order': 5, 'ftype': 'butter'},
+        }},
         {'mid_crop': {'edge': 5}},
         {'resample': {'sfreq': 250}},
         {'ckpt_report': {'ckpt_name': 'after_filt', 'dB': False}},
-
-        # -- 4.4  Automatic bad-segment / bad-channel detection -------------
-        {'bad_segments': {'segment_len': 500, 'picks': 'eeg',
-                          'significance_level': 0.1, 'detect_zeros': False}},
-        {'bad_segments': {'segment_len': 500, 'picks': 'eeg', 'mode': 'diff',
-                          'significance_level': 0.1, 'detect_zeros': False}},
+        {'bad_segments': {
+            'segment_len': 500, 'picks': 'eeg', 'significance_level': 0.1,
+            'detect_zeros': False,
+        }},
+        {'bad_segments': {
+            'segment_len': 500, 'picks': 'eeg', 'mode': 'diff',
+            'significance_level': 0.1, 'detect_zeros': False,
+        }},
         {'bad_channels': {'picks': 'eeg', 'significance_level': 0.1}},
-        {'bad_segments': {'segment_len': 2500, 'picks': 'eog', 'detect_zeros': False}},
-
-        # -- 4.5  General ICA -- one fit, three rejections ----------------
-        # A SINGLE ICA (ica_raw) serves both the pulse/ocular/cardiac cleanup
-        # and the residual slice-artefact cleanup:
-        #   * ica_autoreject marks EOG (correlation, EOGL/EOGU) + ECG (CTPS,
-        #     ECG) components -- apply=False, so it only *marks*.
-        #   * slice_reject reuses that same fitted ICA, adds the components with
-        #     high power at the slice-timing harmonics (~18 Hz + multiples;
-        #     residual because AAS leaves a stationary-template remnant), and
-        #     applies the union once. Reads slice_interval / tr_interval from
-        #     the dataset (set in initialize).
-        # For a manual browser review instead, see "Choosing how to clean the
-        # ICA" below.
-        {'ica_raw': {'n_components': 0.999, 'picks': 'eeg', 'l_freq': 1}},
-        {'ica_autoreject': {'eogmeasure': 'correlation', 'eogthreshold': 0.35,
-                            'ecgmethod': 'ctps', 'ecgthreshold': 0.1, 'apply': False}},
+        {'bad_segments': {
+            'segment_len': 2500, 'picks': 'eog', 'detect_zeros': False,
+        }},
+        {'ica_raw': {
+            'n_components': 0.999, 'picks': 'eeg', 'l_freq': 1,
+            'random_state': 42,
+        }},
+        {'ica_autoreject': {
+            'eogmeasure': 'correlation', 'eogthreshold': 0.35,
+            'ecgmethod': 'ctps', 'ecgthreshold': 0.1, 'apply': False,
+        }},
         {'slice_reject': {}},
         {'ckpt_report': {'ckpt_name': 'after_ica', 'dB': False}},
-
-        # -- 4.6  Final bad channels, interpolation, re-reference ----------
         {'bad_channels': {'picks': 'eeg', 'significance_level': 0.1}},
         {'interpolate_bads': {}},
         {'ckpt_report': {'ckpt_name': 'after_interp', 'dB': False}},
-        {'set_eeg_reference': {'projection': True}},   # NATVIEW recorded ref = FCz
+        {'set_eeg_reference': {'projection': False}},
+        {'cleanup': {'keywords': ['noise_', 'pf']}},
         {'summary': {}},
     ]
 }
 
-#%%
-# Things worth internalising about this config:
-#
-# - **It is just an osl-ephys config.** semp adds vocabulary (new stage names), not new syntax. You can ``write_config`` / ``load_config`` it, override entries by index, and batch it exactly as in the previous tutorials.
-# - **Order matters more than usual.** The gradient artefact must come off (4.2) *before* you filter and resample (4.3): its huge amplitude and sharp edges would otherwise smear across the band during filtering. And ``create_epoch`` must precede ``epoch_aas``, which reads the ``'tr_ep'`` epochs the former stashes in the ``dataset``.
-# - **Why IIR, not FIR (4.3).** For the broad 0.5--125 Hz pass with a large out-of-band GA residual, a 5th-order Butterworth attenuates the stop-band better than the default FIR here. ``mid_crop`` then removes the filter's edge transients before downsampling 5000 -> 250 Hz.
-# - **Why the slice rejection reuses the general ICA (4.5).** AAS assumes a single stationary template per channel; real gradients drift slightly, leaving residual power at the slice harmonics. ``slice_reject`` targets exactly those components --- on the *same* ICA that ``ica_raw`` already fitted, so there is one decomposition and one apply for EOG/ECG + slice together, not a second ICA.
-# - **The BCG step is dataset-dependent.** This config leans on ``slice_reject`` + the general ICA (which picks up the strongest pulse components via the ``ECG`` channel) for pulse residuals. If you want an explicit template for a heartbeat- or pump-locked artefact, add an OBS pass after the GA removal: create the epochs, then run ``epoch_obs`` on them. ``create_He_epoch`` builds one epoch per trigger in ``dataset['he_event_key']`` and **auto-sizes the window** from the trigger spacing (``create_epoch`` with ``mode='auto'``), which is what you want when the period is not a fixed constant like the TR::
-#
-#       {'create_He_epoch': {}},
-#       {'epoch_obs': {'epoch_key': 'he_ep', 'npc': 3, 'remove_mean': True}},
-
-#%%
-# **Choosing how to clean the ICA (4.5).** There are two ways to decide which components to remove, and which you pick changes the tail of the pipeline:
-#
-# - **Automatic** (shown above): ``ica_raw`` fits the decomposition and ``ica_autoreject`` labels EOG components by correlation (against ``EOGL``/``EOGU``) and ECG/BCG components by CTPS (against ``ECG``), then applies the rejection in-batch (``apply=True``). This is the right default for larger studies. If you find it misses artefacts or removes brain components, set ``apply=False`` and inspect the component topographies and time-series before deciding. With ``apply=True`` the cleaning happens inside the batch, so ``interpolate_bads`` and the average re-reference (4.6) can follow directly.
-# - **Manual browser review**: replace the two ``ica_*`` stages with a single ``{'manual_ica': {...}}`` stage. ``manual_ica`` only *fits* the ICA and renders per-subject HTML review pages; it does **not** remove anything during the batch (your keep/delete decisions don't exist yet). You then review in your browser and apply the decisions in a separate step --- and because the components are removed later, ``interpolate_bads`` and the re-reference must move *after* that apply step, not stay in this config. The whole fit/review/apply workflow is the subject of the :doc:`preprocessing_manual-ica` tutorial. Manual review is most worth the effort exactly here, in EEG-fMRI, where residual GA/BCG components are hard to auto-label.
-
-#%%
-# Running the batch and reading the diagnostics
-# ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-# With the config, the pathfinder and ``initialize`` in hand, running is the familiar batch call --- just using semp's ``run_proc_batch``. Build the subject/file lists from the pathfinder, and (optionally) skip recordings already finished or errored so the batch is resumable:
-
-if __name__ == '__main__':
-    subject_list = sorted(pf.ids)                               # e.g. ['11', '21']
-    file_list = [str(pf.id2path(s, 'raw')) for s in subject_list]
-
-    # resumable: skip recordings that already produced a preproc fif or errored
-    finished = {p.parts[-2] for p in target_pth.glob('*/*_preproc-raw.fif')}
-    errored = {p.parts[-1].split('_')[0] for p in target_pth.glob('logs/*.error.log')}
-    pairs = [(s, f) for s, f in zip(subject_list, file_list)
-             if s not in finished and s not in errored]
-    subject_list, file_list = (list(z) for z in zip(*pairs)) if pairs else ([], [])
-
+subject_list = sorted(pf.ids)
+file_list = [str(pf.id2path(file_id, 'checker')) for file_id in subject_list]
+RUN_BATCH = False
+if RUN_BATCH:
     run_proc_batch(
-        config, file_list,
-        subjects=subject_list,
-        outdir=str(target_pth),
-        extra_funcs=[initialize],     # our only project func
-        gen_report=False,             # we use semp's own ckpt/summary diagnostics
-        overwrite=True,
-        # dask_client=True,           # parallelise exactly as in the batch tutorial
+        config, file_list, subjects=subject_list, outdir=str(target_pth),
+        extra_funcs=[initialize], gen_report=True, overwrite=False,
+        random_seed=42,
     )
-
-#%%
-# This writes, per recording, a cleaned ``<id>_preproc-raw.fif`` under ``semp_output/<id>/`` (or, on the manual ICA path, a *fitted-but-uncleaned* preproc fif plus the saved ``<id>_ica.fif`` and the review pages).
-#
-# **Diagnostics.** semp's QA lives in the ``ckpt_report`` / ``init_tracer`` / ``summary`` trio rather than the standard osl-ephys HTML report (hence ``gen_report=False``). Each ``ckpt_report`` you placed in the config dumps, into ``semp_output/ckpt/<subject>/<ckpt_name>/``, the PSDs and example timecourses at that point in the pipeline --- and, where you passed ``key_to_print``, the artefact template and the removed noise for that epoch type. Placing ``ckpt_report`` either side of a stage (as we did around the AAS step) gives a literal before/after picture of what it removed --- for NATVIEW you should see the ~18 Hz slice-harmonic forest in the ``raw`` checkpoint collapse by ``after_ica``. ``init_tracer`` registers scalar metrics (band-power means, kurtosis, and the slice-harmonic ratios we added in ``initialize``) evaluated at each checkpoint, and ``summary`` plots their trajectory across the pipeline. Use these the way you used the summary report in the batch tutorial: to spot the recording whose GA didn't come off cleanly and needs a closer look.
-#
-# .. note::
-#    Parallelise with Dask exactly as in the batch tutorial (``dask_client=True`` + a ``Client``). The semp wrappers are pure functions of the ``dataset``, so they parallelise across recordings without special handling. The one caveat is memory: NATVIEW samples at 5000 Hz and ``epoch_aas`` / ``epoch_obs`` hold the epoched data as tensors, so each worker uses a lot of RAM until the ``resample`` stage --- use fewer workers than for the clean-room MEG of the earlier tutorials.
-
-#%%
-# The manual-ICA variant of the config
-# ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-# Section 4.5 used the *automatic* ICA path. For EEG-fMRI --- where residual gradient and pulse (BCG) components are hard to auto-label from EOG/ECG alone --- a **manual browser review** is often the pass most worth the effort. Taking it changes only the *tail* of the config: replace the three ICA stages of 4.5 (``ica_raw`` + ``ica_autoreject`` + ``slice_reject``) with a single ``manual_ica`` stage. ``manual_ica`` is a registered osl-ephys wrapper (just like the semp stages), so it drops into the same config by name --- no import, no ``extra_funcs``:
-#
-# The catch is *when* the components come off. ``manual_ica`` only **fits** the ICA and renders the per-subject browser review pages; it removes **nothing** during the batch (your keep/delete decisions don't exist yet). So the two clean-data-only stages from 4.6 --- ``interpolate_bads`` and the average re-reference --- must move *out* of this config: they have to run *after* the components are actually removed. The 4.5 + 4.6 block (everything from ``ica_raw`` onward) therefore collapses to just:
-
-manual_ica_tail = [
-    # a final bad-channel pass before fitting (as in 4.6):
-    {'bad_channels': {'picks': 'eeg', 'significance_level': 0.1}},
-    # FIT + render review pages only -- removes nothing in-batch. Because
-    # initialize set slice_interval / tr_interval, manual_ica also renders a
-    # per-component gradient-artefact score to help you spot residual-GA ICs.
-    {'manual_ica': {'n_components': 0.999, 'picks': 'eeg', 'l_freq': 1}},
-    {'ckpt_report': {'ckpt_name': 'after_ica_fit', 'dB': False}},
-    {'summary': {}},
-    # NB: NO interpolate_bads / set_eeg_reference here -- they are deferred to
-    # after osl-ica-apply, where the data is finally component-cleaned.
-]
-
-# the manual-path config = stages 4.1--4.4 unchanged, then the tail above in
-# place of the ICA + final blocks (4.5 + 4.6). ica_raw is the 19th stage, i.e.
-# index 18, so keep everything up to (not including) it:
-config_manual = {'preproc': config['preproc'][:18] + manual_ica_tail}
-
-#%%
-# Run this exactly as the automatic config above (same ``run_proc_batch`` call). Per recording it now writes a *fitted-but-uncleaned* ``<id>_preproc-raw.fif``, the fitted ``<id>_ica.fif`` and the HTML review pages --- but **no** ``<id>_after_ica-raw.fif`` yet. Producing that final cleaned file is a further three steps, done outside this batch:
-#
-# 1. **review** each subject in the browser (``osl-ica-review``), labelling components good / bad / unsure;
-# 2. **apply** the decisions (``osl-ica-apply``), which sets the bad components in ``ica.exclude``, applies the ICA, and writes ``<id>_after_ica-raw.fif``;
-# 3. run the deferred **``interpolate_bads`` + average re-reference** on that cleaned file.
-#
-# The exact commands, the in-browser keyboard shortcuts, the ``label.txt`` / ``bads.txt`` format, and the post-apply interpolation/re-reference snippet are all covered in the :doc:`preprocessing_manual-ica` tutorial --- read it as the direct continuation of this section. Manual review is least optional exactly here, in EEG-fMRI, where automatic component labelling is least reliable.
-
-#%%
-# Concluding remarks
-# ^^^^^^^^^^^^^^^^^^
-# You have taken a real, openly available simultaneous EEG-fMRI dataset from an S3 download to a cleaned, source-ready sensor recording: import the wrapper-injecting ``run_proc_batch``; declare the BIDS files with a pathfinder; *read* the TR (2.1 s), slice timing (38 unique slices, step mode ~0.055 s) --- being careful to collapse multiband duplicates and to treat it as a harmonic *locator*, not an exact period --- the volume trigger (``R128``) and the mains (60 Hz, confirmed from both provenance and the PSD) off the NATVIEW sidecars and data; declare them in ``initialize``; and assemble a config that removes the gradient artefact (``epoch_aas`` + ``slice_reject``) and the pulse artefact (general ICA / optional ``epoch_obs``) using the epoch-average-subtract recipe, all under the same machinery as the rest of osl-ephys.
-#
-# Two natural next steps:
-#
-# - :doc:`preprocessing_manual-ica` --- the fit / review / apply workflow for the manual ICA path of section 4.5: how to label the remaining components in your browser and apply the decisions to produce the final cleaned ``_after_ica-raw.fif``.
-# - **Source reconstruction** --- with clean sensor data and a montage attached, EEG source recon follows the same RHINO coregistration + beamforming path as the source-recon tutorials (NATVIEW ships a T1w under each ``anat/`` folder for the head model), with the parcellation chosen to respect the (lower) rank of EEG-fMRI data after artefact and component removal.

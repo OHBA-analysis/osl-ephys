@@ -119,7 +119,7 @@ def mne_epoch2raw(epoch, raw, ndarray=None, tmin=0, overwrite='new', picks='eeg'
     """
 
     raw = copy.deepcopy(raw)
-    epoch = epoch.pick(picks)
+    epoch = copy.deepcopy(epoch).pick(picks)
     picked_idx = [raw.ch_names.index(ch) for ch in epoch.ch_names]
 
     if len(raw.info['bads']) > 0:
