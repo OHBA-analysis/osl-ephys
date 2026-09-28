@@ -1086,7 +1086,16 @@ def convert2mne_raw(parc_data, raw, parcel_names=None, extra_chans="stim"):
     parc_raw.__dict__["_cropped_samp"] = raw.__dict__["_cropped_samp"]
 
     # Copy annotations from raw
-    parc_raw.set_annotations(raw._annotations)
+    annotations = raw.annotations.copy()
+    if annotations.orig_time is None:
+        # set_annotations expects onsets relative to the data start when
+        # orig_time is None, and will add parc_raw.first_time itself
+        annotations.onset -= raw.first_time
+    for i, names in enumerate(annotations.ch_names):
+        if not set(names).issubset(new_raw.ch_names):
+            annotations.ch_names[i] = ()
+    parc_raw.set_annotations(annotations)
+    
 
     # Add extra channels
     if "stim" not in raw:
