@@ -1092,7 +1092,7 @@ def convert2mne_raw(parc_data, raw, parcel_names=None, extra_chans="stim"):
         # orig_time is None, and will add parc_raw.first_time itself
         annotations.onset -= raw.first_time
     for i, names in enumerate(annotations.ch_names):
-        if not set(names).issubset(new_raw.ch_names):
+        if not set(names).issubset(parc_raw.ch_names):
             annotations.ch_names[i] = ()
     parc_raw.set_annotations(annotations)
     
