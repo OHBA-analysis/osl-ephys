@@ -32,9 +32,16 @@ def _write_review_html(n_components, subject, save_dir,
     first_img  = f'ic_{0:03d}.svg' if n_components > 0 else ''
     first_zoom = f'zoomed/ic_{0:03d}_w{0:02d}.svg' if n_components > 0 and n_zoom > 0 else ''
     fset       = set(flagged_ics) if flagged_ics is not None else set()
-    flag_list  = json.dumps([i in fset for i in range(n_components)])
     if scores_list is None:
         scores_list = [{'eog': []} for _ in range(n_components)]
+    # The badge and score colours must agree even if a caller supplies an
+    # incomplete flagged_ics set. A GA score only flags the IC when both
+    # gates pass; an isolated red L or G value is not enough.
+    for i, score in enumerate(scores_list):
+        if (score.get('ecg_flag') or score.get('ga_flag') or
+                any(e.get('flag') for e in score.get('eog', []))):
+            fset.add(i)
+    flag_list = json.dumps([i in fset for i in range(n_components)])
     scores_json = json.dumps(scores_list)
     supp_json   = json.dumps([
         {'label': d, 'file': s} for d, s in (supp_chs or [])

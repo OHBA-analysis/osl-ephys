@@ -25,7 +25,15 @@ DEFAULT_USERARGS = {
     'eog_ch':        None,
     'ecg_threshold': 0.1,
     'eog_threshold': 3.0,
-    'ga_threshold':  4.0,
+    # Gate 1: slice-harmonic peak / median local shoulder PSD.
+    'ga_local_threshold': 8.0,
+    # Gate 2: slice-harmonic peak / strongest other 5-45 Hz peak.
+    'ga_dominance_threshold': 1.0,
+    'ga_fmin': 1.0,
+    'ga_fmax': 45.0,
+    'ga_dominance_fmin': 5.0,
+    'ga_peak_window': 1.0,
+    'ga_base_window': 5.0,
 
     # ── plotting ───────────────────────────────────────────────────────────
     'latex_mode':     False,

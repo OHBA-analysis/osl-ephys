@@ -1,4 +1,5 @@
 import copy
+import warnings
 
 import numpy as np
 import mne
@@ -12,6 +13,14 @@ from ..utils import (
 
 
 def epoch_aas(dataset, userargs):
+    """Subtract a rolling TR template using one window or ``(short, long)``.
+
+    With the default ``pre_pad=0.5``, the long template is used wherever its
+    window can be centered on the target TR. The short template is used at the
+    remaining recording edges; only its first/last ``(short - 1) // 2`` TRs
+    then lack a centered window when both lengths are odd. A different
+    ``pre_pad`` shifts both windows away from this default alignment.
+    """
     userargs = proc_userargs(userargs, {
         'epoch_key': 'tr_ep',
         'window_length': 30,   # fastr defaults to 10 -- cleaner, but would notch the volume harmonics for volume trigger
@@ -22,6 +31,29 @@ def epoch_aas(dataset, userargs):
     })
     epoch_key = userargs['epoch_key']
     window_length = userargs['window_length']
+    if isinstance(window_length, (tuple, list)):
+        if len(window_length) != 2:
+            raise ValueError("window_length must be an integer or (short, long).")
+        short_length, long_length = window_length
+        lengths = (short_length, long_length)
+    else:
+        lengths = (window_length,)
+
+    if any(isinstance(length, (bool, np.bool_)) or
+           not isinstance(length, (int, np.integer)) or length < 1
+           for length in lengths):
+        raise ValueError("window_length values must be positive integers.")
+    lengths = tuple(int(length) for length in lengths)
+    if len(lengths) == 2 and lengths[0] >= lengths[1]:
+        raise ValueError("window_length must be ordered as (short, long).")
+    if any(length % 2 == 0 for length in lengths):
+        warnings.warn(
+            "AAS is empirically found to perform sub-optimally when the target "
+            "TR is not centered in the window. An even window_length makes "
+            "exact centering impossible.",
+            UserWarning,
+            stacklevel=2,
+        )
     require_keys(dataset, epoch_key, 'epoch_aas')
     picks = resolve_channel_names(
         dataset[epoch_key].info, userargs['picks']
@@ -29,23 +61,46 @@ def epoch_aas(dataset, userargs):
     overwrite = userargs['overwrite']
     fit = userargs['fit']
     pre_pad = userargs['pre_pad']
+    if not 0 <= pre_pad <= 1:
+        raise ValueError("pre_pad must be between 0 and 1.")
 
     orig_data = np.asarray(dataset[epoch_key].get_data(picks=picks))  # 29+#win, #ch, len(ep)
+    n_epochs = len(orig_data)
+    long_length = lengths[-1]
+    if long_length > n_epochs:
+        raise ValueError(
+            "window_length {} exceeds the {} available epochs.".format(
+                long_length, n_epochs
+            )
+        )
     # sliding window over epochs (np equivalent of torch's unfold(0, w, 1)):
     # appends the window axis as the last dim -> #win, #ch, len(ep), len(win)=#ep
     spurious_data = np.lib.stride_tricks.sliding_window_view(
-        orig_data, window_length, axis=0)
+        orig_data, long_length, axis=0)
 
     all_pcs = np.mean(spurious_data, axis=-1)[..., None]  # #win, #ch, len(ep), 1
 
-    pre_padding = int(pre_pad * (window_length-1))
-    post_padding = window_length - pre_padding - 1
+    pre_padding = int(pre_pad * (long_length-1))
+    post_padding = long_length - pre_padding - 1
 
     # pad the template ends by repeating the first/last window. np.repeat with
     # count 0 gives an empty array, so a zero-width side just drops out.
     pre = np.repeat(all_pcs[0:1], pre_padding, axis=0)
     post = np.repeat(all_pcs[-1:], post_padding, axis=0)
     all_pcs = np.concatenate([pre, all_pcs, post], axis=0)
+
+    if len(lengths) == 2:
+        short_length = lengths[0]
+        short_pre = int(pre_pad * (short_length - 1))
+        # Only the long-window edge epochs need the short template. Compute
+        # those means directly so we do not allocate a second full-size
+        # template array for a long, high-sampling-rate EEG recording.
+        edge_indices = list(range(pre_padding)) + list(
+            range(n_epochs - post_padding, n_epochs)
+        )
+        for index in edge_indices:
+            start = min(max(index - short_pre, 0), n_epochs - short_length)
+            all_pcs[index, ..., 0] = orig_data[start:start + short_length].mean(axis=0)
 
     if fit:
         # Least-squares fit of the single template's amplitude per epoch/channel.

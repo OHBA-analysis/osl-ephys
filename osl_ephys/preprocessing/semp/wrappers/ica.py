@@ -38,13 +38,16 @@ The auto path reuses the single ``ica_raw`` fit (no second ICA); the manual path
 round-trips through disk so a human can review between the fit and the apply.
 """
 import numpy as np
-import mne
 from osl_ephys.utils.logger import log_or_print
 
 from osl_ephys.preprocessing.manual_ica import manual_ica   # re-export; keeps semp configs working
+from osl_ephys.preprocessing.manual_ica.helpers import (
+    _compute_slice_contribution_scores,
+    _compute_slice_ga_scores,
+    _good_mask,
+)
 
 from osl_ephys.preprocessing.semp.utils import proc_userargs, require_keys
-from osl_ephys.preprocessing.semp.metric import mean_psd_in_band
 
 __all__ = ['slice_reject', 'manual_ica']
 
@@ -53,11 +56,17 @@ def slice_reject(dataset, userargs):
     """Reject the ICA components carrying the residual slice-timing artefact.
 
     **Reuses the ICA already fitted by** ``ica_raw`` (in ``dataset['ica']``)
-    rather than fitting a second one. For each component it scores the power at
-    the slice-timing harmonics (``1/slice_interval`` and its multiples) against a
-    local baseline band, and adds the components whose ratio exceeds
-    ``noise2base_threshold`` to ``ica.exclude`` (a *union* with whatever
-    ``ica_autoreject`` already marked as EOG/ECG). With ``apply=True`` (default)
+    rather than fitting a second one. For each component and each slice-timing
+    harmonic (``1/slice_interval`` and multiples), it scores the largest PSD
+    bin against both its local spectral shoulders and the strongest
+    non-harmonic 5-45 Hz peak. The same harmonic must exceed both thresholds.
+    An optional contribution gate can additionally rescue a component which
+    accounts for a large fraction of the still-unhandled sensor-level
+    harmonic excess despite being spectrally mixed with other activity.
+    It adds those components to
+    ``ica.exclude`` (a *union*
+    with whatever ``ica_autoreject`` already marked as EOG/ECG). With
+    ``apply=True`` (default)
     it then applies the ICA once, removing the EOG/ECG **and** slice components
     together.
 
@@ -71,70 +80,119 @@ def slice_reject(dataset, userargs):
 
     Needs ``dataset['slice_interval']`` and ``dataset['tr_interval']`` (set by
     semp's ``initialize``). A per-recording override may be passed via
-    ``dataset['slice_reject_n2b_threshold']`` (the old ``slice_ica_n2b_threshold``
-    key is still honoured).
+    ``dataset['slice_reject_local_threshold']`` and
+    ``dataset['slice_reject_dominance_threshold']``.
     """
     default_args = {
-        'noise2base_threshold': 5.0,
-        'noise_window': 0.5,
+        'local_threshold': 8.0,
+        'dominance_threshold': 1.0,
+        'fmin': 1.0,
+        'fmax': 45.0,
+        'dominance_fmin': 5.0,
+        'peak_window': 1.0,
         'base_window': 5.0,
-        'epoch_frange': [1, None],
+        'contribution_gate': False,
+        'contribution_local_threshold': 4.0,
+        'contribution_fraction_threshold': 0.30,
         'apply': True,
     }
     userargs = proc_userargs(userargs, default_args)
 
     require_keys(dataset, ['ica', 'slice_interval', 'tr_interval'], 'slice_reject')
 
-    noise2base_threshold = userargs['noise2base_threshold']
-    noise_window = userargs['noise_window']
+    local_threshold = userargs['local_threshold']
+    dominance_threshold = userargs['dominance_threshold']
+    peak_window = userargs['peak_window']
     base_window = userargs['base_window']
-    epoch_frange = userargs['epoch_frange']
 
-    # per-recording override from initialize() (new key preferred, old honoured)
-    for key in ('slice_reject_n2b_threshold', 'slice_ica_n2b_threshold'):
-        if key in dataset:
-            noise2base_threshold = dataset[key]
-            log_or_print(f"slice_reject: noise2base_threshold={noise2base_threshold} "
-                         f"from dataset[{key!r}]")
-            break
+    if 'slice_reject_local_threshold' in dataset:
+        local_threshold = dataset['slice_reject_local_threshold']
+        log_or_print(
+            'slice_reject: local_threshold='
+            f'{local_threshold} from '
+            "dataset['slice_reject_local_threshold']"
+        )
+    if 'slice_reject_dominance_threshold' in dataset:
+        dominance_threshold = dataset['slice_reject_dominance_threshold']
+        log_or_print(
+            'slice_reject: dominance_threshold='
+            f'{dominance_threshold} from '
+            "dataset['slice_reject_dominance_threshold']"
+        )
 
-    assert base_window > noise_window, 'base_window should be greater than noise_window.'
-
-    slice_freq = 1 / dataset['slice_interval']
-    # tr_freq sets the *width* of the noise/base bands around each slice
-    # harmonic (noise_window * tr_freq / 2 Hz): the gradient artefact's
-    # sidebands sit at multiples of the volume (TR) frequency, so the band that
-    # should capture a harmonic's peak scales with 1/TR. This is why slice_reject
-    # needs tr_interval. (To decouple, express noise_window/base_window in Hz.)
-    tr_freq    = 1 / dataset['tr_interval']
+    if base_window <= peak_window or peak_window <= 0:
+        raise ValueError('base_window must be greater than peak_window > 0.')
 
     ica = dataset['ica']
-    data = ica.get_sources(dataset['raw'])._data
-    psds, freqs = mne.time_frequency.psd_array_welch(
+    data = ica.get_sources(dataset['raw']).get_data()
+    scores = _compute_slice_ga_scores(
         data,
         sfreq=dataset['raw'].info['sfreq'],
-        fmin=epoch_frange[0],
-        fmax=epoch_frange[1] if epoch_frange[1] is not None else dataset['raw'].info['sfreq']/ 2,
-        n_fft=int(round(dataset['raw'].info['sfreq'] * 20)),
+        slice_interval=dataset['slice_interval'],
+        tr_interval=dataset['tr_interval'],
+        good_mask=_good_mask(dataset['raw']),
+        fmin=userargs['fmin'],
+        fmax=userargs['fmax'],
+        dominance_fmin=userargs['dominance_fmin'],
+        peak_window=peak_window,
+        base_window=base_window,
+        local_threshold=local_threshold,
+        dominance_threshold=dominance_threshold,
     )
+    dataset['slice_reject_scores'] = scores
 
-    eps = 1e-10
-    harmonics = np.arange(slice_freq, freqs.max(), slice_freq)
-    slice_ics = []
-    for ic in range(data.shape[0]):
-        psd_row = psds[ic]
-        for harmonic in harmonics:
-            noise = mean_psd_in_band(psd_row, freqs, harmonic, noise_window * tr_freq / 2)
-            base  = mean_psd_in_band(psd_row, freqs, harmonic, base_window  * tr_freq / 2)
-            base = (base * base_window - noise * noise_window) / (base_window - noise_window)
-            if (noise / (base + eps)) > noise2base_threshold:
-                slice_ics.append(ic)
-                break
+    local_scores = scores['peak_to_local']
+    dominance_scores = scores['peak_to_elsewhere']
+    slice_ics = [
+        int(ic) for ic in np.flatnonzero(
+            (local_scores > local_threshold)
+            & (dominance_scores > dominance_threshold)
+        )
+    ]
+
+    contribution_ics = []
+    if userargs['contribution_gate']:
+        already_excluded = sorted(set(ica.exclude) | set(slice_ics))
+        contribution = _compute_slice_contribution_scores(
+            scores,
+            ica.get_components(),
+            excluded=already_excluded,
+            local_threshold=userargs['contribution_local_threshold'],
+            fraction_threshold=userargs['contribution_fraction_threshold'],
+        )
+        contribution_ics = [
+            int(ic) for ic in np.flatnonzero(contribution['passes'])
+        ]
+        scores['contribution_fraction'] = contribution['fraction']
+        scores['contribution_local'] = contribution['local']
+        scores['contribution_harmonic_hz'] = contribution['harmonic_hz']
+        scores['contribution_passes'] = contribution['passes']
+        contribution_details = [
+            f'{ic} (harmonic={contribution["harmonic_hz"][ic]:.3f} Hz, '
+            f'local={contribution["local"][ic]:.2f}, '
+            f'fraction={contribution["fraction"][ic]:.3f})'
+            for ic in contribution_ics
+        ]
+        log_or_print(
+            'slice_reject: contribution-gate rescue '
+            f'{contribution_details}'
+        )
 
     # union with whatever ica_autoreject already marked (EOG/ECG)
-    ica.exclude = sorted(set(ica.exclude) | set(slice_ics))
-    log_or_print(f"slice_reject: {len(slice_ics)} slice-harmonic IC(s) {slice_ics}; "
-                 f"ica.exclude now {ica.exclude}")
+    ica.exclude = sorted(
+        set(ica.exclude) | set(slice_ics) | set(contribution_ics)
+    )
+    scored_ics = [
+        f'{ic} (harmonic={scores["harmonic_hz"][ic]:.3f} Hz, '
+        f'local={local_scores[ic]:.2f}, '
+        f'dominance={dominance_scores[ic]:.2f})'
+        for ic in slice_ics
+    ]
+    log_or_print(
+        'slice_reject: '
+        f'{len(slice_ics)} slice-harmonic IC(s), two-gate scores '
+        f'{scored_ics}; ica.exclude now {ica.exclude}'
+    )
 
     if userargs['apply']:
         dataset['raw'] = ica.apply(dataset['raw'].copy())

@@ -245,6 +245,9 @@ def ckpt_report(dataset, userargs):
         'log_tracer': True,
         'psd_figsize': (10, 3),
         'psd_picks': 'eeg',  # display only; PC alignment uses picks_<key>
+        # Keeping a full Raw copy enables temporal difference plots at the
+        # next checkpoint, but can cost tens of GiB for long 5 kHz cohorts.
+        'store_raw_for_diff': True,
     }
     userargs = proc_userargs(userargs, default_args)
     require_keys(dataset, ['subject', 'target_pth'], 'ckpt_report')
@@ -291,8 +294,11 @@ def ckpt_report(dataset, userargs):
             )
         _print_noise(dataset, userargs, subject, artifact_channels, fs)
 
-    ### Store the current raw data for diff comparison in the next checkpoint
-    dataset['last_ckpt_raw'] = copy.deepcopy(dataset['raw'])
+    ### Store the current raw data for diff comparison in the next checkpoint.
+    if userargs['store_raw_for_diff']:
+        dataset['last_ckpt_raw'] = copy.deepcopy(dataset['raw'])
+    else:
+        dataset.pop('last_ckpt_raw', None)
 
     ### Log tracer metrics if requested
     if userargs['log_tracer']:

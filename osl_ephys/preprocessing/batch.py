@@ -842,17 +842,20 @@ def run_proc_chain(
     else:
         set_random_seed(random_seed)
     
+    # Load config before the existing-output check so skipped and processed
+    # files return the same type when group processing is enabled.
+    if not isinstance(config, dict):
+        config = load_config(config)
+
     # Write preprocessed data to output directory
     if outdir is not None:
         # Check for existing outputs - should be a .fif at least
         fifout = outbase.format(run_id=run_id, ftype=ftype, fext='fif')
         if os.path.exists(fifout) and (overwrite is False):
             logger.critical('Skipping preprocessing - existing output detected')
+            if config.get('group') is not None:
+                return False, None
             return False
-
-    # Load config
-    if not isinstance(config, dict):
-        config = load_config(config)
 
     # MAIN BLOCK - Run the preproc chain and catch any exceptions
     try:
@@ -953,7 +956,7 @@ def run_proc_chain(
             # variable type
             return {}
         else:
-            if 'group' in config:
+            if config.get('group') is not None:
                 return False, None
             return False
 
@@ -966,7 +969,7 @@ def run_proc_chain(
     if ret_dataset:
         return dataset
     else:
-        if 'group' in config:
+        if config.get('group') is not None:
             return True, outnames
         return True
 

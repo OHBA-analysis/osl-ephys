@@ -119,6 +119,30 @@ class TestPreprocessingBatch(unittest.TestCase):
 
         assert(np.all(goods == np.array([1, 0, 1])))
 
+    def test_batch_mixes_existing_and_new_outputs(self):
+        """Skipped and processed files must have the same return type."""
+        from ..preprocessing import run_proc_batch
+
+        cfg = """
+        meta:
+          event_codes:
+        preproc:
+          - bad_channels:   {picks: 'grad'}
+          - bad_segments:   {segment_len: 800, picks: 'grad'}
+        """
+
+        with tempfile.TemporaryDirectory() as outdir:
+            first = run_proc_batch(cfg, [self.infiles[0]], outdir=outdir)
+            assert(np.all(first == np.array([1])))
+
+            # The first output is skipped, while the second is newly made.
+            mixed = run_proc_batch(
+                cfg,
+                [self.infiles[0], self.infiles[2]],
+                outdir=outdir,
+            )
+            assert(np.all(mixed == np.array([0, 1])))
+
 
     def test_dask_batch(self):
         from ..preprocessing import run_proc_batch

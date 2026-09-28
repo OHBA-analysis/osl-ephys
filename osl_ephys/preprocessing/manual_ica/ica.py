@@ -16,7 +16,7 @@ from .config  import DEFAULT_USERARGS
 from .helpers import (
     _good_mask,
     _pick_supp_channels,
-    _compute_slice_ratios,
+    _compute_slice_ga_scores,
     _build_scores_list,
     _resolve_subject_and_outdir,
 )
@@ -50,11 +50,13 @@ def manual_ica(dataset, userargs):
       ``slice_interval`` : float (seconds, EEG-fMRI only)
       ``tr_interval``    : float (seconds, EEG-fMRI only)
           Together these enable an *additional* per-IC residual gradient-
-          artefact (GA) score: the ratio of PSD power at slice harmonics
-          (1/slice_interval and multiples) over a wider baseline window.
+          artefact (GA) score: a PSD peak at a slice harmonic
+          (1/slice_interval and multiples) relative to its local median and
+          the strongest non-harmonic peak. One harmonic must pass both
+          thresholds to trigger the GA review flag.
           Only useful for EEG-fMRI data --- if either key is absent the GA
-          score is silently skipped (no ``GA: x.xx / 4`` in the scores
-          bar; the ``ga_threshold`` userarg has no effect).
+          score is silently skipped (no ``GA L/G`` in the scores
+          bar; the GA threshold userargs have no effect).
 
     Outputs written into ``dataset``:
       ``ica`` : ``mne.preprocessing.ICA``  --- the fitted decomposition.
@@ -71,7 +73,8 @@ def manual_ica(dataset, userargs):
                                                                (auto-pick from
                                                                ``raw.info`` if
                                                                not given).
-      ecg_threshold, eog_threshold, ga_threshold           --- auto-flag thresholds.
+      ecg_threshold, eog_threshold                         --- physiological thresholds.
+      ga_local_threshold, ga_dominance_threshold           --- two-gate GA thresholds.
       seg_len, spec_type, spec_freq_max,
         psd_resolution, zoom_window, latex_mode            --- plotting knobs.
       outdir                                               --- IC review root
@@ -208,29 +211,42 @@ def manual_ica(dataset, userargs):
 
     ecg_threshold = userargs['ecg_threshold']
     eog_threshold = userargs['eog_threshold']
-    ga_threshold  = userargs['ga_threshold']
+    ga_local_threshold = userargs['ga_local_threshold']
+    ga_dominance_threshold = userargs['ga_dominance_threshold']
 
-    # -- residual gradient-artefact (GA) ratio --- EEG-fMRI only ---------
+    # -- residual gradient-artefact (GA) peak/base ratio --- EEG-fMRI only -
     # Only computed when the caller has placed slice + TR timing into
     # `dataset` (typically by an upstream extra_func that knows the
     # acquisition is EEG-fMRI). Without these the GA score is silently
     # omitted from the per-IC scores bar in the HTML --- intentional, so
-    # non-EEG-fMRI users don't see a bogus "GA: x.xx / 4" line. The info
+    # non-EEG-fMRI users don't see a bogus GA score. The info
     # log below tells EEG-fMRI users that they're missing the feature so
     # they can wire `dataset['slice_interval']` / `dataset['tr_interval']`
     # in their pipeline.
-    slice_ratios = None
+    slice_scores = None
     if 'slice_interval' in dataset and 'tr_interval' in dataset:
         try:
-            slice_ratios = _compute_slice_ratios(
+            slice_scores = _compute_slice_ga_scores(
                 src_data, sfreq,
                 dataset['slice_interval'], dataset['tr_interval'],
                 good_mask=good_mask,
+                fmin=userargs['ga_fmin'],
+                fmax=userargs['ga_fmax'],
+                dominance_fmin=userargs['ga_dominance_fmin'],
+                peak_window=userargs['ga_peak_window'],
+                base_window=userargs['ga_base_window'],
+                local_threshold=ga_local_threshold,
+                dominance_threshold=ga_dominance_threshold,
             )
-            log_or_print(f'[manual_ica] residual GA ratios computed (max={slice_ratios.max():.2f})')
+            log_or_print(
+                '[manual_ica] residual GA scores computed '
+                f"(max local={slice_scores['peak_to_local'].max():.2f}, "
+                'max dominance='
+                f"{slice_scores['peak_to_elsewhere'].max():.2f})"
+            )
         except Exception as e:
             log_or_print(f'[manual_ica] residual GA ratios failed: {e}')
-            slice_ratios = None
+            slice_scores = None
     else:
         log_or_print(
             "[manual_ica] residual GA scoring skipped --- not in dataset. "
@@ -248,9 +264,12 @@ def manual_ica(dataset, userargs):
     for _ch, _sc in (eog_scores_list or []):
         flagged_ics |= {i for i in range(ica.n_components_)
                         if abs(float(_sc[i])) > eog_threshold}
-    if slice_ratios is not None:
-        flagged_ics |= {i for i in range(ica.n_components_)
-                        if float(slice_ratios[i]) > ga_threshold}
+    if slice_scores is not None:
+        flagged_ics |= {
+            i for i in range(ica.n_components_)
+            if slice_scores['peak_to_local'][i] > ga_local_threshold
+            and slice_scores['peak_to_elsewhere'][i] > ga_dominance_threshold
+        }
 
     zoom_window = userargs['zoom_window']
     n_zoom = max(1, math.ceil((src_data.shape[1] / sfreq) / zoom_window))
@@ -342,7 +361,9 @@ def manual_ica(dataset, userargs):
     scores_list = _build_scores_list(
         ica.n_components_, ecg_scores, ecg_idx_auto, ecg_threshold,
         eog_scores_list, eog_idx_auto, eog_threshold,
-        slice_ratios=slice_ratios, ga_threshold=ga_threshold,
+        slice_scores=slice_scores,
+        ga_local_threshold=ga_local_threshold,
+        ga_dominance_threshold=ga_dominance_threshold,
     )
     html_path = _write_review_html(
         ica.n_components_, subject, ica_fdr,

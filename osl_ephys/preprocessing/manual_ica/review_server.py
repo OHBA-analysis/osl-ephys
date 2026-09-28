@@ -22,14 +22,23 @@ All other requests are served as static files (same as python -m http.server).
 import argparse
 import http.server
 import os
-import sys
+import tempfile
+import threading
+from functools import partial
 from pathlib import Path
+from urllib.parse import unquote, urlsplit
 
 
 _FILE_FOR_ENDPOINT = {
     'save_label': 'label.txt',
     'save_bads':  'bads.txt',
 }
+
+# label.txt and bads.txt are normally only a few KiB. Keep a generous bound so
+# a malformed or exposed request cannot make the review server allocate an
+# arbitrary body in memory.
+MAX_POST_BYTES = 1024 * 1024
+_WRITE_LOCK = threading.Lock()
 
 
 def _safe_relpath(server_root, requested):
@@ -48,37 +57,107 @@ def _safe_relpath(server_root, requested):
 
 
 class ReviewHandler(http.server.SimpleHTTPRequestHandler):
+    def _send_text(self, status, message):
+        """Send a complete response that proxies can delimit reliably."""
+        body = message.encode('utf-8')
+        self.send_response(status)
+        self.send_header('Content-Type', 'text/plain; charset=utf-8')
+        self.send_header('Content-Length', str(len(body)))
+        self.send_header('Cache-Control', 'no-store')
+        self.end_headers()
+        self.wfile.write(body)
+
     def do_POST(self):
-        endpoint = self.path.rsplit('/', 1)[-1]
+        request_path = unquote(urlsplit(self.path).path)
+        endpoint = request_path.rsplit('/', 1)[-1]
         out_name = _FILE_FOR_ENDPOINT.get(endpoint)
         if out_name is None:
-            self.send_response(405)
-            self.end_headers()
+            self._send_text(405, 'method not allowed')
             return
 
         # Strip the trailing endpoint name --- the rest is the subject dir.
-        rel_dir = os.path.dirname(self.path.lstrip('/'))
-        target_dir = _safe_relpath(os.getcwd(), rel_dir)
+        rel_dir = os.path.dirname(request_path.lstrip('/'))
+        target_dir = _safe_relpath(self.server.review_root, rel_dir)
         if target_dir is None:
-            self.send_response(403)
-            self.end_headers()
-            self.wfile.write(b'forbidden: path escapes server root')
+            self._send_text(403, 'forbidden: path escapes server root')
             print(f'[review] REFUSED escape attempt: {self.path!r}')
             return
+        if not target_dir.is_dir():
+            self._send_text(404, 'review subject directory not found')
+            return
 
-        length = int(self.headers.get('Content-Length', 0))
-        body = self.rfile.read(length).decode('utf-8')
-        target_dir.mkdir(parents=True, exist_ok=True)
+        length_header = self.headers.get('Content-Length')
+        if length_header is None:
+            self._send_text(411, 'Content-Length is required')
+            return
+        try:
+            length = int(length_header)
+        except ValueError:
+            self._send_text(400, 'invalid Content-Length')
+            return
+        if length < 0:
+            self._send_text(400, 'invalid Content-Length')
+            return
+        if length > MAX_POST_BYTES:
+            self.close_connection = True
+            self._send_text(413, 'request body is too large')
+            return
+        try:
+            body = self.rfile.read(length).decode('utf-8')
+        except UnicodeDecodeError:
+            self._send_text(400, 'request body must be UTF-8')
+            return
+
         out_path = target_dir / out_name
-        out_path.write_text(body, encoding='utf-8')
-        self.send_response(200)
-        self.send_header('Content-Type', 'text/plain')
-        self.end_headers()
-        self.wfile.write(b'saved')
+        # Atomic replacement means apply_manual_ica can never observe a
+        # partially-written review, even if autosave and reading overlap.
+        with _WRITE_LOCK:
+            tmp_path = None
+            try:
+                with tempfile.NamedTemporaryFile(
+                    mode='w', encoding='utf-8', dir=target_dir,
+                    prefix='.' + out_name + '.', delete=False,
+                ) as tmp:
+                    tmp.write(body)
+                    tmp.flush()
+                    os.fsync(tmp.fileno())
+                    tmp_path = Path(tmp.name)
+                os.replace(tmp_path, out_path)
+            finally:
+                if tmp_path is not None and tmp_path.exists():
+                    tmp_path.unlink()
+
+        self._send_text(200, 'saved')
         print(f'[review] saved {out_path}')
 
     def log_message(self, fmt, *args):
         print(f'[review] {self.address_string()} {fmt % args}')
+
+
+class ReviewServer(http.server.ThreadingHTTPServer):
+    """Concurrent local server resilient to idle browser/proxy connections."""
+
+    daemon_threads = True
+    allow_reuse_address = True
+    request_queue_size = 64
+
+    def __init__(self, server_address, review_root):
+        self.review_root = Path(review_root).resolve()
+        handler = partial(ReviewHandler, directory=str(self.review_root))
+        super().__init__(server_address, handler)
+
+    def get_request(self):
+        request, address = super().get_request()
+        # An idle VS Code port-forward connection must not retain a worker
+        # forever. This timeout is per blocking socket operation, not a total
+        # transfer deadline.
+        request.settimeout(30)
+        return request, address
+
+
+def create_server(host='127.0.0.1', port=8000, review_root=None):
+    """Create a review server; separated from ``main`` for testing/reuse."""
+    return ReviewServer((host, port), review_root or Path.cwd())
 
 
 def main():
@@ -89,13 +168,18 @@ def main():
                         'Use 0.0.0.0 to expose on the network.')
     args = p.parse_args()
 
-    server = http.server.HTTPServer((args.host, args.port), ReviewHandler)
+    server = create_server(args.host, args.port)
     print(f'ICA review server -> http://{args.host}:{args.port}/')
     if args.host == '0.0.0.0':
         print('[review] WARNING: bound to 0.0.0.0 --- POST endpoints '
               'are reachable from the network.')
     print('Ctrl-C to stop.')
-    server.serve_forever()
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        print('\n[review] stopping')
+    finally:
+        server.server_close()
 
 
 if __name__ == '__main__':

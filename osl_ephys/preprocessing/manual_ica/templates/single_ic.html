@@ -68,9 +68,15 @@
     }
     #save-fail-banner button:hover { background: #fff; }
 
-    #scores-bar { margin-left: auto; display: flex; gap: 20px;
-                  align-items: center; font-size: 14px; font-weight: bold;
-                  font-family: 'Courier New', monospace; }
+    #scores-bar { display: flex; gap: 4px; flex: 0 1 auto; min-width: 0; max-width: 65vw;
+                  align-items: center; font-size: 12px; font-weight: bold;
+                  font-family: 'Courier New', monospace; white-space: nowrap;
+                  overflow-x: auto; border-left: 1px solid #64748b;
+                  padding-left: 10px; }
+    #scores-bar .score-group { display: inline-flex; align-items: center;
+                               gap: 4px; flex: none; }
+    #scores-bar .score-group + .score-group { border-left: 1px solid #94a3b8;
+                                              padding-left: 7px; }
     .sc-ok  { color: #ffffff; }
     .sc-bad { color: #ff5555; font-weight: 900; }
     .sc-na  { color: #6b7280; font-style: italic; font-weight: normal; }
@@ -129,11 +135,18 @@
                 pointer-events: none; }
 
     /* ── bottom bar ── */
-    #bot { background: #0f3460; padding: 8px 16px; display: flex;
-           gap: 24px; align-items: center; font-size: 13px; flex-shrink: 0;
-           color: #cbd5e1; }
-    .kh { display: flex; align-items: center; gap: 6px; }
-    .k  { padding: 2px 9px; border-radius: 4px; font-size: 13px; font-weight: bold; }
+    #bot { background: #0f3460; padding: 6px 10px; display: flex;
+           gap: 10px; align-items: center; font-size: 12px; flex-shrink: 0;
+           color: #cbd5e1; white-space: nowrap; }
+    #shortcuts { display: flex; flex: 1 1 0; min-width: 0; gap: 10px;
+                 align-items: center; overflow-x: auto; scrollbar-width: none; }
+    #shortcuts::-webkit-scrollbar { display: none; }
+    #bot .shortcut-scroll { flex: none; margin: 0; padding: 0 4px;
+                            height: 22px; border: 1px solid #64748b;
+                            border-radius: 3px; background: #16213e;
+                            color: #cbd5e1; font-size: 15px; line-height: 1; }
+    .kh { display: flex; flex: none; align-items: center; gap: 4px; }
+    .k  { padding: 2px 6px; border-radius: 4px; font-size: 12px; font-weight: bold; }
     .kj { background: #1a4a2a; border: 1px solid #52c052; color: #6ee7b7; }
     .kn { background: #5c1a1a; border: 1px solid #e05252; color: #fca5a5; }
     .kk { background: #3a2a1a; border: 1px solid #c09050; color: #fcd28a; }
@@ -224,7 +237,7 @@
 
   <div id="top">
     <div id="ic-id">IC 001 / __N_COMP_03D__</div>
-    <div id="flag-badge" class="ok">within thresholds</div>
+    <div id="flag-badge" class="ok">not auto-flagged</div>
     <div id="dec" class="d-none">—</div>
     <div id="pw"><div id="pu"></div><div id="pc" style="left:0%"></div></div>
     <div id="ptip"></div>
@@ -256,15 +269,19 @@
   </div>
 
   <div id="bot">
-    <div class="kh"><span class="k kj">K</span> Keep</div>
-    <div class="kh"><span class="k kn">⌫</span> Delete</div>
-    <div class="kh"><span class="k kk">J</span> Jury's out (keep but flag)</div>
-    <div class="kh"><span class="k kk">↑</span><span class="k kk">↓</span> Prev / Next IC</div>
-    <div class="kh"><span class="k kk">H</span><span class="k kk">L</span> Prev / Next zoom</div>
-    <div class="kh"><span class="k kn">B</span> Add bad segment</div>
+    <button class="shortcut-scroll" type="button" title="Scroll shortcuts left" aria-label="Scroll shortcuts left" onclick="document.getElementById('shortcuts').scrollBy({left:-180,behavior:'smooth'})">‹</button>
+    <div id="shortcuts">
+    <div class="kh" title="Keep this IC"><span class="k kj">K</span> Keep</div>
+    <div class="kh" title="Reject this IC"><span class="k kn">⌫</span> Reject</div>
+    <div class="kh" title="Unsure: keep this IC but flag it for review"><span class="k kk">J</span> Unsure</div>
+    <div class="kh" title="Previous / next IC"><span class="k kk">↑</span><span class="k kk">↓</span> IC</div>
+    <div class="kh" title="Previous / next zoom window"><span class="k kk">H</span><span class="k kk">L</span> Zoom</div>
+    <div class="kh" title="Add a bad segment"><span class="k kn">B</span> Bad seg</div>
     <a id="view-link" class="kh view-link" href="between_ic.html" title="Switch view (V)">
-      <span class="k kk">V</span> Between ICs
+      <span class="k kk">V</span> Between
     </a>
+    </div>
+    <button class="shortcut-scroll" type="button" title="Scroll shortcuts right" aria-label="Scroll shortcuts right" onclick="document.getElementById('shortcuts').scrollBy({left:180,behavior:'smooth'})">›</button>
     <div id="scores-bar"></div>
   </div>
 
@@ -372,9 +389,12 @@
     const scoresEl   = document.getElementById('scores-bar');
     const doneEl     = document.getElementById('done');
 
-    // ── prefetch (single-IC view only — main + zoom SVGs) ─────────────────
+    // ── bounded prefetch (current IC + immediate neighbors) ───────────────
+    // A full subject can contain ~1,000 SVGs. Fetching all of them eagerly
+    // overloads remote port-forwarding and wastes browser memory.
     const loaded = new Set();
     let prefetching = false;
+    const PREFETCH_RADIUS = 1;
 
     function _missingMain(i)  { return !loaded.has('m:' + i); }
     function _missingZoom(i, w) { return !loaded.has('z:' + i + ',' + w); }
@@ -383,20 +403,13 @@
       for (let w = 0; w < N_ZOOM; w++) {
         if (_missingZoom(cur, w)) return { url: zoomUrl(cur, w), key: 'z:' + cur + ',' + w };
       }
-      for (let off = 1; off < N; off++) {
-        const i = cur + off;
-        if (i >= N) break;
-        if (_missingMain(i)) return { url: imgs[i], key: 'm:' + i };
-        for (let w = 0; w < N_ZOOM; w++) {
-          if (_missingZoom(i, w)) return { url: zoomUrl(i, w), key: 'z:' + i + ',' + w };
-        }
-      }
-      for (let off = 1; off < N; off++) {
-        const i = cur - off;
-        if (i < 0) break;
-        if (_missingMain(i)) return { url: imgs[i], key: 'm:' + i };
-        for (let w = 0; w < N_ZOOM; w++) {
-          if (_missingZoom(i, w)) return { url: zoomUrl(i, w), key: 'z:' + i + ',' + w };
+      for (let off = 1; off <= PREFETCH_RADIUS; off++) {
+        for (const i of [cur + off, cur - off]) {
+          if (i < 0 || i >= N) continue;
+          if (_missingMain(i)) return { url: imgs[i], key: 'm:' + i };
+          if (_missingZoom(i, cur_zoom)) {
+            return { url: zoomUrl(i, cur_zoom), key: 'z:' + i + ',' + cur_zoom };
+          }
         }
       }
       return null;
@@ -415,25 +428,33 @@
     imgEl.addEventListener('load',  () => { loaded.add('m:' + cur); prefetchNext(); });
     zoomEl.addEventListener('load', () => { loaded.add('z:' + cur + ',' + cur_zoom); prefetchNext(); });
 
+    function eogAxis(channel) {
+      // Only abbreviate channels whose vertical/horizontal meaning is known.
+      const name = String(channel).toUpperCase();
+      if (name === 'VEO' || name === 'VEOG') return 'V';
+      if (name === 'HEO' || name === 'HEOG') return 'H';
+      return channel;
+    }
+
     function renderScores() {
       const s = scores[cur] || { eog: [] };
       const parts = [];
       if (s.ecg !== undefined) {
         const cls = s.ecg_flag ? 'sc-bad' : 'sc-ok';
-        const mk  = s.ecg_flag ? '  ★' : '';
-        parts.push(`<span class="${cls}">ECG CTPS: ${s.ecg.toFixed(3)} / ${s.ecg_thr}${mk}</span>`);
-      } else { parts.push('<span class="sc-na">ECG: n/a</span>'); }
+        parts.push(`<span class="score-group ${cls}" title="ECG CTPS: absolute score / threshold">ECG ${Math.abs(s.ecg).toFixed(3)}/${s.ecg_thr}</span>`);
+      } else { parts.push('<span class="score-group sc-na">ECG —</span>'); }
       if (s.eog && s.eog.length) {
+        const eogParts = ['<span class="sc-ok">EOG</span>'];
         for (const e of s.eog) {
           const cls = e.flag ? 'sc-bad' : 'sc-ok';
-          const mk  = e.flag ? '  ★' : '';
-          parts.push(`<span class="${cls}">${e.ch}: ${Math.abs(e.val).toFixed(3)} / ±${e.thr}${mk}</span>`);
+          eogParts.push(`<span class="${cls}" title="${e.ch} EOG: absolute score / threshold">${eogAxis(e.ch)}${Math.abs(e.val).toFixed(3)}/${e.thr}</span>`);
         }
-      } else { parts.push('<span class="sc-na">EOG: n/a</span>'); }
-      if (s.ga !== undefined) {
-        const cls = s.ga_flag ? 'sc-bad' : 'sc-ok';
-        const mk  = s.ga_flag ? '  ★' : '';
-        parts.push(`<span class="${cls}">GA: ${s.ga.toFixed(2)} / ${s.ga_thr}${mk}</span>`);
+        parts.push(`<span class="score-group">${eogParts.join('')}</span>`);
+      } else { parts.push('<span class="score-group sc-na">EOG —</span>'); }
+      if (s.ga_local !== undefined) {
+        const localCls = s.ga_local > s.ga_local_thr ? 'sc-bad' : 'sc-ok';
+        const globalCls = s.ga_dominance > s.ga_dominance_thr ? 'sc-bad' : 'sc-ok';
+        parts.push(`<span class="score-group sc-ok" title="Gradient artifact: L = peak / local shoulder; G = peak / strongest non-harmonic (global) peak. Each value is followed by its threshold.">GA <span class="${localCls}">L${s.ga_local.toFixed(2)}/${s.ga_local_thr}</span> <span class="${globalCls}">G${s.ga_dominance.toFixed(2)}/${s.ga_dominance_thr}</span></span>`);
       }
       scoresEl.innerHTML = parts.join('');
     }
@@ -628,8 +649,18 @@
       requestAnimationFrame(repositionAll);
       writeHash();
       icEl.textContent = 'IC ' + String(cur).padStart(3, '0') + ' / ' + String(N-1).padStart(3, '0');
-      if (flags[cur]) { badgeEl.textContent = '⚠ ECG/EOG/GA flagged'; badgeEl.className = 'flag'; }
-      else            { badgeEl.textContent = 'within thresholds';     badgeEl.className = 'ok';   }
+      if (flags[cur]) {
+        const s = scores[cur] || {};
+        const kinds = [];
+        if (s.ecg_flag) kinds.push('ECG');
+        if ((s.eog || []).some(e => e.flag)) kinds.push('EOG');
+        if (s.ga_flag) kinds.push('GA');
+        badgeEl.textContent = '⚠ ' + (kinds.length ? kinds.join('+') + ' flagged' : 'flagged');
+        badgeEl.className = 'flag';
+      } else {
+        badgeEl.textContent = 'not auto-flagged';
+        badgeEl.className = 'ok';
+      }
       const v = lbl[cur];
       if (v === 'bad')         { decEl.textContent = '✗  REMOVE'; decEl.className = 'dec d-bad'; }
       else if (v === 'good')   { decEl.textContent = '✓  RETAIN'; decEl.className = 'dec d-good'; }
@@ -651,7 +682,7 @@
         pu.appendChild(m);
       }
       cntEl.textContent =
-        nGood + ' keep   ' + nBad + ' del   ' + nUnsure + ' jury   ' + nLeft + ' left';
+        nGood + ' keep   ' + nBad + ' del   ' + nUnsure + ' unsure   ' + nLeft + ' left';
       renderScores();
     }
 

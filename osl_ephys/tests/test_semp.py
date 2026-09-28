@@ -24,6 +24,10 @@ from osl_ephys.preprocessing.semp.wrappers.aas import epoch_aas
 from osl_ephys.preprocessing.semp.wrappers.obs import epoch_obs
 from osl_ephys.preprocessing.semp.wrappers import timer as timer_mod
 from osl_ephys.preprocessing.semp.vis import _amplitude_yticks
+from osl_ephys.preprocessing.manual_ica.helpers import (
+    _compute_slice_contribution_scores,
+    _compute_slice_ga_scores,
+)
 from osl_ephys.preprocessing.semp.utils import (
     ensure_dir, proc_userargs, require_keys, mne_epoch2raw)
 import osl_ephys.preprocessing.semp as semp
@@ -184,16 +188,17 @@ def test_simulated_tr_crop_then_aas_has_no_boundary_overrun():
         d, {"width": 2.1, "jitter": 0.0, "epoch_key": "tr_ep"}
     )
     d = crop_by_epoch(d, {"epoch_key": "tr_ep"})
-    d = epoch_aas(
-        d,
-        {
-            "epoch_key": "tr_ep",
-            "picks": "all",
-            "window_length": 30,
-            "overwrite": "new",
-            "fit": False,
-        },
-    )
+    with pytest.warns(UserWarning, match="even window_length"):
+        d = epoch_aas(
+            d,
+            {
+                "epoch_key": "tr_ep",
+                "picks": "all",
+                "window_length": 30,
+                "overwrite": "new",
+                "fit": False,
+            },
+        )
 
     assert len(d["tr_ep"].times) == 210
     assert d["picks_tr_ep"] == d["raw"].ch_names
@@ -308,6 +313,74 @@ def test_create_TR_epoch_warns_on_forgotten_trigger(capsys):
 
 # ---------------------------------------------------------------- slice_reject -
 
+def test_slice_ga_scores_need_local_peak_and_global_dominance():
+    sfreq = 250.0
+    duration = 120.0
+    times = np.arange(int(sfreq * duration)) / sfreq
+    rng = np.random.RandomState(9)
+    background = rng.randn(len(times))
+    slice_line = 0.4 * np.sin(2 * np.pi * (1 / 0.055) * times)
+    alpha = 2.0 * np.sin(2 * np.pi * 10.0 * times)
+    sources = np.stack([
+        background,
+        background + slice_line,
+        0.05 * background + alpha + 0.1 * slice_line,
+    ])
+
+    scores = _compute_slice_ga_scores(
+        sources, sfreq, slice_interval=0.055, tr_interval=2.1,
+    )
+    tiny_scores = _compute_slice_ga_scores(
+        sources * 1e-8, sfreq, slice_interval=0.055, tr_interval=2.1,
+    )
+
+    local = scores['peak_to_local']
+    dominance = scores['peak_to_elsewhere']
+    selected = (local > 8.0) & (dominance > 1.0)
+    assert selected.tolist() == [False, True, False]
+    assert local[2] > 8.0  # locally sharp, but alpha remains dominant
+    assert dominance[2] < 1.0
+    for key in ('peak_to_local', 'peak_to_elsewhere', 'harmonic_hz'):
+        assert np.allclose(scores[key], tiny_scores[key])
+
+
+def test_slice_contribution_gate_is_scale_invariant_and_ignores_excluded():
+    scores = {
+        'harmonics_hz': np.array([18.0, 36.0]),
+        'local_by_harmonic': np.array([
+            [10.0, 2.0],
+            [6.0, 12.0],
+            [20.0, 20.0],
+        ]),
+        'peak_power_by_harmonic': np.array([
+            [10.0, 2.0],
+            [6.0, 12.0],
+            [100.0, 100.0],
+        ]),
+        'base_power_by_harmonic': np.ones((3, 2)),
+    }
+    maps = np.ones((4, 3))
+    result = _compute_slice_contribution_scores(
+        scores, maps, excluded=[2], local_threshold=4.0,
+        fraction_threshold=0.60,
+    )
+    assert result['passes'].tolist() == [True, True, False]
+
+    # ICA source/map scaling is arbitrary. Scaling one source PSD by c**2 and
+    # its component map by 1/c must not change its contribution fractions.
+    scaled = {key: np.array(value, copy=True) for key, value in scores.items()}
+    scaled['peak_power_by_harmonic'][0] *= 25
+    scaled['base_power_by_harmonic'][0] *= 25
+    scaled_maps = maps.copy()
+    scaled_maps[:, 0] /= 5
+    scaled_result = _compute_slice_contribution_scores(
+        scaled, scaled_maps, excluded=[2], local_threshold=4.0,
+        fraction_threshold=0.60,
+    )
+    assert np.allclose(result['fraction'], scaled_result['fraction'])
+    assert np.array_equal(result['passes'], scaled_result['passes'])
+
+
 def _multichan_raw(n_ch=6, T=20.0, sfreq=100.0):
     raw = mne.io.RawArray(
         np.random.RandomState(2).randn(n_ch, int(T * sfreq)) * 1e-5,
@@ -337,6 +410,43 @@ def test_slice_reject_requires_fitted_ica():
                       "tr_interval": 2.1}, {})
 
 
+def test_slice_reject_contribution_gate_is_opt_in(monkeypatch):
+    from osl_ephys.preprocessing.semp.wrappers import ica as ica_wrapper
+
+    raw = _multichan_raw()
+    fitted = _fit_ica(raw)
+    fitted.exclude = [1]
+    n_components = fitted.n_components_
+    empty_scores = {
+        'peak_to_local': np.zeros(n_components),
+        'peak_to_elsewhere': np.zeros(n_components),
+        'harmonic_hz': np.zeros(n_components),
+    }
+    contribution = {
+        'fraction': np.array([0.1, 0.0, 0.7, 0.2]),
+        'local': np.array([2.0, 0.0, 10.0, 3.0]),
+        'harmonic_hz': np.array([18.0, 0.0, 36.0, 18.0]),
+        'passes': np.array([False, False, True, False]),
+        'fraction_by_harmonic': np.zeros((n_components, 2)),
+    }
+    monkeypatch.setattr(
+        ica_wrapper, '_compute_slice_ga_scores',
+        lambda *args, **kwargs: dict(empty_scores),
+    )
+    monkeypatch.setattr(
+        ica_wrapper, '_compute_slice_contribution_scores',
+        lambda *args, **kwargs: contribution,
+    )
+
+    dataset = {
+        'raw': raw.copy(), 'ica': fitted,
+        'slice_interval': 0.055, 'tr_interval': 2.1,
+    }
+    slice_reject(dataset, {'contribution_gate': True, 'apply': False})
+    assert fitted.exclude == [1, 2]
+    assert dataset['slice_reject_scores']['contribution_passes'][2]
+
+
 # --------------------------------------------------------------------- AAS ----
 
 def test_epoch_aas_removes_a_stationary_template():
@@ -352,13 +462,56 @@ def test_epoch_aas_removes_a_stationary_template():
     ds = {"raw": raw, "tr_interval": TR, "tr_event_key": ["R128"]}
     ds = create_TR_epoch(ds, {"correct_trig": False})
     pre_var = float(np.var(ds["raw"].get_data()))
-    ds = epoch_aas(ds, {"epoch_key": "tr_ep", "picks": "eeg",
-                        "window_length": 6, "fit": False})
+    with pytest.warns(UserWarning, match="even window_length"):
+        ds = epoch_aas(ds, {"epoch_key": "tr_ep", "picks": "eeg",
+                            "window_length": 6, "fit": False})
     post_var = float(np.var(ds["raw"].get_data()))
     # a perfectly repeated per-volume template is almost entirely subtracted;
     # variance collapses by >10x (residual is only the epoch-overlap edges).
     assert post_var < 0.1 * pre_var
     assert ds["picks_tr_ep"] == ["C1", "C2"]
+
+
+def test_epoch_aas_uses_short_window_only_at_long_window_edges():
+    n_epochs, samples = 40, 10
+    values = np.arange(n_epochs, dtype=float) ** 2 * 1e-6
+    raw = mne.io.RawArray(
+        np.repeat(values, samples)[None, :],
+        mne.create_info(["C1"], samples, "eeg"), verbose="ERROR",
+    )
+    raw.set_annotations(mne.Annotations(
+        np.arange(n_epochs, dtype=float), 0.0, ["R128"] * n_epochs,
+    ))
+    ds = create_TR_epoch(
+        {"raw": raw, "tr_interval": 1.0, "tr_event_key": ["R128"]},
+        {"correct_trig": False},
+    )
+    ds = epoch_aas(ds, {"window_length": (9, 29), "fit": False})
+
+    template = ds["pc_tr_ep"][:, 0, 0, 0]
+    expected = []
+    for index in range(n_epochs):
+        length = 9 if index < 14 or index >= n_epochs - 14 else 29
+        start = min(max(index - (length - 1) // 2, 0), n_epochs - length)
+        expected.append(values[start:start + length].mean())
+    np.testing.assert_allclose(template, expected, atol=1e-12)
+    # The first/last four cannot be centered even with the short window.
+    assert template[0] == pytest.approx(values[:9].mean())
+    assert template[-1] == pytest.approx(values[-9:].mean())
+
+
+@pytest.mark.parametrize("window_length", [10, (9, 12)])
+def test_epoch_aas_warns_for_even_window(window_length):
+    ds = create_TR_epoch(_dataset(), {"correct_trig": False})
+    with pytest.warns(UserWarning, match="even window_length"):
+        epoch_aas(ds, {"window_length": window_length})
+
+
+@pytest.mark.parametrize("window_length", [0, (29, 9), (9, 29, 39), (9, 99)])
+def test_epoch_aas_rejects_invalid_window(window_length):
+    ds = create_TR_epoch(_dataset(), {"correct_trig": False})
+    with pytest.raises(ValueError, match="window_length"):
+        epoch_aas(ds, {"window_length": window_length})
 
 
 # -------------------------------------------------------------------- timer ---

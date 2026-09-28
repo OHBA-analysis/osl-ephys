@@ -125,8 +125,12 @@ def apply_one(ica_root, raw_root, subject, overwrite=False, purge_svgs=False):
 
     raw = mne.io.read_raw_fif(raw_path, preload=True, verbose=False)
     if bad_segs:
+        # bads.txt uses seconds since the start of this cropped recording.
+        # MNE annotations use the Raw time origin, which includes first_samp.
+        # Appending the unshifted numbers moves every reviewed interval earlier
+        # by raw.first_time when first_samp is nonzero.
         raw.annotations.append(
-            [s for s, _ in bad_segs],
+            [s + raw.first_time for s, _ in bad_segs],
             [d for _, d in bad_segs],
             ['BAD_manual'] * len(bad_segs),
         )

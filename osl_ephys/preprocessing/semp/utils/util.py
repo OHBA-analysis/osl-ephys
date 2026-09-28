@@ -16,7 +16,7 @@ DATASET_SCHEMA = {
     'subject': "EEG recording id (from pf.path2id) -- names ckpt/output folders",
     'target_pth': "Path root for ckpt/ output (ckpt_report, summary, apply_ica)",
     'tr_interval': "fMRI TR in s (create_TR_epoch window, crop_TR; slice_reject uses 1/TR as its sideband width around each slice harmonic)",
-    'slice_interval': "fMRI slice-timing interval in s (slice_reject harmonics)",
+    'slice_interval': "mean interval between repeating fMRI slice-onset events in s (slice_reject harmonics)",
     'tr_event_key': "annotation label(s) of the volume trigger (crop_TR, create_TR_epoch)",
     'he_event_key': "annotation label(s) of the helium-pump trigger (create_He_epoch)",
     # --- produced by an upstream stage ---
