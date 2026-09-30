@@ -6,6 +6,7 @@ to act on the user's review decisions, import from here instead of
 re-implementing the regex (semp's ``2.ica.py`` previously had its own copy
 that drifted; using the package's parser keeps things in sync).
 """
+import math
 import re
 from pathlib import Path
 
@@ -18,22 +19,24 @@ __all__ = ['parse_label_txt', 'parse_bads_txt', 'LABEL_LINE_RX']
 LABEL_LINE_RX = re.compile(r'^IC(\d+):\s*(bad|good|unsure|unlabeled)\s*$')
 
 
-def parse_label_txt(path):
+def parse_label_txt(path, expected_components=None):
     """Parse a ``label.txt`` written by the review server.
 
     Parameters
     ----------
     path : str | Path
+    expected_components : int | None
+        If given, require exactly one label for every IC index from zero to
+        ``expected_components - 1``.
 
     Returns
     -------
     bad_ics    : list[int]   --- sorted, unique ICs marked ``bad``
     n_unsure   : int         --- count of ICs marked ``unsure`` (kept, not removed)
     n_unlabeled: int         --- count of ICs marked ``unlabeled`` (review unfinished)
-    warnings   : list[str]   --- one entry per unparsable IC-looking line
-                                  (e.g. typo in the state name); empty if clean
+    warnings   : list[str]   --- malformed, duplicate, missing, or extra labels
     """
-    bad, n_unsure, n_unlabeled = [], 0, 0
+    labels = {}
     warnings = []
     with open(path) as f:
         for lineno, raw_line in enumerate(f, 1):
@@ -42,17 +45,27 @@ def parse_label_txt(path):
                 continue
             m = LABEL_LINE_RX.match(line)
             if not m:
-                if line.upper().startswith('IC'):
-                    warnings.append(f'line {lineno}: unparsable {line!r}')
+                warnings.append(f'line {lineno}: unparsable {line!r}')
                 continue
             idx, state = int(m.group(1)), m.group(2)
-            if state == 'bad':
-                bad.append(idx)
-            elif state == 'unsure':
-                n_unsure += 1
-            elif state == 'unlabeled':
-                n_unlabeled += 1
-    return sorted(set(bad)), n_unsure, n_unlabeled, warnings
+            if idx in labels:
+                warnings.append(f'line {lineno}: duplicate IC{idx:03d} label')
+                continue
+            labels[idx] = state
+
+    if expected_components is not None:
+        expected = set(range(expected_components))
+        missing = sorted(expected - labels.keys())
+        extra = sorted(labels.keys() - expected)
+        if missing:
+            warnings.append(f'missing IC labels: {missing}')
+        if extra:
+            warnings.append(f'out-of-range IC labels: {extra}')
+
+    bad = sorted(idx for idx, state in labels.items() if state == 'bad')
+    n_unsure = sum(state == 'unsure' for state in labels.values())
+    n_unlabeled = sum(state == 'unlabeled' for state in labels.values())
+    return bad, n_unsure, n_unlabeled, warnings
 
 
 def parse_bads_txt(path):
@@ -60,27 +73,27 @@ def parse_bads_txt(path):
 
     Returns a list of ``(onset_s, duration_s)`` pairs (recording-relative
     seconds) suitable for appending to ``raw.annotations`` as
-    ``BAD_manual``. Blank lines, ``#`` comments, and lines without two
-    parseable floats are silently skipped --- the file is small and
-    user-edited, so a malformed line is more likely "intentional comment"
-    than "lost data".
+    ``BAD_manual``. Blank lines and ``#`` comments are allowed. Malformed or
+    non-positive intervals raise with their line number rather than silently
+    discarding a reviewed bad segment.
     """
     out = []
     p = Path(path)
     if not p.exists():
         return out
     with open(p) as f:
-        for line in f:
-            line = line.strip()
-            if not line or line.startswith('#'):
+        for lineno, raw_line in enumerate(f, 1):
+            line = raw_line.split('#', 1)[0].strip()
+            if not line:
                 continue
             parts = line.split()
-            if len(parts) < 2:
-                continue
+            if len(parts) != 2:
+                raise ValueError(f'{p}:{lineno}: expected start and end seconds')
             try:
                 start, end = float(parts[0]), float(parts[1])
-            except ValueError:
-                continue
-            if end > start:
-                out.append((start, end - start))
+            except ValueError as exc:
+                raise ValueError(f'{p}:{lineno}: invalid start or end seconds') from exc
+            if not math.isfinite(start) or not math.isfinite(end) or start < 0 or end <= start:
+                raise ValueError(f'{p}:{lineno}: require finite 0 <= start < end')
+            out.append((start, end - start))
     return out

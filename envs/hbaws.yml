@@ -1,4 +1,4 @@
-name: semp
+name: osle
 channels:
   - conda-forge
   - defaults

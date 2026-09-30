@@ -74,6 +74,9 @@ def manual_ica(dataset, userargs):
                                                                ``raw.info`` if
                                                                not given).
       ecg_threshold, eog_threshold                         --- physiological thresholds.
+          ECG uses CTPS with MNE's sampling-rate-dependent 'auto' threshold
+          (0.32 at 250 Hz). EEG-fMRI examples explicitly use 0.1.
+          EOG uses absolute Pearson correlation (default 0.35), not a z-score.
       ga_local_threshold, ga_dominance_threshold           --- two-gate GA thresholds.
       seg_len, spec_type, spec_freq_max,
         psd_resolution, zoom_window, latex_mode            --- plotting knobs.
@@ -98,6 +101,8 @@ def manual_ica(dataset, userargs):
     in ``dataset``).
     """
     userargs = proc_userargs(userargs, DEFAULT_USERARGS)
+    if not 0 <= userargs['eog_threshold'] <= 1:
+        raise ValueError('eog_threshold must be an absolute correlation threshold between 0 and 1.')
 
     if userargs['latex_mode']:
         raise NotImplementedError(
@@ -133,6 +138,11 @@ def manual_ica(dataset, userargs):
     log_or_print(f'[manual_ica] Fitted {ica.n_components_} components')
 
     # -- ECG CTPS ----------------------------------------------------------
+    ecg_threshold = userargs['ecg_threshold']
+    if ecg_threshold == 'auto':
+        # Use the same calculation as MNE's find_bads_ecg(threshold='auto').
+        # Resolve it once so the suggestions, SVG flags and HTML agree.
+        ecg_threshold = float(ica._get_ctps_threshold())
     ecg_scores = None
     ecg_idx_auto = []
     ecg_picks = mne.pick_types(dataset['raw'].info, ecg=True)
@@ -142,7 +152,10 @@ def manual_ica(dataset, userargs):
     ecg_event_times = None  # 1-D times of detected R-peaks, for zoom-row marks
     if ecg_ch is not None:
         try:
-            ecg_idx_auto, ecg_scores = ica.find_bads_ecg(dataset['raw'], ch_name=ecg_ch, method='ctps')
+            ecg_idx_auto, ecg_scores = ica.find_bads_ecg(
+                dataset['raw'], ch_name=ecg_ch, method='ctps',
+                threshold=ecg_threshold,
+            )
             log_or_print(f'[manual_ica] ECG CTPS auto-suggested ICs: {ecg_idx_auto}')
         except Exception as e:
             log_or_print(f'[manual_ica] ECG CTPS failed: {e}')
@@ -169,7 +182,10 @@ def manual_ica(dataset, userargs):
         eog_ch = [dataset['raw'].ch_names[i] for i in eog_picks]
     if eog_ch is not None:
         try:
-            eog_idx_auto, raw_eog_scores = ica.find_bads_eog(dataset['raw'], ch_name=eog_ch)
+            eog_idx_auto, raw_eog_scores = ica.find_bads_eog(
+                dataset['raw'], ch_name=eog_ch, measure='correlation',
+                threshold=userargs['eog_threshold'],
+            )
             if isinstance(raw_eog_scores, list):
                 ch_names = eog_ch if isinstance(eog_ch, list) else [eog_ch]
                 eog_scores_list = list(zip(ch_names, raw_eog_scores))
@@ -209,7 +225,6 @@ def manual_ica(dataset, userargs):
             )
         ecg_event_times = ecg_event_times[keep]
 
-    ecg_threshold = userargs['ecg_threshold']
     eog_threshold = userargs['eog_threshold']
     ga_local_threshold = userargs['ga_local_threshold']
     ga_dominance_threshold = userargs['ga_dominance_threshold']
@@ -260,7 +275,7 @@ def manual_ica(dataset, userargs):
     flagged_ics = set()
     if ecg_scores is not None:
         flagged_ics |= {i for i in range(ica.n_components_)
-                        if abs(float(ecg_scores[i])) > ecg_threshold}
+                        if abs(float(ecg_scores[i])) >= ecg_threshold}
     for _ch, _sc in (eog_scores_list or []):
         flagged_ics |= {i for i in range(ica.n_components_)
                         if abs(float(_sc[i])) > eog_threshold}

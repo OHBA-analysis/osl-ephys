@@ -115,7 +115,7 @@ def test_review_badge_includes_flagged_displayed_score(tmp_path):
 def test_review_scores_omit_ga_without_slice_timing():
     scores = _build_scores_list(
         1, ecg_scores=None, ecg_idx_auto=None, ecg_threshold=0.1,
-        eog_scores_list=[], eog_idx_auto=None, eog_threshold=3.0,
+        eog_scores_list=[], eog_idx_auto=None, eog_threshold=0.35,
         slice_scores=None,
     )
     assert scores == [{'eog': []}]

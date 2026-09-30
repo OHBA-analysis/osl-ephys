@@ -113,7 +113,10 @@ def apply_one(ica_root, raw_root, subject, overwrite=False, purge_svgs=False):
     if out_path.exists() and not overwrite:
         return f'skip --- exists: {out_path.name}'
 
-    bad_ics, n_unsure, n_unlabeled, warnings = parse_label_txt(label_path)
+    ica = mne.preprocessing.read_ica(ica_path, verbose=False)
+    bad_ics, n_unsure, n_unlabeled, warnings = parse_label_txt(
+        label_path, expected_components=ica.n_components_,
+    )
     if warnings:
         return (f'skip --- {len(warnings)} bad lines in label.txt: '
                 + ' | '.join(warnings[:3])
@@ -134,11 +137,6 @@ def apply_one(ica_root, raw_root, subject, overwrite=False, purge_svgs=False):
             [d for _, d in bad_segs],
             ['BAD_manual'] * len(bad_segs),
         )
-    ica = mne.preprocessing.read_ica(ica_path, verbose=False)
-    out_of_range = [i for i in bad_ics if i >= ica.n_components_]
-    if out_of_range:
-        return (f'skip --- label.txt references IC indices >= '
-                f'n_components_={ica.n_components_}: {out_of_range}')
     ica.exclude = list(bad_ics)
     cleaned = ica.apply(raw, verbose=False)
     cleaned.save(out_path, overwrite=overwrite, verbose=False)
@@ -177,6 +175,9 @@ def main():
         if d.is_dir() and (d / 'label.txt').exists()
     )
     print(f'[osl-ica-apply] {len(subjects)} subject(s)')
+    if not subjects:
+        print('[osl-ica-apply] no subjects to process')
+        return 1
 
     n_done = n_skip = 0
     t0 = time.time()
@@ -194,7 +195,8 @@ def main():
             n_skip += 1
     print(f'[osl-ica-apply] {n_done} processed, {n_skip} skipped '
           f'in {time.time() - t0:.1f} s')
+    return 1 if n_skip else 0
 
 
 if __name__ == '__main__':
-    main()
+    sys.exit(main())

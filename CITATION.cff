@@ -1,9 +1,7 @@
-cff-version: 2.4.0
+cff-version: 1.2.0
 message: "If you use this software, please cite the software itself, as well as the paper listed in the preferred-citation field. osl-ephys is based on MNE-Python and the Source Recon module on FSL/FreeSurfer. Please cite these packages appropriately."
 title: "osl-ephys"
-version: 2.4.0
-date-released: "2025-09-28"
-commit: 2201385db8ed1f238b36361b6ea864d342c2293f
+version: "2.5.0.dev1+semp.2"
 doi: 10.5281/zenodo.6875060
 keywords:
   - MEG

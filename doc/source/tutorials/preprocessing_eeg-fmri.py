@@ -14,7 +14,7 @@ This is an OSL-Ephys SEMP tutorial using NATVIEW. We use osl-pathfinder to keep 
 # Install SEMP and download NATVIEW
 # ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 #
-# Start from a new environment, install the ``semp`` branch of `OSL-Ephys <https://github.com/OHBA-analysis/osl-ephys/tree/semp>`_.
+# Start from a new environment and install `OSL-Ephys <https://github.com/OHBA-analysis/osl-ephys>`_ using the repository README. SEMP is included in OSL-Ephys; no separate branch is required.
 #
 # NATVIEW is openly available from ``s3://fcp-indi/data/Projects/NATVIEW_EEGFMRI/``. This tutorial needs only one or two complete subject/session directories. Install the AWS command-line client in a separate Conda environment, so its Python dependencies do not affect SEMP. Choose a local data root and download two example sessions without an AWS account:
 #

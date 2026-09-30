@@ -283,9 +283,10 @@ def _build_scores_list(n_components, ecg_scores, ecg_idx_auto, ecg_threshold,
       eog: [{ch, val, thr, flag}] --- one entry per EOG channel
       ga_local, ga_dominance, thresholds, ga_flag --- two-gate GA score
 
-    Flags compare ``|value| > threshold`` directly (do NOT rely on MNE's
+    Flags compare scores directly with the displayed thresholds: CTPS uses
+    ``>=`` like MNE, and EOG uses ``|value| > threshold`` (do NOT rely on MNE's
     ``find_bads_*`` index lists, which use their own internal thresholds
-    --- e.g. ctps default 0.25 != user's 0.1).
+    --- e.g. CTPS auto is 0.32 at 250 Hz, while EEG-fMRI may use 0.1).
     """
     out = []
     for i in range(n_components):
@@ -294,7 +295,7 @@ def _build_scores_list(n_components, ecg_scores, ecg_idx_auto, ecg_threshold,
             v = float(ecg_scores[i])
             entry['ecg'] = round(v, 4)
             entry['ecg_thr'] = ecg_threshold
-            entry['ecg_flag'] = abs(v) > ecg_threshold
+            entry['ecg_flag'] = abs(v) >= ecg_threshold
         eog_items = []
         for ch_name, ch_scores in (eog_scores_list or []):
             v = float(ch_scores[i])

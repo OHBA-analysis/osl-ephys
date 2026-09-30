@@ -13,7 +13,8 @@ reqs = ['numpy', 'scipy', 'matplotlib', 'mne', 'scikit-learn', 'fslpy',
         'sails==1.7.0', 'tabulate', 'pyyaml', 'neurokit2', 'jinja2',
         'glmtools', 'numba', 'nilearn', 'dask', 'distributed', 'parse',
         'opencv-python', 'panel', 'h5io', 'osl-pathfinder==1.0.0']
-doc_reqs = ['sphinx', 'numpydoc', 'sphinx_gallery', 'pydata-sphinx-theme']
+doc_reqs = ['sphinx', 'numpydoc', 'sphinx_gallery', 'sphinx-autoapi',
+            'pydata-sphinx-theme']
 dev_reqs = ['setuptools', 'pytest', 'pytest-cov', 'coverage', 'flake8']
 
 name = 'osl-ephys'

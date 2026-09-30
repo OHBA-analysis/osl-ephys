@@ -1,14 +1,20 @@
 # -*- coding: utf-8 -*-
 
 """
-Manual ICA review for the NATVIEW SEMP pipeline
-===============================================
+Interactive manual ICA review for EEG preprocessing
+===================================================
 
-This tutorial uses the same NATVIEW ``sub-01/ses-01`` recording, Pathfinder,
-``initialize`` function, and pre-ICA stages as the simultaneous EEG-fMRI
-tutorial. The difference begins at ICA: ``manual_ica`` fits and renders the
-components, but does not apply any exclusions. A user reviews the components
-before a separate command creates the cleaned file.
+``manual_ica`` works after **any OSL-Ephys EEG preprocessing pipeline**; the
+other preprocessing stages below are only a NATVIEW EEG-fMRI example, chosen
+because its noisy recording makes the ICA review useful to demonstrate. This
+tutorial shares the NATVIEW ``sub-01/ses-01`` input and pre-ICA stages with the
+EEG-fMRI tutorial. ``manual_ica`` fits and displays components without
+excluding them; after browser review, a separate command creates the cleaned
+file.
+
+For **ordinary EEG**, as no TR or provided slice timing: the Local/Global
+dominance score of Gradient Artifact (GA L/G) won't appear, while all the
+other information is still available.
 """
 
 #%%
@@ -185,6 +191,11 @@ target_pth = Path(SEMP_TUTORIAL_RESULTS_ROOT) / 'checker_manual'
 ica_review_pth = Path(SEMP_TUTORIAL_RESULTS_ROOT) / 'checker_manual_ica_review'
 target_pth.parent.mkdir(parents=True, exist_ok=True)
 
+# Only ``manual_ica`` is specific to this review workflow. All other stages
+# here are one example of *any OSL-Ephys EEG preprocessing pipeline*: replace
+# the NATVIEW-specific TR/AAS stages and initialize function for your data.
+# Without dataset['tr_interval'] and dataset['slice_interval'], manual_ica
+# omits the EEG-fMRI-only GA L/G score; no timing arguments are required.
 config = {
     'preproc': [
         {'initialize': {'target_pth': target_pth}},
@@ -246,6 +257,8 @@ config = {
             'picks': 'eeg',
             'l_freq': 1.0,
             'seed': 42,
+            'ecg_threshold': 0.1,  # EEG-fMRI; ordinary EEG defaults to 'auto'.
+            'eog_threshold': 0.35,  # Absolute Pearson correlation.
             'psd_resolution': 0.05,
         }},
         # This removes non-signal QA objects before run_proc_batch serializes
