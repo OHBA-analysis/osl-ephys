@@ -25,13 +25,17 @@ If you're using a Windows machine, you will need to install the above in `Ubuntu
 
 Note, if you're using a Windows computer, you will need to do this in the WSL Ubuntu terminal that was used to install FSL (step 1).
 
-4. Install osl-ephys::
+4. Clone OSL-Ephys, create its environment, and install the checkout::
 
-    curl https://raw.githubusercontent.com/OHBA-analysis/osl-ephys/main/envs/osle.yml > osle.yml
-    mamba env create -f osle.yml
-    rm osle.yml
+    git clone https://github.com/OHBA-analysis/osl-ephys.git
+    cd osl-ephys
+    mamba env create -f envs/osle.yml
+    conda activate osle
+    python -m pip install -e .
 
-This will create a conda environment called :code:`osle`.
+This creates an environment called :code:`osle` and installs the code from
+this checkout, including SEMP. For OHBA workstations or BMRC, use the
+corresponding environment file and activation name in the repository README.
 
 Loading the packages
 --------------------
@@ -55,7 +59,7 @@ Integrated Development Environments (IDEs)
 
 The osl-ephys installation comes with `Jupyter Notebook <https://jupyter.org/>`_. To open Jupyter Notebook use::
 
-    conda activate osl
+    conda activate osle
     jupyter notebook
 
 Test the installation
@@ -67,25 +71,16 @@ The following should not raise any errors::
     python
     >> import osl_ephys
 
-Get the latest source code (optional)
--------------------------------------
+Update the source checkout
+--------------------------
 
-If you want the very latest code you can clone the GitHub repo. This is only neccessary if you want recent changes to the package that haven't been released yet.
+The editable installation in step 4 uses your local checkout. To update it
+after changes have been merged into the repository::
 
-First install osl-ephys using the instructions above. Then clone the repo and install locally from source::
-
-    conda activate osle
-
-    git clone https://github.com/OHBA-analysis/osl-ephys.git
     cd osl-ephys
-    pip install -e .
-    cd ..
-
-After you install from source, you can run the code with local changes. You can update the source code using::
-
     git pull
-
-within the :code:`osl-ephys` directory.
+    conda activate osle
+    python -m pip install -e .
 
 Getting help
 ------------

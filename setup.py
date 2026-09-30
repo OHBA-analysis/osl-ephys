@@ -10,45 +10,39 @@ README = (HERE / "README.md").read_text()
 
 # Requirement categories
 reqs = ['numpy', 'scipy', 'matplotlib', 'mne', 'scikit-learn', 'fslpy',
-        'sails', 'tabulate', 'pyyaml', 'neurokit2', 'jinja2',
+        'sails==1.7.0', 'tabulate', 'pyyaml', 'neurokit2', 'jinja2',
         'glmtools', 'numba', 'nilearn', 'dask', 'distributed', 'parse',
-        'opencv-python', 'panel', 'h5io']
-doc_reqs = ['sphinx', 'numpydoc', 'sphinx_gallery', 'pydata-sphinx-theme']
+        'opencv-python', 'panel', 'h5io', 'osl-pathfinder==1.0.0']
+doc_reqs = ['sphinx', 'numpydoc', 'sphinx_gallery', 'sphinx-autoapi',
+            'pydata-sphinx-theme']
 dev_reqs = ['setuptools', 'pytest', 'pytest-cov', 'coverage', 'flake8']
 
 name = 'osl-ephys'
 
 setup(name=name,
-      version='2.5.dev0',
+      version='2.5.0.dev1+semp.2',
       description='OHBA Software Library for the analysis of electrophysiological data',
       long_description=README,
       long_description_content_type="text/markdown",
       author='OHBA Analysis Group',
-      license='MIT',
+      license='Apache-2.0',
 
-      # Choose your license
-      # See https://pypi.python.org/pypi?%3Aaction=list_classifiers
       classifiers=[
           'Development Status :: 4 - Beta',
 
-          # Indicate who your project is intended for
           'Intended Audience :: Science/Research',
           'Topic :: Scientific/Engineering :: Bio-Informatics',
           'Topic :: Scientific/Engineering :: Information Analysis',
           'Topic :: Scientific/Engineering :: Mathematics',
 
-          # Specify the Python versions you support here. In particular, ensure
-          # that you indicate whether you support Python 2, Python 3 or both.
           'Programming Language :: Python :: 3',
-          'Programming Language :: Python :: 3.7',
-          'Programming Language :: Python :: 3.8',
           'Programming Language :: Python :: 3.9',
           'Programming Language :: Python :: 3.10',
           'Programming Language :: Python :: 3.11',
           'Programming Language :: Python :: 3.12',
       ],
 
-      python_requires='>=3.7',
+      python_requires='>=3.9',
       install_requires=reqs,
       extras_require={
           'dev': dev_reqs,
@@ -64,10 +58,16 @@ setup(name=name,
               'osl_ica_apply = osl_ephys.preprocessing.ica_label:apply',
               'osl_preproc = osl_ephys.preprocessing.batch:main',
               'osl_func = osl_ephys.utils.run_func:main',
+              'osl-ica-review = osl_ephys.preprocessing.manual_ica.review_server:main',
+              'osl-ica-apply = osl_ephys.preprocessing.manual_ica.apply:main',
           ]},
 
       packages=['osl_ephys', 'osl_ephys.tests', 'osl_ephys.report', 'osl_ephys.maxfilter',
-                'osl_ephys.preprocessing', 'osl_ephys.utils', 'osl_ephys.utils.spmio',
+                'osl_ephys.preprocessing', 'osl_ephys.preprocessing.manual_ica',
+                'osl_ephys.preprocessing.semp',
+                'osl_ephys.preprocessing.semp.wrappers',
+                'osl_ephys.preprocessing.semp.utils',
+                'osl_ephys.utils', 'osl_ephys.utils.spmio',
                 'osl_ephys.source_recon', 'osl_ephys.source_recon.rhino', 'osl_ephys.glm'],
 
 
@@ -80,6 +80,8 @@ setup(name=name,
                             'source_recon/files/*gz',
                             # Report templates
                             'report/templates/*',
+                            # Manual ICA review templates
+                            'preprocessing/manual_ica/templates/*.html',
                             # READMEs
                             '*/README.md']},
 

@@ -4,7 +4,7 @@ matplotlib
 mne
 scikit-learn
 fslpy
-sails
+sails==1.7.0
 glmtools
 tabulate
 pyyaml
@@ -18,6 +18,9 @@ numba
 parse
 dask
 distributed
+panel
+h5io
+osl-pathfinder==1.0.0
 
 # Docs
 sphinx
@@ -26,8 +29,6 @@ pydata-sphinx-theme
 sphinx_gallery
 sphinx-autoapi
 numpydoc
-sphinx_gallery
-pydata-sphinx-theme
 
 # Dev
 setuptools

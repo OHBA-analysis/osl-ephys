@@ -18,6 +18,12 @@ The following tutorials illustrate basic usage and analysis that can be done wit
 - :doc:`tutorials_build/preprocessing_batch`.
 
 
+**Preprocessing simultaneous EEG-fMRI** (the ``semp`` subpackage and manual ICA review):
+
+- :doc:`tutorials_build/preprocessing_eeg-fmri`.
+- :doc:`tutorials_build/preprocessing_manual-ica`.
+
+
 **Source reconstruction**:
 
 - :doc:`tutorials_build/source-recon_coreg`.
