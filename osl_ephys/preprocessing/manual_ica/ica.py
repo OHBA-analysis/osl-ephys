@@ -74,8 +74,8 @@ def manual_ica(dataset, userargs):
                                                                ``raw.info`` if
                                                                not given).
       ecg_threshold, eog_threshold                         --- physiological thresholds.
-          ECG uses CTPS with MNE's sampling-rate-dependent 'auto' threshold
-          (0.32 at 250 Hz). EEG-fMRI examples explicitly use 0.1.
+          ECG uses a fixed CTPS threshold of 0.3, matching current MNE.
+          EEG-fMRI examples explicitly use 0.1.
           EOG uses absolute Pearson correlation (default 0.35), not a z-score.
       ga_local_threshold, ga_dominance_threshold           --- two-gate GA thresholds.
       seg_len, spec_type, spec_freq_max,
@@ -101,6 +101,10 @@ def manual_ica(dataset, userargs):
     in ``dataset``).
     """
     userargs = proc_userargs(userargs, DEFAULT_USERARGS)
+    ecg_threshold = userargs['ecg_threshold']
+    if (not isinstance(ecg_threshold, (int, float, np.number))
+            or not 0 <= ecg_threshold <= 1):
+        raise ValueError('ecg_threshold must be a numeric CTPS threshold between 0 and 1.')
     if not 0 <= userargs['eog_threshold'] <= 1:
         raise ValueError('eog_threshold must be an absolute correlation threshold between 0 and 1.')
 
@@ -138,11 +142,6 @@ def manual_ica(dataset, userargs):
     log_or_print(f'[manual_ica] Fitted {ica.n_components_} components')
 
     # -- ECG CTPS ----------------------------------------------------------
-    ecg_threshold = userargs['ecg_threshold']
-    if ecg_threshold == 'auto':
-        # Use the same calculation as MNE's find_bads_ecg(threshold='auto').
-        # Resolve it once so the suggestions, SVG flags and HTML agree.
-        ecg_threshold = float(ica._get_ctps_threshold())
     ecg_scores = None
     ecg_idx_auto = []
     ecg_picks = mne.pick_types(dataset['raw'].info, ecg=True)

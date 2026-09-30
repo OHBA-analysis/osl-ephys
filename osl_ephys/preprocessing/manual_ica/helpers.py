@@ -286,7 +286,7 @@ def _build_scores_list(n_components, ecg_scores, ecg_idx_auto, ecg_threshold,
     Flags compare scores directly with the displayed thresholds: CTPS uses
     ``>=`` like MNE, and EOG uses ``|value| > threshold`` (do NOT rely on MNE's
     ``find_bads_*`` index lists, which use their own internal thresholds
-    --- e.g. CTPS auto is 0.32 at 250 Hz, while EEG-fMRI may use 0.1).
+    --- e.g. CTPS defaults to 0.3, while EEG-fMRI may use 0.1).
     """
     out = []
     for i in range(n_components):

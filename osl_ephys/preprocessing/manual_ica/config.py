@@ -23,9 +23,9 @@ DEFAULT_USERARGS = {
     # ── auto-flagging channels & thresholds ───────────────────────────────
     'ecg_ch':        None,
     'eog_ch':        None,
-    # Sampling-rate-dependent CTPS threshold, as in OSL's ica_autoreject.
+    # Fixed CTPS threshold, matching the current MNE default.
     # EEG-fMRI examples explicitly use 0.1 for residual pulse artifacts.
-    'ecg_threshold': 'auto',
+    'ecg_threshold': 0.3,
     # Absolute Pearson correlation, matching OSL's ica_autoreject default.
     'eog_threshold': 0.35,
     # Gate 1: slice-harmonic peak / median local shoulder PSD.

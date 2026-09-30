@@ -257,7 +257,7 @@ config = {
             'picks': 'eeg',
             'l_freq': 1.0,
             'seed': 42,
-            'ecg_threshold': 0.1,  # EEG-fMRI; ordinary EEG defaults to 'auto'.
+            'ecg_threshold': 0.1,  # recommended only for EEG-fMRI; ordinary EEG defaults to 0.3. The reason for this difference is (a) signal IC rarely have a ctps > 0.1 (b) in a dataset with heavily contaminated ECG channel, 0.3 might miss some of the pulse artifacts.
             'eog_threshold': 0.35,  # Absolute Pearson correlation.
             'psd_resolution': 0.05,
         }},

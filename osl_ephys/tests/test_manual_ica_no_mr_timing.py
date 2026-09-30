@@ -8,13 +8,19 @@ import mne
 import numpy as np
 import pytest
 
-
-@pytest.mark.parametrize('with_aux, ecg_threshold', [
-    (False, 'auto'), (True, 'auto'), (True, 0.1),
+@pytest.mark.parametrize('with_aux, ecg_threshold, mne_version, expected', [
+    (False, None, '1.12.1', 0.3),
+    (False, None, '1.13.2', 0.3),
+    (True, None, '1.12.1', 0.3),
+    (True, None, '1.13.2', 0.3),
+    (True, 0.1, '1.13.2', 0.1),
 ])
 def test_manual_ica_without_mr_timing_omits_ga_scores(
-    tmp_path, monkeypatch, with_aux, ecg_threshold,
+    tmp_path, monkeypatch, with_aux, ecg_threshold, mne_version, expected,
 ):
+    monkeypatch.setattr(mne, '__version__', mne_version)
+    # Reproduce CI's removed private method even in the older local install.
+    monkeypatch.delattr(mne.preprocessing.ICA, '_get_ctps_threshold', raising=False)
     ica_module = importlib.import_module('osl_ephys.preprocessing.manual_ica.ica')
     rng = np.random.RandomState(7)
     names = ['Fz', 'Cz', 'Pz', 'Oz'] + (['EOGU', 'EOGL', 'ECG'] if with_aux else [])
@@ -29,7 +35,7 @@ def test_manual_ica_without_mr_timing_omits_ga_scores(
                  '_render_zoom_clean'):
         monkeypatch.setattr(ica_module, name, lambda *args, **kwargs: None)
 
-    expected_ecg_threshold = 0.32 if ecg_threshold == 'auto' else ecg_threshold
+    expected_ecg_threshold = expected
     if with_aux:
         def find_bads_eog(self, raw, ch_name, measure, threshold):
             assert ch_name == ['EOGU', 'EOGL']
@@ -54,7 +60,7 @@ def test_manual_ica_without_mr_timing_omits_ga_scores(
         'zoom_window': 30,
     }
     # Exercise the library default as well as the explicit EEG-fMRI override.
-    if ecg_threshold != 'auto':
+    if ecg_threshold is not None:
         userargs['ecg_threshold'] = ecg_threshold
     result = ica_module.manual_ica(dataset, userargs)
 
@@ -81,3 +87,10 @@ def test_manual_ica_rejects_invalid_correlation_threshold(threshold):
     ica_module = importlib.import_module('osl_ephys.preprocessing.manual_ica.ica')
     with pytest.raises(ValueError, match='absolute correlation threshold'):
         ica_module.manual_ica({}, {'eog_threshold': threshold})
+
+
+@pytest.mark.parametrize('threshold', ['auto', -0.1, np.nan])
+def test_manual_ica_rejects_invalid_ctps_threshold(threshold):
+    ica_module = importlib.import_module('osl_ephys.preprocessing.manual_ica.ica')
+    with pytest.raises(ValueError, match='numeric CTPS threshold'):
+        ica_module.manual_ica({}, {'ecg_threshold': threshold})
