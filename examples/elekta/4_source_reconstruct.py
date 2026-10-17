@@ -1,59 +1,22 @@
-"""Source reconstruction.
+"""Forward model, beamforming and parcellation.
 
-This includes beamforming, parcellation and orthogonalisation.
-
-Note, before this script is run the /coreg directory created by 3_coregister.py
-must be copied and renamed to /src.
+The LCMV filters are computed from the data filtered to frequency_range,
+the parcel time courses are saved as data/<id>/<id>_parc-raw.fif, with
+symmetric orthogonalisation to reduce the spatial leakage.
 """
 
-# Authors: Chetan Gohil <chetan.gohil@psych.ox.ac.uk>
+from osl_ephys.pipeline import run_batch
+from sessions import sessions
 
-from dask.distributed import Client
-
-from osl_ephys import source_recon, utils
-
-# Directories
-outdir = "data"
-
-# Files
-preproc_file = outdir + "/{subject}_tsss_preproc-raw.fif"  # {subject} will be replaced by the subject name
-
-# Subjects to do
-subjects = ["sub-001", "sub-002"]
-
-# Settings
 config = """
-    source_recon:
-    - forward_model:
-        model: Single Layer
-    - beamform_and_parcellate:
-        freq_range: [1, 45]
-        chantypes: [mag, grad]
-        rank: {meg: 60}
-        parcellation_file: Glasser52_binary_space-MNI152NLin6_res-8x8x8.nii.gz
-        method: spatial_basis
-        orthogonalisation: symmetric
+source_recon:
+  - forward_model: {model: Single Layer}
+  - beamform: {chantypes: [mag, grad], rank: {meg: 60}, frequency_range: [1, 45]}
+parcellation:
+  - parcellate:
+      parcellation_file: atlas-Glasser_nparc-52_space-MNI_res-8x8x8.nii.gz
+      orthogonalisation: symmetric
 """
 
 if __name__ == "__main__":
-    utils.logger.set_up(level="INFO")
-
-    # Get paths to files
-    preproc_files = []
-    for subject in subjects:
-        preproc_files.append(preproc_file.format(subject=subject))
-
-    # Setup parallel processing
-    #
-    # n_workers is the number of CPUs to use,
-    # we recommend less than half the total number of CPUs you have
-    client = Client(n_workers=4, threads_per_worker=1)
-
-    # Source reconstruction
-    source_recon.run_src_batch(
-        config,
-        outdir=outdir,
-        subjects=subjects,
-        preproc_files=preproc_files,
-        dask_client=True,
-    )
+    run_batch(config, sessions, "data", n_workers=4)

@@ -1,10 +1,13 @@
-#!/usr/bin/python
+"""MaxFilter: Signal Space Separation of Elekta/MEGIN data with the MaxFilter
+command-line tool, which needs a licensed installation.
 
-from .maxfilter import *  # noqa: F401, F403
+:func:`run_maxfilter` runs it on a set of files in one of three modes:
+``standard`` (one call), ``multistage`` (bad channel detection, then SSS or
+tSSS, then an optional head position translation) and ``cbu`` (the MRC
+CBU three-stage recipe). Recordings too large for one output file are
+processed in chunks and saved as a split chain. In a config it is the
+``maxfilter`` section (:mod:`~osl_ephys.maxfilter.steps`), and on the
+command line ``osl-ephys maxfilter``.
+"""
 
-import logging
-osl_logger = logging.getLogger(__name__)
-osl_logger.debug('osl-ephys maxfilter init complete')
-
-with open(os.path.join(os.path.dirname(__file__), "README.md"), 'r') as f:
-    __doc__ = f.read()
+from osl_ephys.maxfilter.maxfilter import run_maxfilter, output_file

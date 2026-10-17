@@ -1,22 +1,21 @@
-Elekta Example
---------------
+# Elekta/MEGIN example
 
-To run these scripts you need:
+You need the raw `.fif` file of each session (with EOG and ECG channels for
+the automatic ICA labelling) and a structural MRI of each subject.
 
-1. The raw `.fif` file containing the recording for each session. Note, you must have an EOG and ECG channel.
-
-2. A structural MRI for each subject.
-
-The steps are:
-
-1. **MaxFilter** (`1_maxfilter.py`). This script MaxFilters the raw recordings.
-
-2. **Preprocess** (`2_preprocess.py`). This script filters, downsamples, and uses automated algorithms to detect bad segments/channels and uses ICA to remove eye blinks. Note, the automated ICA artefact removal might not always work very well, so it's often worthwhile to check the preprocessing.
-
-3. **Coregistration** (`3_coregister.py`). This script aligns the sMRI and MEG space (using the polhemus head space). Here, we advise you check the head has been placed in a plausible location in the MEG scanner. You can do this by looking at the coregistration panel in the report (`coreg/report/subjects_report.html` and `summary_report.html`). You may need to re-run this script with different settings (e.g. by increasing `n_init`) to fix poorly aligned subjects.
-
-4. **Source reconstruct** (`4_source_reconstruct.py`). This script calculates the forward model, beamforms and parcellates the data. The parcellated data files can be found in `src/{subject}/parc/parc-raw.fif`.
-
-5. **Dipole sign flipping** (`5_sign_flip.py`). This script tries to minimise the effect of the sign of each parcel time course being misaligned between subjects when fitting group-level models, such as a Hidden Markov Model. This step maybe skipped if you're not interested in fitting group models.
-
-The final data can be found in `src/{subject}/sflip_parc-raw.fif`.
+1. `1_maxfilter.py` runs MaxFilter (on a computer with a MaxFilter licence)
+   with the scanner's calibration files. The OHBA scanner has its own
+   pipelines in `../oxford`.
+2. `2_preprocess.py` filters, downsamples, marks bad segments and channels
+   and removes the eye and heart artefacts with ICA. Check the
+   preprocessing tabs of `data/qc/report.html`; the components can be
+   relabelled by hand with `osl-ephys ica review data`.
+3. `3_coregister.py` extracts the surfaces from the MRI and coregisters the
+   head to them. Check the coregistration
+   tab of the report; a session that looks off can be rerun with a higher
+   `n_init`.
+4. `4_source_reconstruct.py` computes the forward model, beamforms and
+   parcellates. The parcel time courses are `data/<id>/<id>_parc-raw.fif`.
+5. `5_sign_flip.py` aligns the sign of each parcel across sessions, which
+   matters when a group model (such as an HMM) is trained on the data. The
+   output is `data/<id>/<id>_sflip_parc-raw.fif`.

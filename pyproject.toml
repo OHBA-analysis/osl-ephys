@@ -1,0 +1,118 @@
+# Configuration file for packaging
+# See https://packaging.python.org/en/latest/guides/writing-pyproject-toml for details
+
+[build-system]
+requires = ["setuptools>=77", "setuptools_scm>=8", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "osl-ephys"
+dynamic = ["version"]
+description = "OHBA Software Library for the analysis of electrophysiological (M/EEG) data"
+readme = {file = "README.md", content-type = "text/markdown"}
+license = "Apache-2.0"
+license-files = ["LICENSE", "NOTICE"]
+requires-python = ">=3.10"
+keywords = [
+    "neuroimaging",
+    "neuroscience",
+    "MEG",
+    "EEG",
+    "OPM",
+    "electrophysiology",
+    "preprocessing",
+    "source reconstruction",
+    "beamforming",
+    "coregistration",
+    "parcellation",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Science/Research",
+    "Operating System :: MacOS",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Scientific/Engineering",
+    "Topic :: Scientific/Engineering :: Bio-Informatics",
+    "Topic :: Scientific/Engineering :: Medical Science Apps.",
+]
+
+# The same set as osl-dynamics without TensorFlow and the packages only its
+# models use, plus what the GLM module needs.
+dependencies = [
+    "fslpy",
+    "glmtools",
+    "h5io",
+    # MNE's off-screen 3D backend, used for the coregistration plots
+    "ipyevents",
+    "ipywidgets",
+    "matplotlib",
+    "mne",
+    "mne-icalabel[onnx]",
+    "nibabel",
+    "nilearn",
+    "numba",
+    "numpy",
+    # The file mapping of the simultaneous EEG-fMRI preprocessing (semp)
+    "osl-pathfinder",
+    "packaging",
+    "pandas",
+    "parse",
+    "pooch",
+    "pyside6",
+    "pyvista",
+    "pyvistaqt",
+    "pyyaml",
+    "sails",
+    "scikit-image",
+    "scikit-learn",
+    "scipy",
+    "trame",
+    "trame-vtk",
+    "trame-vuetify",
+]
+
+[project.optional-dependencies]
+dev = [
+    "black",
+    "codespell",
+    "pytest",
+    "pytest-cov",
+]
+
+[project.urls]
+"Homepage" = "https://github.com/OHBA-analysis/osl-ephys"
+"Documentation" = "https://osl-ephys.readthedocs.io/en/latest/"
+
+[project.scripts]
+osl-ephys = "osl_ephys.pipeline.cli:main"
+osl-ephys-download-data = "osl_ephys.files._fetch:download_data_cli"
+
+# The version number is derived automatically from git tags
+[tool.setuptools_scm]
+
+[tool.setuptools.packages.find]
+where = ["."]
+
+[tool.setuptools]
+include-package-data = true
+
+[tool.setuptools.package-data]
+"*" = ["*"]
+
+[tool.codespell]
+# Ref: https://github.com/codespell-project/codespell#using-a-config-file
+skip = '.git*,*.pdf,*.gii,*.scene,*.html,*.yml,*.tree'
+check-hidden = true
+ignore-words-list = 'fo,fro,commun,nd,ser,ans,aas'
+
+[tool.pytest.ini_options]
+markers = [
+    "fsl: needs FSL (skipped unless FSLDIR is set)",
+    "freesurfer: needs FreeSurfer (skipped unless FREESURFER_HOME is set)",
+]

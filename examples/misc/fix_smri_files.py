@@ -1,56 +1,30 @@
-"""Fix structural MRI (sMRI) files.
+"""Give structural MRIs a standard sform.
 
-Replaces the sform with a standard sform.
-
-Note, this script may not be needed. Only use this script if
-OSL raises an error regarding the sform code of the sMRIs.
+Only needed when RHINO raises an error about the sform code of an MRI. The
+fixed copies go to smri/fixed and the sessions should point at those.
 """
-
-# Authors: Chetan Gohil <chetan.gohil@psych.ox.ac.uk>
 
 import os
 from pathlib import Path
 from shutil import copyfile
 
-import numpy as np
 import nibabel as nib
+import numpy as np
 
-from osl_ephys import source_recon
+from osl_ephys.utils.misc import system_call
 
-# List of sMRI files we need to fix
-smri_files = [
-    "sub-001_T1w.nii.gz",
-    "sub-002_T1w.nii.gz",
-]
+smri_files = ["smri/sub-001_T1w.nii.gz", "smri/sub-002_T1w.nii.gz"]
+fixed_dir = "smri/fixed"
+os.makedirs(fixed_dir, exist_ok=True)
 
-# Directory to save fixed sMRIs to
-fixed_smri_dir = "data/smri"
-os.makedirs(fixed_smri_dir, exist_ok=True)
-
-# Loop through the sMRIs
-for input_smri_file in smri_files:
-
-    # Copy the original sMRI file to the output directory
-    input_name = Path(input_smri_file).name
-    output_smri_file = f"{fixed_smri_dir}/{input_name}"
-    print("Saving output to:", output_smri_file)
-    copyfile(input_smri_file, output_smri_file)
-
-    # Load the output SMRI file
-    smri = nib.load(output_smri_file)
-
-    # Get the original sform header
-    sform = smri.header.get_sform()
-    sform_std = np.copy(sform)
-
-    # Fix the sform header
-    sform_std[0, 0:4] = [-1, 0, 0, 128]
-    sform_std[1, 0:4] = [0, 1, 0, -128]
-    sform_std[2, 0:4] = [0, 0, 1, -90]
-    source_recon.rhino.utils.system_call(
-        "fslorient -setsform {} {}".format(
-            " ".join(map(str, sform_std.flatten())),
-            output_smri_file,
-        )
+for smri_file in smri_files:
+    fixed_file = f"{fixed_dir}/{Path(smri_file).name}"
+    copyfile(smri_file, fixed_file)
+    sform = np.copy(nib.load(fixed_file).header.get_sform())
+    sform[0, :4] = [-1, 0, 0, 128]
+    sform[1, :4] = [0, 1, 0, -128]
+    sform[2, :4] = [0, 0, 1, -90]
+    system_call(
+        f"fslorient -setsform {' '.join(map(str, sform.flatten()))} {fixed_file}"
     )
-
+    print("Fixed:", fixed_file)

@@ -32,142 +32,40 @@ If you are an osl-ephys developer, or working with the osl-ephys team, you can m
 
 ## Developer Notes
 
-The core developer team is @matsvanes, @woolrich, @cgohil8 and @ajquinn. A few example workflows are listed below.
+The core developer team is @matsvanes, @woolrich, @cgohil8 and @ajquinn.
 
 ### Installation
 
-To install an editable version with pip:
 ```
-conda create --name osl-ephys python=3
+conda create -n osle python=3.12
 conda activate osle
 git clone git@github.com:OHBA-analysis/osl-ephys.git
 cd osl-ephys
-pip install -e .
+pip install -e ".[dev]"
 ```
 
 ### Tests
 
-To run all tests:
 ```
-cd osl_ephys
-pytest tests
-```
-or to run a specific test, e.g. file handling:
-```
-cd osl_ephys/tests
-pytest test_file_handling.py
+pytest osl_ephys/tests
 ```
 
-### Build Documentation
+### Code style
 
-To build the documentation:
-```
-python setup.py build_sphinx
-```
-Compiled docs can be found in `doc/build/html/index.html`.
-
-### Bug Fixes & New features
-
-To fix an isolated problem, any contributor can.
-
-* create a fix on a branch of oslpy:main
-* create a pull request with a description and links to relevant issues.
-* get feedback/approval from a core developer
-* make any required changes
-
-Once changes are made and all tests pass, a core developer can complete the merge.
-
-### Hotfixes
-
-For urgent and obvious fixes, a core developer can do the following:
-
-* create a fix on a branch of oslpy:main
-* create a pull request with quick description of the issue
-* merge it to main themselves.
-
-# git school
-
-Practical overview of workflows in git - I'm assuming you're roughly familiar with adding and committing before starting this.
-
-First clone the repo into your chosen directory
+The code is formatted with [black](https://black.readthedocs.io) and spell-checked with [codespell](https://github.com/codespell-project/codespell); both run on every pull request:
 
 ```
-git clone https://github.com/OHBA-analysis/osl-ephys.git
-cd osl-ephys
+black osl_ephys
+codespell
 ```
 
-Now you're ready to start making changes.
-
-## Creating & switching branches
-
-New work must be created on a 'branch' - a separate copy of the code which allows you to make changes away from the main code.
-
-#### Create a new branch based on the current main:
-This will create, but not switch to, a new branch
-```
-git branch mynewbranch
-```
-#### Switch to your branch:
-This will switch to an existing branch
-```
-git checkout mynewbranch
-```
-####  create a new branch and switch to it in one step:
-This will create and switch to a new branch.
-```
-git checkout -b  mynewbranch
-```
-
-### Checking and updating your local repo
-
-Once you have a branch you can start making changes and adding/committing files to your local copy.
-
-#### Check the current state of your local branch
-At any point, you can run this for a quick summary of your branches state
-```
-git status
-```
-This will display your local branch, whether it is up-to-date with any remote branches, any staged/unstaged changes and any untracked files all in one place.
-
-If someone might have changed the branch whilst you've been working (or even just to be sure), you can check for any upstream changes with:
-```
-git remote update
-```
-
-This will check the server for changes **but won't merge any changes into your local repo** so it is safe to run with work in progress. If you run `git status` again after a remote update - you may see that the info has changed. In particular, you may now be behind the remote branch. If you are behind the remote branch you can add those changes into your repo with:
-```
-git pull
-```
-This may create a conflict if files have changed both locally and on the remote... This can be fixed locally and finalised with a 'merge commit'
-
-### Pushing changes back to the remote
-
-If theree are no remaining conflicts, `git remote  update` has been run and `git status` shows that you are **ahead** of the remote - you can push your local changes  with:
+### Documentation
 
 ```
-git push origin mynewbrach
+pip install -r doc/requirements.txt
+sphinx-build -b html doc build
 ```
 
+### Releases
 
-### Branch management
-
-If you're working on an idea or trying out something new, then the work can stay on a branch for as long as you need it. It is recommended to keep your branch up-to-date with main where possible. You can merge the current main branch into your branch with:
-```
-git remote update
-git merge origin main
-```
-
-This may create conflicts... these should be fixed before carrying on with other work. Once any conflicts are fixed,  your local branch is now up to date with main. You can push these changes back to your remote branch with:
-
-```
-git push origin mynewbranch
-```
-
-### Pull requests
-
-Once you're ready to share you're changes, or would like a place to track changes and tests, you  can create a pull request. You can do this on the website by nagvigating to the branch page at
-
-```
-https://github.com/OHBA-analysis/osl-ephys/tree/mynewbranch
-```
-There should be a grey bar below the branch name saying 'This branch is 5 commits ahead of main' or similar. If you click the "Contribute" button in the right of this box - you can create a pull request.
+See the Releases section of the README.

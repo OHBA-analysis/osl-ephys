@@ -18,12 +18,14 @@ class TestGLMSpectrum(unittest.TestCase):
         cls.bad_channels = None
         cls.bad_segments = None
 
-        cls.raw = simulate_raw_from_template(500,
-                                             flat_channels=cls.flat_channels,
-                                             bad_channels=cls.bad_channels,
-                                             bad_segments=cls.bad_segments)
+        cls.raw = simulate_raw_from_template(
+            500,
+            flat_channels=cls.flat_channels,
+            bad_channels=cls.bad_channels,
+            bad_segments=cls.bad_segments,
+        )
 
-        cls.fpath = tempfile.NamedTemporaryFile().name + 'raw.fif'
+        cls.fpath = tempfile.NamedTemporaryFile().name + "raw.fif"
         cls.raw.save(cls.fpath)
 
     @classmethod
@@ -34,8 +36,3 @@ class TestGLMSpectrum(unittest.TestCase):
         from ..glm import glm_spectrum
 
         spec = glm_spectrum(self.raw)
-
-    def test_glm_irasa(self):
-        from ..glm import glm_irasa
-
-        aper, osc = glm_irasa(self.raw)

@@ -1,75 +1,35 @@
-"""Tests for passing arguments into batch preprocessing."""
+"""Finding the step a config names."""
 
-import unittest
+import functools
 
-import numpy as np
-
-class TestFunctionFinding(unittest.TestCase):
-
-    def test_find_func_in_mne_wrapper(selF):
-        from ..preprocessing import find_func
-        from ..preprocessing import mne_wrappers as wrappers
-
-        # Check we're finding some common functions
-        ff = find_func('notch_filter')
-        assert(ff == wrappers.run_mne_notch_filter)
-
-        ff = find_func('resample')
-        assert(ff == wrappers.run_mne_resample)
-
-        ff = find_func('pick_channels')
-        assert(ff == wrappers.run_mne_pick_channels)
-
-        ff = find_func('pick_types')
-        assert(ff == wrappers.run_mne_pick_types)
+from osl_ephys.pipeline import registry
+from osl_ephys.preproc import steps
 
 
-    def test_find_func_in_mne_object(self):
-        import functools
-        from ..preprocessing import find_func
-        from ..preprocessing import mne_wrappers as wrappers
-
-        # Make sure we have properly set up partial functions based on
-        # run_mne_anonymous
-
-        ff = find_func('close')
-        assert(isinstance(ff, functools.partial))
-        assert(ff.func == wrappers.run_mne_anonymous)
-        assert('method' in ff.keywords.keys())
-        assert(ff.keywords['method'] == 'close')
-
-        ff = find_func('copy')
-        assert(isinstance(ff, functools.partial))
-        assert(ff.func == wrappers.run_mne_anonymous)
-        assert('method' in ff.keywords.keys())
-        assert(ff.keywords['method'] == 'copy')
-
-        ff = find_func('savgol_filter')
-        assert(isinstance(ff, functools.partial))
-        assert(ff.func == wrappers.run_mne_anonymous)
-        assert('method' in ff.keywords.keys())
-        assert(ff.keywords['method'] == 'savgol_filter')
+def test_steps_of_the_preproc_section():
+    assert registry.find_function("notch_filter", "preproc").func is steps.notch_filter
+    assert registry.find_function("resample", "preproc").func is steps.resample
+    assert registry.find_function("bad_segments", "preproc").func is steps.bad_segments
+    assert registry.find_function("bad_channels", "preproc").func is steps.bad_channels
+    assert registry.find_function("ica_label", "preproc").func is steps.ica_label
 
 
-    def test_find_func_in_osl_wrapper(self):
-        from ..preprocessing import find_func
-        from ..preprocessing.osl_wrappers import run_osl_bad_segments, run_osl_bad_channels
-
-        # Check we can find OSL wrapper functions - only 2...
-        ff = find_func('bad_segments')
-        assert(ff == run_osl_bad_segments)
-
-        ff = find_func('bad_channels')
-        assert(ff == run_osl_bad_channels)
+def test_mne_methods_are_steps():
+    for name in ["crop", "savgol_filter", "filter"]:
+        found = registry.find_function(name, "preproc").func
+        assert isinstance(found, functools.partial)
+        assert found.func is steps.mne_method
+        assert found.keywords["method"] == name
 
 
-    def test_find_func_from_userlist(self):
-        from ..preprocessing import find_func
-        from ..preprocessing import print_custom_func_info
+def test_custom_functions_come_first():
+    def filter(dataset, userargs):
+        return dataset
 
-        # Check that user func is found first
-        def filter(x, u):
-            return x
+    assert (
+        registry.find_function("filter", "preproc", extra_funcs=[filter]).func is filter
+    )
 
-        ff = find_func('filter', extra_funcs=[filter])
-        assert(ff(1, None) == 1)
+
+def test_semp_steps_are_registered_lazily():
+    assert registry.find_function("epoch_aas", "preproc").func.__name__ == "epoch_aas"

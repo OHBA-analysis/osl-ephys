@@ -1,0 +1,24 @@
+osl-ephys is developed by the OHBA Methods Group at the University of Oxford
+(https://www.psych.ox.ac.uk/research/ohba-analysis-group).
+
+Core developers
+  Chetan Gohil
+  Andrew J. Quinn
+  Mats W. J. van Es
+  Mark W. Woolrich
+
+Contributors
+  SungJun Cho (sign flipping solvers)
+  Richard Csaky
+  Marco Fabus
+  Miguel Farinha
+  Hongyu Qian
+  Harrison Ritz
+  Rob Seymour (OPM support)
+  Jize Zhang (simultaneous EEG-fMRI preprocessing, osl-pathfinder)
+
+The sign flipping solvers come from osl-signflip (SungJun Cho), the file
+mapping of the EEG-fMRI preprocessing from osl-pathfinder (Jize Zhang), and
+the source reconstruction, parcellation and QC report share their code with
+osl-dynamics. The SPM M/EEG reader was compiled from scripts by Evan Roberts
+and Mark Hymers.
