@@ -18,10 +18,28 @@ from osl_ephys.pipeline.registry import step
 logger = logging.getLogger("osl_ephys")
 
 
-def _parc_file(dataset: dict, id_: str) -> Path:
-    """The parcellated file of a session, in the same output directory."""
-    outdir = dataset["paths"]["session_dir"].parent
-    return outdir / id_ / f"{id_}_parc-raw.fif"
+def _parc_files(outdir, ids, estimator=None):
+    """The source estimator and the parcellated file of each session that has
+    one, ``<id>_<estimator>-parc-raw.fif``. ``estimator`` picks one when the
+    sessions were parcellated with several."""
+    found = {}
+    for id_ in ids:
+        pattern = re.compile(re.escape(id_) + r"_([^-]+)-parc-raw\.fif")
+        files = (Path(outdir) / id_).glob("*-parc-raw.fif")
+        matches = [(pattern.fullmatch(f.name), f) for f in files]
+        found[id_] = {match[1]: f for match, f in matches if match}
+    estimators = sorted({name for files in found.values() for name in files})
+    if estimator is None:
+        if len(estimators) > 1:
+            raise ValueError(
+                f"The sessions were parcellated with {', '.join(estimators)}; "
+                "choose one with the estimator option."
+            )
+        estimator = estimators[0] if estimators else None
+    estimator = None if estimator is None else str(estimator).lower()
+    return estimator, {
+        id_: files[estimator] for id_, files in found.items() if estimator in files
+    }
 
 
 def _template_cov(parc_file, n_embeddings, standardize):
@@ -29,16 +47,6 @@ def _template_cov(parc_file, n_embeddings, standardize):
     return sign_flipping.calc_cov(
         raw.get_data(picks="misc").T, n_embeddings, standardize
     )
-
-
-def _sflip_file(parc_file, id_):
-    """The sign flipped file of a parcellated file, with the source estimator
-    ``parcellate`` recorded in the file in its name (``lcmv``, ``mne``, ``dspm``,
-    ``sloreta`` or ``eloreta``); a file without one has none in the name."""
-    description = mne.io.read_info(str(parc_file), verbose=False)["description"]
-    found = re.search(r"%% source_estimator: (\S+) %%", description or "")
-    name = f"sflip-{found[1]}-parc" if found else "sflip-parc"
-    return parc_file.with_name(f"{id_}_{name}-raw.fif")
 
 
 _SOLVERS = {
@@ -84,20 +92,24 @@ def fix_sign_ambiguity(dataset, userargs):
 
     Options: ``template`` (the id of the template session), ``n_embeddings``,
     ``standardize``, ``method`` (``coordinate_ascent``, ``spectral``,
-    ``belief_propagation`` or ``sdp``, plus that solver's options). Writes
-    ``<id>_sflip-<estimator>-parc-raw.fif``, where the estimator is ``lcmv``,
-    ``mne``, ``dspm``, ``sloreta`` or ``eloreta``.
+    ``belief_propagation`` or ``sdp``, plus that solver's options), ``estimator``
+    (the source estimator, when several were parcellated). Reads
+    ``<id>_<estimator>-parc-raw.fif`` and writes
+    ``<id>_sflip-<estimator>-parc-raw.fif``.
     """
     n_embeddings = userargs.pop("n_embeddings", 15)
     standardize = userargs.pop("standardize", True)
     method = userargs.pop("method", "coordinate_ascent")
     template = userargs.pop("template")
-    cov = _template_cov(_parc_file(dataset, template), n_embeddings, standardize)
     id_ = dataset["session"]["id"]
-    out = _sflip_file(_parc_file(dataset, id_), id_)
-    _flip_file(
-        _parc_file(dataset, id_), cov, out, n_embeddings, standardize, method, userargs
+    estimator, parc_files = _parc_files(
+        dataset["paths"]["session_dir"].parent,
+        [template, id_],
+        userargs.pop("estimator", None),
     )
+    cov = _template_cov(parc_files[template], n_embeddings, standardize)
+    out = parc_files[id_].with_name(f"{id_}_sflip-{estimator}-parc-raw.fif")
+    _flip_file(parc_files[id_], cov, out, n_embeddings, standardize, method, userargs)
     return dataset
 
 
@@ -107,8 +119,8 @@ def sign_flip(dataset, userargs):
 
     The template is the session whose embedded covariance correlates best
     with the others' on average (or ``template`` if given). Options:
-    ``n_embeddings``, ``standardize``, ``template``, ``method`` (as for
-    ``fix_sign_ambiguity``).
+    ``n_embeddings``, ``standardize``, ``template``, ``method``, ``estimator``
+    (as for ``fix_sign_ambiguity``).
     """
     userargs.pop("run_on_group", None)
     n_embeddings = userargs.pop("n_embeddings", 15)
@@ -117,13 +129,12 @@ def sign_flip(dataset, userargs):
     template = userargs.pop("template", None)
     sessions = dataset["sessions"]
     outdir = Path(dataset["outdir"])
-    parc_files = {
-        s["id"]: outdir / s["id"] / f"{s['id']}_parc-raw.fif" for s in sessions
-    }
+    estimator, parc_files = _parc_files(
+        outdir, [s["id"] for s in sessions], userargs.pop("estimator", None)
+    )
     covs = {
         id_: _template_cov(f, n_embeddings, standardize)
         for id_, f in parc_files.items()
-        if f.exists()
     }
     if template is None:
         scores = {
@@ -142,12 +153,11 @@ def sign_flip(dataset, userargs):
     dataset["template"] = template
     results = {}
     for id_, f in parc_files.items():
-        if id_ in covs:
-            out = _sflip_file(f, id_)
-            before, after = _flip_file(
-                f, covs[template], out, n_embeddings, standardize, method, userargs
-            )
-            results[id_] = {"before": before, "after": after}
+        out = f.with_name(f"{id_}_sflip-{estimator}-parc-raw.fif")
+        before, after = _flip_file(
+            f, covs[template], out, n_embeddings, standardize, method, userargs
+        )
+        results[id_] = {"before": before, "after": after}
     if dataset.get("qc_dir") is not None:
         _save_qc(dataset["qc_dir"], template, results)
     return dataset

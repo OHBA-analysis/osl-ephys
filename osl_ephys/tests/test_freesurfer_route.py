@@ -62,7 +62,7 @@ def test_freesurfer_route_on_fsaverage(tmp_path):
     ):
         assert (fs / name).exists(), name
     parc = mne.io.read_raw_fif(
-        tmp_path / "elekta" / "elekta_parc-raw.fif", verbose=False
+        tmp_path / "elekta" / "elekta_mne-parc-raw.fif", verbose=False
     )
     assert len(mne.pick_types(parc.info, misc=True)) == 68
     assert "bankssts-lh" in parc.ch_names

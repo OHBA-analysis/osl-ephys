@@ -1,6 +1,6 @@
 """Forward model, beamforming and parcellation.
 
-The parcel time courses are data/<id>/<id>_parc-raw.fif, with symmetric
+The parcel time courses are data/<id>/<id>_lcmv-parc-raw.fif, with symmetric
 orthogonalisation to reduce the spatial leakage.
 """
 

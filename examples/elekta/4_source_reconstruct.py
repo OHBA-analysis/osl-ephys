@@ -1,7 +1,7 @@
 """Forward model, beamforming and parcellation.
 
 The LCMV filters are computed from the data filtered to frequency_range,
-the parcel time courses are saved as data/<id>/<id>_parc-raw.fif, with
+the parcel time courses are saved as data/<id>/<id>_lcmv-parc-raw.fif, with
 symmetric orthogonalisation to reduce the spatial leakage.
 """
 

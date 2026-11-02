@@ -18,7 +18,9 @@ logger = logging.getLogger("osl_ephys")
 
 @step("parcellation")
 def parcellate(dataset, userargs):
-    """Parcel time courses from the source estimate, saved as ``<id>_parc-raw.fif``.
+    """Parcel time courses from the source estimate, saved as
+    ``<id>_<estimator>-parc-raw.fif``, where the estimator is ``lcmv``, ``mne``,
+    ``dspm``, ``sloreta`` or ``eloreta``.
 
     Options: ``parcellation_file``, ``orthogonalisation`` (``symmetric`` or
     none), ``extra_chans`` (channels copied from the preprocessed data,
@@ -84,14 +86,11 @@ def parcellate(dataset, userargs):
     else:
         raise ValueError("source_method must be 'lcmv' or 'minimum_norm'.")
 
-    parc_file = dataset["paths"]["parc_file"]
+    id_ = dataset["session"]["id"]
+    parc_file = dataset["paths"]["session_dir"] / f"{id_}_{estimator}-parc-raw.fif"
     parc_file.parent.mkdir(parents=True, exist_ok=True)
     parc_raw = parcellation.convert_to_mne_raw(
         parcel_data, data, ch_names=names, extra_chans=extra_chans
-    )
-    # The sign flip step names its output from this
-    parc_raw.info["description"] = (
-        f"{parc_raw.info['description'] or ''}\n\n%% source_estimator: {estimator} %%"
     )
     parc_raw.save(str(parc_file), overwrite=True, verbose=False)
     if qc and dataset.get("qc_dir") is not None and not fs_route:

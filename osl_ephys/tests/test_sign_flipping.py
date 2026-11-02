@@ -4,6 +4,7 @@ import numpy as np
 import pytest
 
 from osl_ephys.group import sign_flipping
+from osl_ephys.group.steps import _parc_files
 
 N_PARCELS, N_SAMPLES, N_EMBEDDINGS = 12, 4000, 5
 
@@ -55,3 +56,20 @@ def test_sign_flip_applies_the_flips(data):
     assert out.shape == flipped.T.shape
     assert np.allclose(out, flipped.T * np.asarray(found)[:, None])
     assert corr > 0.99
+
+
+def test_the_parcellated_files_are_found_by_estimator(tmp_path):
+    for name in ["s1/s1_lcmv-parc-raw.fif", "s1/s1_sflip-lcmv-parc-raw.fif"]:
+        (tmp_path / name).parent.mkdir(exist_ok=True)
+        (tmp_path / name).touch()
+    (tmp_path / "s2").mkdir()
+    estimator, files = _parc_files(tmp_path, ["s1", "s2"])
+    assert estimator == "lcmv"
+    assert files == {"s1": tmp_path / "s1" / "s1_lcmv-parc-raw.fif"}
+
+    (tmp_path / "s2" / "s2_eloreta-parc-raw.fif").touch()
+    with pytest.raises(ValueError, match="eloreta, lcmv"):
+        _parc_files(tmp_path, ["s1", "s2"])
+    estimator, files = _parc_files(tmp_path, ["s1", "s2"], "eLORETA")
+    assert estimator == "eloreta"
+    assert files == {"s2": tmp_path / "s2" / "s2_eloreta-parc-raw.fif"}

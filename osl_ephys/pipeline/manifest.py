@@ -107,7 +107,7 @@ def output_paths(session: dict, outdir) -> dict:
     -------
     paths : dict
         ``preproc_file`` (the manifest's if given), ``preproc_dir``,
-        ``surfaces_dir`` (per subject), ``session_dir`` and ``parc_file``.
+        ``surfaces_dir`` (per subject) and ``session_dir``.
     """
     outdir = Path(outdir)
     id_ = session["id"]
@@ -123,5 +123,4 @@ def output_paths(session: dict, outdir) -> dict:
         ),
         "surfaces_dir": surfaces_dir / subject,
         "session_dir": outdir / id_,
-        "parc_file": outdir / id_ / f"{id_}_parc-raw.fif",
     }

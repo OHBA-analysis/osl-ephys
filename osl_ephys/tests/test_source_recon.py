@@ -46,7 +46,7 @@ def test_source_reconstruction_on_mni152_surfaces(sessions, tmp_path):
         assert (coreg / "model-fwd.fif").exists()
         assert (tmp_path / id_ / "src" / "filters-lcmv.h5").exists()
         parc = mne.io.read_raw_fif(
-            tmp_path / id_ / f"{id_}_parc-raw.fif", verbose=False
+            tmp_path / id_ / f"{id_}_lcmv-parc-raw.fif", verbose=False
         )
         assert len(mne.pick_types(parc.info, misc=True)) == 52
         assert (tmp_path / id_ / f"{id_}_sflip-lcmv-parc-raw.fif").exists()
@@ -95,7 +95,7 @@ def test_volumetric_minimum_norm_on_mni152_surfaces(
     assert results[0][1] == "ok", results
     assert (tmp_path / "elekta" / "freesurfer" / "op-inv.fif").exists()
     parc = mne.io.read_raw_fif(
-        tmp_path / "elekta" / "elekta_parc-raw.fif", verbose=False
+        tmp_path / "elekta" / f"elekta_{estimator}-parc-raw.fif", verbose=False
     )
     assert len(mne.pick_types(parc.info, misc=True)) == 52
     assert (tmp_path / "elekta" / f"elekta_sflip-{estimator}-parc-raw.fif").exists()
