@@ -23,6 +23,8 @@ def _run(args):
         n_workers=args.n_workers,
         log_dir=args.log_dir,
         qc_dir=False if args.no_report else args.qc_dir,
+        preproc_dir=args.preproc_dir,
+        surfaces_dir=args.surfaces_dir,
         overwrite=args.overwrite,
         verbose=args.verbose,
         mneverbose=args.mneverbose,
@@ -169,6 +171,16 @@ def main(argv=None) -> int:
         "--qc-dir",
         default=None,
         help="directory for the QC report (default: outdir/qc)",
+    )
+    run.add_argument(
+        "--preproc-dir",
+        default=None,
+        help="directory for the preprocessed files (default: outdir/preproc)",
+    )
+    run.add_argument(
+        "--surfaces-dir",
+        default=None,
+        help="directory for the surfaces of each subject (default: outdir/surfaces)",
     )
     run.add_argument(
         "--no-report", action="store_true", help="do not generate the QC report"

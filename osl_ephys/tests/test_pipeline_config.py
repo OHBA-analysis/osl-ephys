@@ -121,3 +121,16 @@ def test_output_paths_follow_the_layout(tmp_path):
         {"id": "s1", "preproc_file": "/elsewhere/s1.fif"}, tmp_path
     )
     assert paths["preproc_file"] == Path("/elsewhere/s1.fif")
+    paths = manifest.output_paths(
+        {
+            "id": "s1",
+            "subject": "sub-01",
+            "preproc_dir": "/elsewhere/preproc",
+            "surfaces_dir": "/elsewhere/surfaces",
+        },
+        tmp_path,
+    )
+    assert paths["preproc_dir"] == Path("/elsewhere/preproc")
+    assert paths["preproc_file"] == Path("/elsewhere/preproc/s1_preproc-raw.fif")
+    assert paths["surfaces_dir"] == Path("/elsewhere/surfaces/sub-01")
+    assert paths["session_dir"] == tmp_path / "s1"

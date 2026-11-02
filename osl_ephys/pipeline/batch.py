@@ -22,6 +22,8 @@ def run_batch(
     n_workers=1,
     log_dir=None,
     qc_dir=None,
+    preproc_dir=None,
+    surfaces_dir=None,
     extra_funcs=None,
     covs=None,
     overwrite=False,
@@ -48,6 +50,12 @@ def run_batch(
     qc_dir : str, optional
         Directory for the QC report; ``outdir/qc`` by default. Pass
         ``False`` for no report.
+    preproc_dir : str, optional
+        Directory for the preprocessed files; ``outdir/preproc`` by default.
+        The ICA review tools only look in ``outdir/preproc``.
+    surfaces_dir : str, optional
+        Directory for the surfaces, with a directory per subject;
+        ``outdir/surfaces`` by default.
     extra_funcs : list of callable, optional
         Custom steps.
     covs : dict or pandas.DataFrame, optional
@@ -78,6 +86,11 @@ def run_batch(
 
     config = cfg.load_config(config)
     sessions = manifest.load_manifest(sessions)
+    for row in sessions:
+        if preproc_dir is not None:
+            row["preproc_dir"] = str(preproc_dir)
+        if surfaces_dir is not None:
+            row["surfaces_dir"] = str(surfaces_dir)
     cfg.validate(config, extra_funcs, manifest.columns(sessions))
     cfg.check_versions(config)
 

@@ -99,3 +99,18 @@ def test_volumetric_minimum_norm_on_mni152_surfaces(
     )
     assert len(mne.pick_types(parc.info, misc=True)) == 52
     assert (tmp_path / "elekta" / f"elekta_sflip-{estimator}-parc-raw.fif").exists()
+
+
+def test_preproc_and_qc_directories_can_be_elsewhere(sessions, tmp_path):
+    results = run_batch(
+        "preproc:\n  - resample: {sfreq: 100}\n",
+        sessions[:1],
+        tmp_path / "osl",
+        n_workers=1,
+        preproc_dir=tmp_path / "preproc",
+        qc_dir=tmp_path / "qc",
+    )
+    assert results[0][1] == "ok", results
+    assert (tmp_path / "preproc" / "elekta_preproc-raw.fif").exists()
+    assert not (tmp_path / "osl" / "preproc").exists()
+    assert (tmp_path / "qc" / "report.html").exists()

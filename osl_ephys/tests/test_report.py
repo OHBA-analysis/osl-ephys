@@ -4,6 +4,7 @@ import json
 
 import mne
 import pytest
+from PIL import Image
 
 from osl_ephys import files
 from osl_ephys.report import generate_report
@@ -66,3 +67,17 @@ def test_gen_report_from_fif(raw, tmp_path):
     path = gen_report_from_fif([str(fif)], tmp_path / "qc", plots=["psd"])
     assert path.exists()
     assert (tmp_path / "qc" / "preproc" / "elekta" / "psd.webp").exists()
+
+
+def test_the_surfaces_can_be_elsewhere(tmp_path):
+    surfaces = tmp_path / "elsewhere" / "sub-01"
+    surfaces.mkdir(parents=True)
+    Image.new("RGB", (4, 4)).save(surfaces / "surfaces.png")
+    metrics = {"dice": 0.9, "mutual_information": 1.0}
+    (surfaces / "mni_registration.json").write_text(
+        json.dumps({"used": "flirt", "flirt": metrics})
+    )
+    row = {"id": "s1", "subject": "sub-01", "surfaces_dir": str(surfaces.parent)}
+    report = generate_report(tmp_path / "qc", [row], tmp_path / "osl").read_text()
+    assert "MNI overlap" in report
+    assert (tmp_path / "qc" / "surfaces" / "sub-01" / "surfaces.webp").exists()

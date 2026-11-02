@@ -10,6 +10,10 @@ A manifest is a list of dicts, one per session, with these columns:
 - ``smri_file``: the structural MRI, for surface extraction.
 - ``preproc_file``: the preprocessed file, when it is not at the standard
   location under ``outdir``.
+- ``preproc_dir``: the directory of the preprocessed files, ``outdir/preproc``
+  by default.
+- ``surfaces_dir``: the directory holding a directory of surfaces per subject,
+  ``outdir/surfaces`` by default.
 - ``epoch_file``, ``pos_file``, ``elc_file``, ``localizer_file``: optional
   inputs of the source-reconstruction steps.
 
@@ -30,6 +34,8 @@ COLUMNS = (
     "raw_file",
     "smri_file",
     "preproc_file",
+    "preproc_dir",
+    "surfaces_dir",
     "epoch_file",
     "pos_file",
     "elc_file",
@@ -106,14 +112,16 @@ def output_paths(session: dict, outdir) -> dict:
     outdir = Path(outdir)
     id_ = session["id"]
     subject = session.get("subject", id_)
+    preproc_dir = Path(session.get("preproc_dir", outdir / "preproc"))
+    surfaces_dir = Path(session.get("surfaces_dir", outdir / "surfaces"))
     return {
-        "preproc_dir": outdir / "preproc",
+        "preproc_dir": preproc_dir,
         "preproc_file": (
             Path(session["preproc_file"])
             if "preproc_file" in session
-            else outdir / "preproc" / f"{id_}_preproc-raw.fif"
+            else preproc_dir / f"{id_}_preproc-raw.fif"
         ),
-        "surfaces_dir": outdir / "surfaces" / subject,
+        "surfaces_dir": surfaces_dir / subject,
         "session_dir": outdir / id_,
         "parc_file": outdir / id_ / f"{id_}_parc-raw.fif",
     }

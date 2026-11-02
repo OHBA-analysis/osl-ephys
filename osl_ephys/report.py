@@ -24,6 +24,8 @@ import matplotlib.pyplot as plt
 import pandas as pd
 from PIL import Image
 
+from osl_ephys.pipeline.manifest import output_paths
+
 # The plots of each tab, relative to the QC directory, which has a directory
 # for each step holding a directory for each session, subject or head model.
 # Plots that have not been saved are not shown.
@@ -564,7 +566,7 @@ def _session_row(
 
     if subject not in registrations:
         registrations[subject] = _read_json(
-            outdir / "surfaces" / subject / "mni_registration.json"
+            output_paths(session, outdir)["surfaces_dir"] / "mni_registration.json"
         )
     registration = registrations[subject]
     if registration is not None:
@@ -579,7 +581,9 @@ def _session_row(
     return row
 
 
-def _copy_plots(table: pd.DataFrame, qc_dir: Path, outdir: Path) -> None:
+def _copy_plots(
+    table: pd.DataFrame, sessions: list[dict], qc_dir: Path, outdir: Path
+) -> None:
     """Copy the surface and coregistration plots into the QC directory.
 
     Surface extraction and coregistration save their plots with their output
@@ -589,10 +593,12 @@ def _copy_plots(table: pd.DataFrame, qc_dir: Path, outdir: Path) -> None:
     changed since they were last copied are skipped.
     """
     copies = []
-    for subject in table["subject"].dropna().unique():
+    surfaces_dirs = [output_paths(s, outdir)["surfaces_dir"] for s in sessions]
+    for surfaces_dir in dict.fromkeys(surfaces_dirs):
         for name in ["surfaces", "mni_registration"]:
-            source = outdir / "surfaces" / subject / f"{name}.png"
-            copies.append((source, qc_dir / "surfaces" / subject / f"{name}.webp"))
+            source = surfaces_dir / f"{name}.png"
+            destination = qc_dir / "surfaces" / surfaces_dir.name / f"{name}.webp"
+            copies.append((source, destination))
     for head_model in table["head_model"].unique():
         coreg_dir = _coreg_dir(outdir, head_model)
         if coreg_dir is not None:
@@ -695,7 +701,7 @@ def generate_report(
     columns += [c for c in table.columns if c not in info and c not in METRICS]
     table = table[info + columns]
     if outdir is not None:
-        _copy_plots(table, qc_dir, outdir)
+        _copy_plots(table, sessions, qc_dir, outdir)
     if metrics is not None:
         table = table.join(metrics, on="Session")
 
