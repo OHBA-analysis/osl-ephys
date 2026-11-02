@@ -1,20 +1,23 @@
-
 import os
 import pickle
 from copy import deepcopy
 from pathlib import Path
 from scipy.sparse import csr_array
 
-import glmtools as glm
+from osl_ephys.utils.misc import lazy_import
+
+# glmtools is pip-only, so it is imported when a GLM is fitted
+glm = lazy_import("glmtools")
 import mne
 import numpy as np
 
 from .glm_base import GLMBaseResult, GroupGLMBaseResult, SensorClusterPerm
-from ..source_recon import parcellation
+from ..parcellation import parcellation
 
 
 class GLMEpochsResult(GLMBaseResult):
     """A class for first-level GLM-Spectra fitted to MNE-Python Epochs objects"""
+
     def __init__(self, model, design, info, tmin=0, data=None, times=None):
         """
         Parameters
@@ -31,7 +34,7 @@ class GLMEpochsResult(GLMBaseResult):
             The data object used to fit the model (Default value = None)
         times : array-like
             The time points for the data (Default value = None)
-        
+
         """
         self.tmin = tmin
         self.times = times
@@ -54,7 +57,7 @@ class GLMEpochsResult(GLMBaseResult):
             msg = "{} already exists. Please delete or do use overwrite=True."
             raise ValueError(msg.format(outname))
 
-        if hasattr(self, 'config'):
+        if hasattr(self, "config"):
             self.config.detrend_func = None  # Have to drop this to pickle
 
         # This is hacky - but pickles are all or nothing and I don't know how
@@ -64,39 +67,38 @@ class GLMEpochsResult(GLMBaseResult):
             dd = self.data
             self.data = None
 
-        with open(outname, 'bw') as outp:
+        with open(outname, "bw") as outp:
             pickle.dump(self, outp)
 
         # Put data back
         if save_data == False:
             self.data = dd
-            
 
-    def get_evoked_contrast(self, contrast=0, metric='copes'):
+    def get_evoked_contrast(self, contrast=0, metric="copes"):
         """Get the evoked response for a given contrast.
-        
+
         Parameters
         ----------
         contrast : int
             Contrast index to return
         metric : {'copes', or 'tsats'}
             Which metric to plot (Default value = 'copes')
-            
+
         Returns
         -------
         :py:class:`mne.Evoked <mne.Evoked>`
             The evoked response for the contrast.
         """
-        if metric == 'copes':
+        if metric == "copes":
             erf = self.model.copes[contrast, :, :]
-        elif metric == 'tstats':
+        elif metric == "tstats":
             erf = self.model.tstats[contrast, :, :]
 
         return mne.EvokedArray(erf, self.info, tmin=self.tmin)
 
-    def plot_joint_contrast(self, contrast=0, metric='copes', title=None):
+    def plot_joint_contrast(self, contrast=0, metric="copes", title=None):
         """Plot the evoked response for a given contrast.
-        
+
         Parameters
         ----------
         contrast : int
@@ -109,18 +111,21 @@ class GLMEpochsResult(GLMBaseResult):
         evo = self.get_evoked_contrast(contrast=contrast, metric=metric)
 
         if title is None:
-            title = 'C {} : {}'.format(contrast, self.design.contrast_names[contrast])
-        
+            title = "C {} : {}".format(contrast, self.design.contrast_names[contrast])
+
         try:
             evo.plot_joint(title=title)
         except:
             from .glm_spectrum import plot_joint_spectrum
             import matplotlib.pyplot as plt
+
             fig = plt.figure()
             fig.subplots_adjust(top=0.8)
             ax = plt.subplot(111)
-            plot_joint_spectrum(evo.times, evo.get_data().T, evo.info, title=title, ax=ax)
-            ax.child_axes[0].set_xlabel('Time (s)')
+            plot_joint_spectrum(
+                evo.times, evo.get_data().T, evo.info, title=title, ax=ax
+            )
+            ax.child_axes[0].set_xlabel("Time (s)")
             ax.child_axes[0].set_ylabel(metric)
 
 
@@ -128,7 +133,17 @@ class GroupGLMEpochs(GroupGLMBaseResult):
     """A class for group level GLM-Spectra fitted across mmultiple first-level
     GLM-Spectra computed from MNE-Python Raw objects"""
 
-    def __init__(self, model, design, info, config, fl_contrast_names=None, data=None, tmin=0, times=None):
+    def __init__(
+        self,
+        model,
+        design,
+        info,
+        config,
+        fl_contrast_names=None,
+        data=None,
+        tmin=0,
+        times=None,
+    ):
         """
         Parameters
         ----------
@@ -151,33 +166,37 @@ class GroupGLMEpochs(GroupGLMBaseResult):
         """
         self.tmin = tmin
         self.times = times
-        super().__init__(model, design, info, config, fl_contrast_names=fl_contrast_names, data=data)
+        super().__init__(
+            model, design, info, config, fl_contrast_names=fl_contrast_names, data=data
+        )
 
-    def get_evoked_contrast(self, gcontrast=0, fcontrast=0, metric='copes'):
+    def get_evoked_contrast(self, gcontrast=0, fcontrast=0, metric="copes"):
         """Get the evoked response for a given contrast.
-        
+
         Parameters
         ----------
         contrast : int
             Contrast index to return
         metric : {'copes', or 'tsats'}
             Which metric to plot (Default value = 'copes')
-            
+
         Returns
         -------
         :py:class:`mne.Evoked <mne.Evoked>`
             The evoked response for the contrast.
         """
-        if metric == 'copes':
+        if metric == "copes":
             erf = self.model.copes[gcontrast, fcontrast, :, :]
-        elif metric == 'tstats':
+        elif metric == "tstats":
             erf = self.model.tstats[gcontrast, fcontrast, :, :]
 
         return mne.EvokedArray(erf, self.info, tmin=self.tmin)
 
-    def plot_joint_contrast(self, gcontrast=0, fcontrast=0, metric='copes', title=None, joint_args=None):
+    def plot_joint_contrast(
+        self, gcontrast=0, fcontrast=0, metric="copes", title=None, joint_args=None
+    ):
         """Plot the evoked response for a given contrast.
-        
+
         Parameters
         ----------
         contrast : int
@@ -191,27 +210,31 @@ class GroupGLMEpochs(GroupGLMBaseResult):
 
         joint_args = {} if joint_args is None else joint_args
         if title is None:
-            gtitle = 'gC {} : {}'.format(gcontrast, self.contrast_names[gcontrast])
-            ftitle = 'flC {} : {}'.format(fcontrast, self.fl_contrast_names[fcontrast])
+            gtitle = "gC {} : {}".format(gcontrast, self.contrast_names[gcontrast])
+            ftitle = "flC {} : {}".format(fcontrast, self.fl_contrast_names[fcontrast])
 
-            title = gtitle + '\n' + ftitle
+            title = gtitle + "\n" + ftitle
 
-        if metric == 'tstats':
-            joint_args['ts_args'] = {'scalings': dict(eeg=1, grad=1, mag=1),
-                                     'units': dict(eeg='tstats', grad='tstats', mag='tstats')}
+        if metric == "tstats":
+            joint_args["ts_args"] = {
+                "scalings": dict(eeg=1, grad=1, mag=1),
+                "units": dict(eeg="tstats", grad="tstats", mag="tstats"),
+            }
 
         try:
             evo.plot_joint(title=title, **joint_args)
         except:
             from .glm_spectrum import plot_joint_spectrum
             import matplotlib.pyplot as plt
+
             fig = plt.figure()
             fig.subplots_adjust(top=0.8)
             ax = plt.subplot(111)
-            plot_joint_spectrum(evo.times, evo.get_data().T, evo.info, title=title, **joint_args, ax=ax)
-            ax.child_axes[0].set_xlabel('Time (s)')
+            plot_joint_spectrum(
+                evo.times, evo.get_data().T, evo.info, title=title, **joint_args, ax=ax
+            )
+            ax.child_axes[0].set_xlabel("Time (s)")
             ax.child_axes[0].set_ylabel(metric)
-
 
     def get_fl_contrast(self, fl_con):
         """Get the data from a single first level contrast.
@@ -230,7 +253,7 @@ class GroupGLMEpochs(GroupGLMBaseResult):
         ret_con.data = ret_con.data[:, fl_con, :, :]
 
         return ret_con
-    
+
     def save_pkl(self, outname, overwrite=True, save_data=False):
         """Save GLM-Epochs result to a pickle file.
 
@@ -248,7 +271,7 @@ class GroupGLMEpochs(GroupGLMBaseResult):
             msg = "{} already exists. Please delete or do use overwrite=True."
             raise ValueError(msg.format(outname))
 
-        if hasattr(self, 'config'):
+        if hasattr(self, "config"):
             self.config.detrend_func = None  # Have to drop this to pickle
 
         # This is hacky - but pickles are all or nothing and I don't know how
@@ -258,38 +281,41 @@ class GroupGLMEpochs(GroupGLMBaseResult):
             dd = self.data
             self.data = None
 
-        with open(outname, 'bw') as outp:
+        with open(outname, "bw") as outp:
             pickle.dump(self, outp)
 
         # Put data back
         if save_data == False:
             self.data = dd
 
-#%% ------------------------------------------------------
-
 
 def glm_epochs(config, epochs):
     """Compute a GLM-Epochs from an MNE-Python Epochs object.
-    
+
     Parameters
-    ---------- 
+    ----------
     config : glmtools.design.DesignConfig
          The design specification for the model
     epochs : str, :py:class:`mne.Epochs <mne.Epochs>`
          The epochs object to use for the model
-    
+
     Returns
     -------
     :py:class:`GLMEpochsResult <glmtools.glm_epochs.GLMEpochsResult>`
-         """
+    """
     data = read_mne_epochs(epochs)
     design = config.design_from_datainfo(data.info)
 
     model = glm.fit.OLSModel(design, data)
 
-    return GLMEpochsResult(model, design, epochs.info, tmin=epochs.tmin, data=data, times=epochs.times)
+    return GLMEpochsResult(
+        model, design, epochs.info, tmin=epochs.tmin, data=data, times=epochs.times
+    )
 
-def group_glm_epochs(inspectra, design_config=None, datainfo=None, metric='copes', baseline=None):
+
+def group_glm_epochs(
+    inspectra, design_config=None, datainfo=None, metric="copes", baseline=None
+):
     """Compute a group GLM-Epochs from a set of first-level GLM-Epochs.
 
     Parameters
@@ -329,44 +355,56 @@ def group_glm_epochs(inspectra, design_config=None, datainfo=None, metric='copes
 
     if design_config is None:
         design_config = glm.design.DesignConfig()
-        design_config.add_regressor(name='Mean', rtype='Constant')
+        design_config.add_regressor(name="Mean", rtype="Constant")
         design_config.add_simple_contrasts()
 
     design = design_config.design_from_datainfo(group_data.info)
     model = glm.fit.OLSModel(design, group_data)
 
-    return GroupGLMEpochs(model, design, glmep.info, design_config, data=group_data, fl_contrast_names=fl_contrast_names, tmin=glmep.tmin, times=glmep.times)
+    return GroupGLMEpochs(
+        model,
+        design,
+        glmep.info,
+        design_config,
+        data=group_data,
+        fl_contrast_names=fl_contrast_names,
+        tmin=glmep.tmin,
+        times=glmep.times,
+    )
 
-#%% ------------------------------------------------------
 
 def read_mne_epochs(X, picks=None):
     """Read in an MNE-Python Epochs object and convert it to a GLM data object.
-    
+
     Parameters
     ----------
     X : str, :py:class:`mne.Epochs <mne.Epochs>`
         The epochs object to use for the model
     picks : list
         List of channels to use for the model (Default value = None)
-        
+
     Returns
     -------
     :py:class:`glmtools.data.TrialGLMData <glmtools.data.TrialGLMData>`
         The data object used to fit the model.
     """
     import mne
+
     if isinstance(X, str) and os.path.isfile(X):
         epochs = mne.read_epochs(X)
     elif isinstance(X, (mne.epochs.EpochsFIF, mne.Epochs)):
         epochs = X
 
-    d = glm.data.TrialGLMData(data=epochs.get_data(picks=picks),
-                              category_list=epochs.events[:, 2],
-                              sample_rate=epochs.info['sfreq'],
-                              time_dim=2,
-                              dim_labels=list(('Trials', 'Channels', 'Times')))
+    d = glm.data.TrialGLMData(
+        data=epochs.get_data(picks=picks),
+        category_list=epochs.events[:, 2],
+        sample_rate=epochs.info["sfreq"],
+        time_dim=2,
+        dim_labels=list(("Trials", "Channels", "Times")),
+    )
 
     return d
+
 
 def read_glm_epochs(infile):
     """Read in a GLMEpochs object that has been saved as as a pickle.
@@ -381,6 +419,6 @@ def read_glm_epochs(infile):
     :py:class:`GLMEpochsResult <glmtools.glm_epochs.GLMEpochsResult>`
 
     """
-    with open(infile, 'rb') as outp:
+    with open(infile, "rb") as outp:
         glmepec = pickle.load(outp)
     return glmepec

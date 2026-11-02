@@ -1,0 +1,9 @@
+# Packages needed to build the documentation
+
+sphinx
+sphinx-gallery
+sphinx-autoapi
+sphinx-sitemap
+pydata-sphinx-theme
+
+-e .

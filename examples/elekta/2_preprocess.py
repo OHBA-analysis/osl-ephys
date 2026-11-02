@@ -1,57 +1,31 @@
-"""Preprocessing.
+"""Preprocess the maxfiltered recordings.
 
-Note, we preprocess multiple subjects in parallel to speed things up.
+The sessions run in parallel, n_workers at a time; use fewer than half the
+CPUs of the computer. Each session's log is in data/logs and the QC report
+in data/qc/report.html.
 """
 
-# Authors: Chetan Gohil <chetan.gohil@psych.ox.ac.uk>
+from osl_ephys.pipeline import run_batch
+from sessions import sessions
 
-from dask.distributed import Client
-
-from osl_ephys import preprocessing, utils
-
-# Files and directories
-raw_file = "maxfilter/{subject}_tsss.fif"  # {subject} will be replace by the name for the subject
-outdir = "data"
-
-subjects = ["sub-001", "sub-002"]
-
-# Settings
 config = """
-    preproc:
-    - filter: {l_freq: 0.5, h_freq: 125, method: iir, iir_params: {order: 5, ftype: butter}}
-    - notch_filter: {freqs: 50 100}
-    - resample: {sfreq: 250}
-    - bad_segments: {segment_len: 500, picks: mag}
-    - bad_segments: {segment_len: 500, picks: grad}
-    - bad_segments: {segment_len: 500, picks: mag, mode: diff}
-    - bad_segments: {segment_len: 500, picks: grad, mode: diff}
-    - bad_channels: {picks: mag}
-    - bad_channels: {picks: grad}
-    - ica_raw: {picks: meg, n_components: 40}
-    - ica_autoreject: {picks: meg, ecgmethod: correlation, eogthreshold: auto}
-    - interpolate_bads: {}
+maxfilter:
+  - maxfilter: {maxpath: /neuro/bin/util/maxfilter, cal: /neuro/databases/sss/sss_cal.dat, ctc: /neuro/databases/ctc/ct_sparse.fif, mode: multistage, tsss: true, headpos: true, movecomp: true}
+preproc:
+  - filter: {l_freq: 0.5, h_freq: 125, method: iir, iir_params: {order: 5, ftype: butter}}
+  - notch_filter: {freqs: 50 100}
+  - resample: {sfreq: 250}
+  - bad_segments: {segment_len: 500, picks: mag}
+  - bad_segments: {segment_len: 500, picks: grad}
+  - bad_segments: {segment_len: 500, picks: mag, mode: diff}
+  - bad_segments: {segment_len: 500, picks: grad, mode: diff}
+  - bad_channels: {picks: mag}
+  - bad_channels: {picks: grad}
+  - ica_raw: {picks: meg, n_components: 40}
+  - ica_autoreject: {ecgmethod: correlation, eogthreshold: auto}
+  - interpolate_bads: {}
 """
 
 if __name__ == "__main__":
-    utils.logger.set_up(level="INFO")
-
-    # Get input files
-    inputs = []
-    for subject in subjects:
-        inputs.append(raw_file.format(subject=subject))
-
-    # Setup parallel processing
-    #
-    # n_workers is the number of CPUs to use,
-    # we recommend less than half the total number of CPUs you have
-    client = Client(n_workers=4, threads_per_worker=1)
-
-    # Main preprocessing
-    preprocessing.run_proc_batch(
-        config,
-        inputs,
-        subjects=subjects,
-        outdir=outdir,
-        overwrite=True,
-        dask_client=True,
-    )
+    # The maxfilter section is skipped for sessions whose maxfiltered file exists
+    run_batch(config, sessions, "data", n_workers=4)

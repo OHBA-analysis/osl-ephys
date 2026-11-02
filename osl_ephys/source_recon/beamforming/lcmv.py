@@ -1,0 +1,1520 @@
+"""The LCMV beamformer: filters from the forward model and the data covariance, their application, virtual electrodes, weights and leadfields."""
+
+from __future__ import annotations
+
+import os
+import numpy as np
+import mne
+from mne.beamformer._compute_beamformer import (
+    Beamformer,
+    _proj_whiten_data,
+    _reduce_leadfield_rank,
+)
+from mne.beamformer._lcmv import _apply_lcmv
+from mne.minimum_norm.inverse import (
+    _check_depth,
+    _check_reference,
+    _get_vertno,
+    _prepare_forward,
+)
+from mne.utils import logger as mne_logger, warn
+from osl_ephys.session import Session, check_up_to_date
+from osl_ephys.rhino import forward as rhino_forward
+from osl_ephys.source_recon.beamforming.bilateral import (
+    _find_bilateral_pairs,
+    _get_midline_x,
+)
+from osl_ephys.source_recon.beamforming.grid import (
+    _get_gridstep,
+    _get_mni_grid,
+    _get_source_coords_mni,
+)
+
+
+def lcmv_beamformer(
+    session: Session,
+    data: str | mne.io.Raw | mne.Epochs | None = None,
+    chantypes: str | list[str] | None = None,
+    data_cov: mne.Covariance | None = None,
+    noise_cov: mne.Covariance | None = None,
+    pick_ori: str | None = "max-power-pre-weight-norm",
+    rank: str | dict = "info",
+    noise_rank: str | dict = "info",
+    reduce_rank: bool = True,
+    frequency_range: list[float] | None = None,
+    use_bilateral_pairs: bool = False,
+    bilateral_tol: float | None = None,
+    bilateral_tol_midline: float | None = None,
+    **kwargs,
+) -> None:
+    """Compute LCMV spatial filter.
+
+    The filters are saved to session.filters_file.
+
+    Parameters
+    ----------
+    session : Session
+        Files of the session.
+    data : str | instance of mne.Raw | mne.Epochs, optional
+        The measurement data to specify the channels to include. Bad channels
+        in info['bads'] are not used. Will also be used to calculate data_cov.
+        If None, session.preproc_file is used.
+    chantypes : list or str
+        List of channel types to use to calculate the noise covariance.
+        E.g. ['eeg'], ['mag', 'grad'], ['eeg', 'mag', 'grad'].
+    data_cov : instance of mne.Covariance | None
+        The noise covariance matrix used to whiten.
+        If None will be computed from data.
+    noise_cov : instance of mne.Covariance | None
+        The noise covariance matrix used to whiten.
+        If None will be computed from data as a diagonal matrix with variances
+        set to the average of all sensors of that type.
+    pick_ori : None | 'normal' | 'max-power' | max-power-pre-weight-norm
+        The source orientation to compute the beamformer in.
+    rank : dict
+        Calculate the rank only for a subset of channel types, and
+        explicitly specify the rank for the remaining channel types.
+        This can be extremely useful if you already know the rank of (part
+        of) your data, for instance in case you have calculated it earlier.
+        This parameter must be a dictionary whose keys correspond to channel
+        types in the data (e.g. 'meg', 'mag', 'grad', 'eeg'), and whose
+        values are integers representing the respective ranks. For example,
+        {'mag': 90, 'eeg': 45} will assume a rank of 90 and 45 for
+        magnetometer data and EEG data, respectively.
+        The ranks for all channel types present in the data, but not
+        specified in the dictionary will be estimated empirically. That is,
+        if you passed a dataset containing magnetometer, gradiometer, and
+        EEG data together with the dictionary from the previous example,
+        only the gradiometer rank would be determined, while the specified
+        magnetometer and EEG ranks would be taken for granted.
+    noise_rank : dict | None | 'full' | 'info'
+        This controls the rank computation that can be read from the measurement
+        info or estimated from the data. When a noise covariance is used for
+        whitening, this should reflect the rank of that covariance, otherwise
+        amplification of noise components can occur in whitening (e.g., often
+        during source localization).
+    reduce_rank : bool
+        Whether to reduce the rank by one during computation of the filter.
+    frequency_range : list
+        Lower and upper range (in Hz) for frequency range to bandpass filter.
+        If None, no filtering is performed.
+    use_bilateral_pairs : bool
+        Should we compute joint beamformer weights for pairs of bilaterally
+        symmetric dipoles? This avoids the suppression of correlated bilateral
+        sources (e.g. left and right auditory cortex responding to the same
+        stimulus) that occurs with a standard LCMV beamformer. Requires
+        pick_ori='max-power' or 'max-power-pre-weight-norm' and is
+        incompatible with weight_norm='unit-noise-gain-invariant'
+        (weight_norm='unit-noise-gain' is used if weight_norm is not passed).
+    bilateral_tol : float
+        Tolerance (in mm) for pairing dipoles mirrored across the midline:
+        the mean absolute difference between the x, y and z coordinates of a
+        dipole and the mirror image of its partner. If None, half the gridstep
+        of the dipole grid is used, which pairs a dipole with its mirror image
+        or, if there is no dipole there, with a dipole one gridstep from it.
+        Recommended value: gridstep / 2.
+    bilateral_tol_midline : float
+        Dipoles closer (in mm) than this to the midline (x = 0 in MNI space)
+        are not paired. If None, bilateral_tol is used.
+    **kwargs : keyword arguments
+        Keyword arguments that will be passed to mne.beamformer.make_lcmv.
+    """
+    print("")
+    print("Making LCMV beamformer")
+    print("----------------------")
+
+    check_up_to_date(session, "forward model")
+    if data is None:
+        data = session.preproc_file
+
+    if chantypes is None:
+        raise ValueError("chantypes must be passed.")
+
+    if isinstance(chantypes, str):
+        chantypes = [chantypes]
+
+    # Load data
+    if isinstance(data, str):
+        if "epo.fif" in data:
+            data = mne.read_epochs(data)
+        else:
+            data = mne.io.read_raw_fif(data, preload=True)
+
+    # Bandpass filter
+    if frequency_range is not None:
+        data.filter(
+            l_freq=frequency_range[0],
+            h_freq=frequency_range[1],
+            method="iir",
+            iir_params={"order": 5, "ftype": "butter"},
+        )
+
+    # Load forward solution
+    fwd = mne.read_forward_solution(session.fwd_model_file)
+
+    data_cov, noise_cov = _data_and_noise_covariance(
+        data, chantypes, rank, data_cov, noise_cov
+    )
+
+    # Find pairs of bilaterally symmetric dipoles to beamform jointly
+    multi_dipoles = None
+    single_dipoles = None
+    if use_bilateral_pairs:
+        if pick_ori not in ("max-power", "max-power-pre-weight-norm"):
+            raise ValueError(
+                "use_bilateral_pairs=True requires pick_ori='max-power' or "
+                "'max-power-pre-weight-norm'."
+            )
+        if kwargs.get("weight_norm") == "unit-noise-gain-invariant":
+            raise ValueError(
+                "use_bilateral_pairs=True is not compatible with "
+                "weight_norm='unit-noise-gain-invariant', which computes "
+                "the weights from the leadfields alone and would discard "
+                "the joint beamformer denominator of each bilateral pair. "
+                "Use weight_norm='unit-noise-gain' instead."
+            )
+        _use_unit_noise_gain(kwargs)
+
+        src_coords_mni = _get_source_coords_mni(session, fwd)
+        multi_dipoles, single_dipoles, midline_points = _find_bilateral_pairs(
+            src_coords_mni,
+            bilateral_tol,
+            bilateral_tol_midline,
+            midline_x=_get_midline_x(session),
+        )
+        if len(multi_dipoles) == 0:
+            warn(
+                "No bilateral pairs found, using a standard beamformer. "
+                "Consider increasing bilateral_tol."
+            )
+            multi_dipoles = None
+            single_dipoles = None
+        else:
+            # Midline dipoles get standard single-dipole weights
+            single_dipoles = np.concatenate([single_dipoles, midline_points])
+
+    # Make filters
+    lcmv_params = dict(
+        pick_ori=pick_ori,
+        rank=rank,
+        noise_rank=noise_rank,
+        reduce_rank=reduce_rank,
+        **{k: v for k, v in kwargs.items() if k != "verbose"},
+    )
+    filters = _make_lcmv(
+        data.info,
+        fwd,
+        data_cov,
+        noise_cov=noise_cov,
+        multi_dipoles=multi_dipoles,
+        single_dipoles=single_dipoles,
+        verbose=kwargs.get("verbose"),
+        **lcmv_params,
+    )
+
+    # Keep the settings so we can compute filters for other locations,
+    # see virtual_electrodes
+    filters["osl_lcmv_params"] = lcmv_params
+    filters["osl_bilateral_pairs"] = dict(
+        used=multi_dipoles is not None,
+        bilateral_tol=bilateral_tol,
+        bilateral_tol_midline=bilateral_tol_midline,
+    )
+
+    os.makedirs(os.path.dirname(session.filters_file), exist_ok=True)
+    print(f"Saving {session.filters_file}")
+    filters.save(session.filters_file, overwrite=True)
+
+    print("LCMV beamformer complete.")
+
+
+def _data_and_noise_covariance(
+    data: mne.io.Raw | mne.Epochs,
+    chantypes: list[str],
+    rank: str | dict,
+    data_cov: mne.Covariance | None = None,
+    noise_cov: mne.Covariance | None = None,
+) -> tuple[mne.Covariance, mne.Covariance]:
+    """Data and noise covariance for the LCMV beamformer.
+
+    Parameters
+    ----------
+    data : mne.io.Raw | mne.Epochs
+        Sensor data.
+    chantypes : list of str
+        Channel types in the data, e.g. ['mag', 'grad'].
+    rank : str | dict
+        Rank of the data, see :func:`lcmv_beamformer`.
+    data_cov : mne.Covariance, optional
+        Data covariance. If None, it is computed from the data.
+    noise_cov : mne.Covariance, optional
+        Noise covariance. If None, a diagonal matrix with the variance of each
+        channel type set to the mean variance of its channels.
+
+    Returns
+    -------
+    data_cov : mne.Covariance
+        Data covariance.
+    noise_cov : mne.Covariance
+        Noise covariance.
+    """
+    if data_cov is None:
+        # Note that if chantypes are meg, eeg; and meg includes mag, grad then
+        # compute_covariance will project data separately for meg and eeg to
+        # reduced rank subspace (i.e. mag and grad will be combined together
+        # inside the meg subspace, eeg will haeve a separate subspace). I.e.
+        # data will become (ntpts x (rank_meg + rank_eeg)) and cov will be
+        # (rank_meg + rank_eeg) x (rank_meg + rank_eeg) and include correlations
+        # between eeg and meg subspaces. The output data_cov is cov projected
+        # back onto the individual sensor types mag, grad, eeg.
+        #
+        # Prior to computing anything, including the subspaces each of mag, grad,
+        # eeg are scaled so that they are on comparable scales to aid mixing in
+        # the subspace and improve numerical stability. Note that in the
+        # output data_cov the scalings have been undone.
+        if isinstance(data, mne.BaseEpochs):
+            data_cov = mne.compute_covariance(data, method="empirical", rank=rank)
+        else:
+            data_cov = mne.compute_raw_covariance(data, method="empirical", rank=rank)
+
+    if noise_cov is None:
+        # Calculate noise covariance matrix
+        #
+        # Later this will be inverted and used to whiten the data AND the lead
+        # fields as part of the source recon. See:
+        #
+        #   https://www.sciencedirect.com/science/article/pii/S1053811914010325
+        #
+        # In MNE, the noise cov is normally obtained from empty room noise
+        # recordings or from a baseline period. Here (if no noise cov is passed
+        # in) we compute a diagonal noise cov with the variances set to the mean
+        # variance of each sensor type (e.g. mag, grad, eeg).
+        n_channels = data_cov.data.shape[0]
+        noise_cov_diag = np.zeros(n_channels)
+        for chantype in chantypes:
+            # Indices of this channel type
+            type_data = data.copy().pick(chantype, exclude="bads")
+            inds = [data_cov.ch_names.index(c) for c in type_data.info["ch_names"]]
+
+            # Mean variance of channels of this type
+            variance = np.mean(np.diag(data_cov.data)[inds])
+            noise_cov_diag[inds] = variance
+            print(f"Variance for chantype {chantype} is {variance}")
+
+        bads = [b for b in data.info["bads"] if b in data_cov.ch_names]
+        noise_cov = mne.Covariance(
+            noise_cov_diag,
+            data_cov.ch_names,
+            bads,
+            data.info["projs"],
+            nfree=1e10,
+        )
+    return data_cov, noise_cov
+
+
+def apply_lcmv_beamformer(
+    session: Session,
+    raw: mne.io.Raw | mne.Epochs | None = None,
+    reject_by_annotation: str | None = "omit",
+    reference_brain: str = "mni",
+) -> tuple[np.ndarray, np.ndarray]:
+    """Apply an LCMV beamformer.
+
+    Parameters
+    ----------
+    session : Session
+        Files of the session.
+    raw : instance of mne.io.Raw or mne.Epochs, optional
+        The data to apply the LCMV filter to.
+        If None, session.preproc_file is used.
+    reject_by_annotation : str | None
+        How to treat the samples of a Raw object in annotations starting with
+        'bad': 'omit' drops them, None keeps them.
+    reference_brain : str, optional
+        Either 'head' or 'mni'. If 'mni', the data is returned for each voxel
+        of the MNI grid of the forward model (session.mni_grid_file). Voxels without a
+        dipole (outside the inner skull) are zero.
+
+    Returns
+    -------
+    voxel_data : np.ndarray
+        Voxel data in the space specified by the 'reference_brain' argument.
+        Shape is (voxels, time) for a Raw object or (voxels, time, epochs) for
+        an Epochs object.
+    coords : np.ndarray
+        Coordinates (in mm) for each voxel in the reference brain space.
+        Shape is (voxels, 3).
+    """
+    print()
+    print("Applying LCMV beamformer")
+    print("------------------------")
+
+    check_up_to_date(session, "LCMV filters")
+    if raw is None:
+        raw = mne.io.read_raw_fif(session.preproc_file, preload=True)
+
+    # Load filters
+    filters = mne.beamformer.read_beamformer(session.filters_file)
+
+    # Pick chantypes that were used to make the beamformer in the data
+    raw = raw.copy().pick(filters["ch_names"])
+
+    if isinstance(raw, mne.BaseEpochs):
+        # Apply filters to an Epochs object
+        stc = mne.beamformer.apply_lcmv_epochs(raw, filters)
+        voxel_data_head = np.transpose([s.data for s in stc], axes=[1, 2, 0])
+    else:
+        # Apply filters to a Raw object
+        _check_reference(raw)
+        data, times = raw.get_data(
+            return_times=True, reject_by_annotation=reject_by_annotation
+        )
+        chan_inds = mne.utils._check_channels_spatial_filter(raw.ch_names, filters)
+        data = data[chan_inds]
+        stc = _apply_lcmv(data=data, filters=filters, info=raw.info, tmin=times[0])
+        voxel_data_head = next(stc).data
+
+    # Get coordinates in head space
+    fwd = mne.read_forward_solution(session.fwd_model_file)
+    vs = fwd["src"][0]
+    voxel_coords_head = vs["rr"][vs["vertno"]] * 1000  # in mm
+
+    if reference_brain == "head":
+        return voxel_data_head, voxel_coords_head
+
+    # The dipoles are at the voxels of an MNI grid
+    grid_coords = _get_mni_grid(session, fwd)
+    voxel_data_mni = np.zeros((len(grid_coords),) + voxel_data_head.shape[1:])
+    voxel_data_mni[vs["vertno"]] = voxel_data_head
+
+    print("Applying LCMV beamformer complete.")
+
+    return voxel_data_mni, grid_coords
+
+
+def virtual_electrodes(
+    session: Session,
+    coords: list | np.ndarray,
+    raw: mne.io.Raw | mne.Epochs | None = None,
+    reject_by_annotation: str | None = "omit",
+    use_bilateral_pairs: bool | None = None,
+) -> np.ndarray:
+    """Beamform the activity at MNI coordinates (virtual electrodes).
+
+    The lead field is computed for a dipole at the exact location of each
+    coordinate and the LCMV beamformer weights are computed with the same data
+    covariance and settings used by :func:`lcmv_beamformer`, so the time
+    course is not taken from the nearest dipole of the MNI grid.
+
+    Parameters
+    ----------
+    session : Session
+        Files of the session. :func:`lcmv_beamformer` must have been
+        run.
+    coords : list | np.ndarray
+        MNI coordinates (in mm). Shape is (3,) for a single coordinate or
+        (n_coords, 3). The coordinates must be inside the inner skull.
+    raw : mne.io.Raw or mne.Epochs, optional
+        The data to beamform. If None, session.preproc_file is used.
+    reject_by_annotation : str | None
+        How to treat the samples of a Raw object in annotations starting with
+        'bad': 'omit' drops them, None keeps them.
+    use_bilateral_pairs : bool, optional
+        Should we compute joint beamformer weights with the coordinate
+        mirrored across the midline (x = 0)? Coordinates close to the midline,
+        or whose mirror image is outside the inner skull, use a single dipole.
+        If None, we do this if the filters were computed with
+        :code:`use_bilateral_pairs=True`. Note the dipoles of the MNI grid are
+        paired across the grid's own plane of symmetry, which can be up to half
+        a voxel from x = 0.
+
+    Returns
+    -------
+    data : np.ndarray
+        Time course at each coordinate. Shape is (n_coords, time) or
+        (n_coords, time, epochs), without the first axis if a single
+        coordinate is passed.
+    """
+    print()
+    print("Calculating virtual electrodes")
+    print("------------------------------")
+
+    coords = np.asarray(coords, dtype=float)
+    single = coords.ndim == 1
+    coords = np.atleast_2d(coords)
+    n_coords = len(coords)
+
+    check_up_to_date(session, "LCMV filters")
+    if raw is None:
+        raw = mne.io.read_raw_fif(session.preproc_file, preload=True)
+
+    # Settings used to compute the filters on the MNI grid
+    filters = mne.beamformer.read_beamformer(session.filters_file)
+    lcmv_params = filters["osl_lcmv_params"]
+    lcmv_params["reduce_rank"] = bool(lcmv_params["reduce_rank"])  # h5io int
+    bilateral = filters["osl_bilateral_pairs"]
+    if lcmv_params["pick_ori"] in [None, "vector"]:
+        raise ValueError("virtual_electrodes requires a scalar beamformer.")
+    if use_bilateral_pairs is None:
+        use_bilateral_pairs = bool(bilateral["used"])
+
+    # Sensors used by the forward model
+    fwd = mne.read_forward_solution(session.fwd_model_file, verbose=False)
+    meg = len(mne.pick_types(fwd["info"], meg=True, ref_meg=False)) > 0
+    eeg = len(mne.pick_types(fwd["info"], meg=False, eeg=True)) > 0
+
+    # Dipole locations: the coordinates, then (for bilateral pairs) their
+    # mirror images across the midline
+    positions = coords
+    if use_bilateral_pairs:
+        tol_midline = bilateral["bilateral_tol_midline"]
+        if tol_midline is None:
+            tol_midline = bilateral["bilateral_tol"]
+        if tol_midline is None:
+            tol_midline = _get_gridstep(_get_mni_grid(session, fwd) / 1000) / 2
+        paired = np.flatnonzero(np.abs(coords[:, 0]) >= tol_midline)
+        positions = np.concatenate([coords, coords[paired] * [-1, 1, 1]])
+
+    # Lead fields at the exact locations
+    ve_fwd, inside = _forward_model_at_coords(session, positions, meg=meg, eeg=eeg)
+    if not inside[:n_coords].all():
+        raise ValueError(
+            "The following coordinates are outside the inner skull: "
+            f"{coords[~inside[:n_coords]].tolist()}"
+        )
+
+    multi_dipoles = None
+    single_dipoles = None
+    if use_bilateral_pairs:
+        # A coordinate whose mirror image is outside the inner skull gets a
+        # single dipole
+        dipole = np.cumsum(inside) - 1  # index of each position in ve_fwd
+        has_mirror = inside[n_coords:]
+        multi_dipoles = [
+            [i, dipole[n_coords + j]] for j, i in enumerate(paired) if has_mirror[j]
+        ]
+        single_dipoles = np.setdiff1d(np.arange(n_coords), paired[has_mirror])
+        print(f"Using bilateral pairs for {len(multi_dipoles)} coordinate(s)")
+        if multi_dipoles:
+            _use_unit_noise_gain(lcmv_params)
+        else:
+            multi_dipoles = None
+            single_dipoles = None
+
+    # Beamformer weights with the settings used for the MNI grid
+    info = mne.pick_info(
+        raw.info, mne.pick_channels(raw.ch_names, filters["ch_names"], ordered=False)
+    )
+    ve_filters = _make_lcmv(
+        info,
+        ve_fwd,
+        filters["data_cov"],
+        noise_cov=filters["noise_cov"],
+        multi_dipoles=multi_dipoles,
+        single_dipoles=single_dipoles,
+        **lcmv_params,
+    )
+
+    # Apply to the data
+    data, _, epochs_shape = _get_filter_input_data(
+        session, raw, reject_by_annotation, filters=ve_filters
+    )
+    ve_data = ve_filters["weights"][:n_coords] @ data
+    if epochs_shape is not None:
+        ve_data = ve_data.reshape(n_coords, *epochs_shape)
+
+    print("Virtual electrodes complete.")
+
+    return ve_data[0] if single else ve_data
+
+
+def _forward_model_at_coords(
+    session: Session, coords_mni: np.ndarray, meg: bool = True, eeg: bool = False
+) -> tuple[mne.Forward, np.ndarray]:
+    """Compute the forward model for dipoles at MNI coordinates.
+
+    Parameters
+    ----------
+    session : Session
+        Files of the session.
+    coords_mni : np.ndarray
+        (n, 3) coordinates in MNI space in mm.
+    meg : bool, optional
+        Include MEG sensors?
+    eeg : bool, optional
+        Include EEG sensors?
+
+    Returns
+    -------
+    fwd : mne.Forward
+        Forward model with one (free orientation) dipole per coordinate inside
+        the inner skull, in the same order as coords_mni. None if no
+        coordinate is inside.
+    inside : np.ndarray
+        (n,) whether each coordinate is inside the inner skull.
+    """
+    src = rhino_forward._mni_source_space(session, coords_mni)
+    info, head_mri_t = rhino_forward._read_head_model(session)
+    try:
+        fwd = rhino_forward._make_fwd_solution(
+            info,
+            head_mri_t,
+            src=src,
+            bem=session.bem_solution_file,
+            meg=meg,
+            eeg=eeg,
+            ignore_ref=True,
+            verbose=False,
+        )
+    except RuntimeError as e:
+        if "No points left" not in str(e):
+            raise
+        return None, np.zeros(len(coords_mni), dtype=bool)
+    return fwd, fwd["src"][0]["inuse"].astype(bool)
+
+
+def _use_unit_noise_gain(lcmv_params: dict) -> None:
+    """Use weight_norm='unit-noise-gain' for bilateral pairs.
+
+    The default (unit-noise-gain-invariant) computes the weights from the lead
+    fields alone, which would discard the joint beamformer denominator of each
+    pair. For a scalar beamformer, unit-noise-gain gives identical weights (up
+    to sign).
+    """
+    if (
+        lcmv_params.get("weight_norm", "unit-noise-gain-invariant")
+        == "unit-noise-gain-invariant"
+    ):
+        print("Using weight_norm='unit-noise-gain' for bilateral pairs")
+        lcmv_params["weight_norm"] = "unit-noise-gain"
+
+
+def _get_filter_input_data(
+    session: Session,
+    raw: mne.io.Raw | mne.Epochs | None,
+    reject_by_annotation: str | None,
+    filters: Beamformer | None = None,
+) -> tuple[np.ndarray, Beamformer, tuple | None]:
+    """Get the sensor data that the LCMV weights are applied to.
+
+    Parameters
+    ----------
+    session : Session
+        Files of the session.
+    raw : mne.io.Raw or mne.Epochs
+        Data. If None, session.preproc_file is used.
+    reject_by_annotation : str | None
+        How to treat the samples of a Raw object in annotations starting with
+        'bad': 'omit' drops them, None keeps them.
+    filters : Beamformer, optional
+        LCMV filters. If None, session.filters_file is used.
+
+    Returns
+    -------
+    data : np.ndarray
+        (channels, samples) data after SSP projection and whitening. For
+        Epochs, the samples of each epoch are concatenated.
+    filters : Beamformer
+        LCMV filters.
+    epochs_shape : tuple
+        (time, epochs) shape of the samples for Epochs, None for Raw.
+    """
+    if raw is None:
+        raw = mne.io.read_raw_fif(session.preproc_file, preload=True)
+    if filters is None:
+        filters = mne.beamformer.read_beamformer(session.filters_file)
+
+    _check_reference(raw, filters["ch_names"])
+    chan_inds = mne.utils._check_channels_spatial_filter(raw.ch_names, filters)
+
+    if isinstance(raw, mne.BaseEpochs):
+        data = raw.get_data(picks=chan_inds)  # (epochs, channels, time)
+        epochs_shape = (data.shape[2], data.shape[0])
+        data = np.transpose(data, (1, 2, 0)).reshape(data.shape[1], -1)
+    else:
+        data = raw.get_data(picks=chan_inds, reject_by_annotation=reject_by_annotation)
+        epochs_shape = None
+
+    projs = mne.pick_info(raw.info, chan_inds)["projs"]
+    data = _proj_whiten_data(data, projs, filters)
+    return data, filters, epochs_shape
+
+
+def _make_lcmv(
+    info: mne.Info,
+    fwd: mne.Forward,
+    data_cov: mne.Covariance,
+    reg: float = 0.05,
+    noise_cov: mne.Covariance | None = None,
+    label: mne.Label | None = None,
+    pick_ori: str | None = None,
+    rank: str | dict = "info",
+    noise_rank: str | dict = "info",
+    weight_norm: str | None = "unit-noise-gain-invariant",
+    reduce_rank: bool = False,
+    depth: float | dict | None = None,
+    inversion: str = "matrix",
+    multi_dipoles: list[list[int]] | None = None,
+    single_dipoles: np.ndarray | None = None,
+    verbose: bool | str | int | None = None,
+) -> Beamformer:
+    """Compute LCMV spatial filter.
+
+    Modified version of mne.beamformer.make_lcmv.
+
+    Parameters
+    ----------
+    info : instance of mne.Info
+        The measurement info to specify the channels to include.
+    fwd : instance of mne.Forward
+        The fwd solution.
+    data_cov : instance of mne.Covariance
+        The data covariance object.
+    reg : float
+        The regularization for the whitened data covariance.
+    noise_cov : instance of mne.Covariance
+        The noise covariance object.
+    label : instance of mne.Label
+        Restricts the LCMV solution to a given label.
+    pick_ori : None | 'normal' | 'max-power' | max-power-pre-weight-norm
+        The source orientation to compute the beamformer in.
+    rank : dict
+        Calculate the rank only for a subset of channel types, and
+        explicitly specify the rank for the remaining channel types.
+        This can be extremely useful if you already know the rank of (part
+        of) your data, for instance in case you have calculated it earlier.
+        This parameter must be a dictionary whose keys correspond to channel
+        types in the data (e.g. 'meg', 'mag', 'grad', 'eeg'), and whose
+        values are integers representing the respective ranks. For example,
+        {'mag': 90, 'eeg': 45} will assume a rank of 90 and 45 for
+        magnetometer data and EEG data, respectively.
+        The ranks for all channel types present in the data, but not
+        specified in the dictionary will be estimated empirically. That is,
+        if you passed a dataset containing magnetometer, gradiometer, and
+        EEG data together with the dictionary from the previous example,
+        only the gradiometer rank would be determined, while the specified
+        magnetometer and EEG ranks would be taken for granted.
+    noise_rank : dict
+        This controls the rank computation that can be read from the measurement
+        info or estimated from the data. When a noise covariance is used for
+        whitening, this should reflect the rank of that covariance, otherwise
+        amplification of noise components can occur in whitening (e.g., often
+        during source localization).
+    weight_norm : None | 'unit-noise-gain' | 'nai'
+        The weight normalization scheme to use.
+    reduce_rank : bool
+        Whether to reduce the rank by one during computation of the filter.
+    depth : None | float | dict
+        How to weight (or normalize) the forward using a depth prior (see Notes).
+    inversion : 'matrix' | 'single'
+        The inversion scheme to compute the weights.
+    multi_dipoles : list of list of int
+        Groups of dipoles (indices with respect to the in-use sources of the
+        forward model) to compute joint beamformer weights for, e.g. pairs of
+        bilaterally symmetric dipoles. If None, a standard beamformer is
+        computed.
+    single_dipoles : np.ndarray
+        Indices (with respect to the in-use sources of the forward model) of
+        the dipoles not part of a multi-dipole. Only used if multi_dipoles is
+        passed.
+    verbose : bool, str, int, or None
+        If not None, override default verbose level (see mne.verbose).
+
+    Returns
+    -------
+    filters : instance of mne.beamformer.Beamformer
+        Dictionary containing filter weights from LCMV beamformer. See MNE docs.
+
+    """
+    if multi_dipoles is not None and label is not None:
+        raise ValueError(
+            "multi_dipoles cannot be used with label, the dipole indices "
+            "assume the full source space."
+        )
+
+    # Check number of sensor types present in the data and ensure a noise cov
+    info = mne._fiff.meas_info._simplify_info(info)
+    noise_cov, _, allow_mismatch = mne.utils._check_one_ch_type(
+        "lcmv", info, fwd, data_cov, noise_cov
+    )
+
+    # NOTE: we need this extra picking step (can't just rely on minimum
+    # norm's because there can be a mismatch. Should probably add an extra
+    # arg to _prepare_beamformer_input at some point (later)
+    picks = mne.utils._check_info_inv(info, fwd, data_cov, noise_cov)
+    info = mne._fiff.pick.pick_info(info, picks)
+
+    data_rank = mne.rank.compute_rank(data_cov, rank=rank, info=info)
+    noise_rank = mne.rank.compute_rank(noise_cov, rank=noise_rank, info=info)
+
+    mne_logger.info(f"Making LCMV beamformer with data cov rank {data_rank}")
+    mne_logger.info(f"Making LCMV beamformer with noise cov rank {noise_rank}")
+
+    depth = _check_depth(depth, "depth_sparse")
+    if inversion == "single":
+        depth["combine_xyz"] = False
+
+    is_free_ori, info, proj, vertno, G, whitener, nn, orient_std = (
+        _prepare_beamformer_input(
+            info,
+            fwd,
+            label,
+            pick_ori,
+            noise_cov=noise_cov,
+            rank=noise_rank,
+            pca=False,
+            **depth,
+        )
+    )
+    del noise_rank
+
+    ch_names = list(info["ch_names"])
+
+    data_cov = mne._fiff.pick.pick_channels_cov(data_cov, include=ch_names)
+    Cm = data_cov._get_square()
+    if "estimator" in data_cov:
+        del data_cov["estimator"]
+    rank_int = sum(data_rank.values())
+    del data_rank
+
+    # Compute spatial filter
+    n_orient = 3 if is_free_ori else 1
+    W, max_power_ori = _compute_beamformer(
+        G,
+        Cm,
+        reg,
+        n_orient,
+        weight_norm,
+        pick_ori,
+        reduce_rank,
+        rank_int,
+        inversion=inversion,
+        nn=nn,
+        orient_std=orient_std,
+        whitener=whitener,
+        multi_dipoles=multi_dipoles,
+        single_dipoles=single_dipoles,
+    )
+
+    # Get src type to store with filters for _make_stc
+    src_type = mne.source_estimate._get_src_type(fwd["src"], vertno)
+
+    # Get subject to store with filters
+    subject_from = mne.forward._subject_from_forward(fwd)
+
+    # Is the computed beamformer a scalar or vector beamformer?
+    is_free_ori = is_free_ori if pick_ori in [None, "vector"] else False
+    is_ssp = bool(info["projs"])
+
+    filters = Beamformer(
+        kind="LCMV",
+        weights=W,
+        data_cov=data_cov,
+        noise_cov=noise_cov,
+        whitener=whitener,
+        weight_norm=weight_norm,
+        pick_ori=pick_ori,
+        ch_names=ch_names,
+        proj=proj,
+        is_ssp=is_ssp,
+        vertices=vertno,
+        is_free_ori=is_free_ori,
+        n_sources=fwd["nsource"],
+        src_type=src_type,
+        source_nn=fwd["source_nn"].copy(),
+        subject=subject_from,
+        rank=rank_int,
+        max_power_ori=max_power_ori,
+        inversion=inversion,
+    )
+
+    return filters
+
+
+def _sym_inv_sm(
+    x: np.ndarray,
+    reduce_rank: bool,
+    inversion: str,
+    sk: np.ndarray,
+) -> np.ndarray:
+    """Symmetric inversion with single- or matrix-style inversion.
+
+    Modified version of mne.beamformer._compute_beamformer._sym_inv_sm that
+    additionally supports the 2D joint denominator of a multi-dipole, e.g.
+    (2, 2) for a bilateral pair of scalar dipoles. Note, the source covariance
+    (sk) is not reapplied in this case (it is all ones for a volumetric source
+    space).
+    """
+    if x.shape[1:] == (1, 1):
+        with np.errstate(divide="ignore", invalid="ignore"):
+            x_inv = 1.0 / x
+        x_inv[~np.isfinite(x_inv)] = 1.0
+    elif x.shape[1:] == (3, 3):
+        if inversion == "matrix":
+            x_inv = mne.utils._sym_mat_pow(x, -1, reduce_rank=reduce_rank)
+            # Reapply source covariance after inversion
+            x_inv *= sk[:, :, np.newaxis]
+            x_inv *= sk[:, np.newaxis, :]
+        else:
+            # Invert for each dipole separately using plain division
+            diags = np.diagonal(x, axis1=1, axis2=2)
+            assert not reduce_rank  # guaranteed earlier
+            with np.errstate(divide="ignore"):
+                diags = 1.0 / diags
+            # set the diagonal of each 3x3
+            x_inv = np.zeros_like(x)
+            for k in range(x.shape[0]):
+                this = diags[k]
+                # Reapply source covariance after inversion
+                this *= sk[k] * sk[k]
+                x_inv[k].flat[::4] = this
+    else:
+        if inversion != "matrix":
+            raise ValueError(
+                "inversion must be 'matrix' when inverting the joint "
+                "denominator of a multi-dipole."
+            )
+        x_inv = mne.utils._sym_mat_pow(x, -1, reduce_rank=reduce_rank)
+    return x_inv
+
+
+def _compute_beamformer(
+    G: np.ndarray,
+    Cm: np.ndarray,
+    reg: float,
+    n_orient: int,
+    weight_norm: str | None,
+    pick_ori: str | None,
+    reduce_rank: bool,
+    rank: int,
+    inversion: str,
+    nn: np.ndarray,
+    orient_std: np.ndarray,
+    whitener: np.ndarray,
+    multi_dipoles: list[list[int]] | None = None,
+    single_dipoles: np.ndarray | None = None,
+) -> tuple[np.ndarray, np.ndarray | None]:
+    """Compute a spatial beamformer filter (LCMV or DICS).
+
+    Modified version of mne.beamformer._compute_beamformer.
+
+    Parameters
+    ----------
+    G : (n_dipoles, n_channels) numpy.ndarray
+        The leadfield.
+    Cm : (n_channels, n_channels) numpy.ndarray
+        The data covariance matrix.
+    reg : float
+        Regularization parameter.
+    n_orient : int
+        Number of dipole orientations defined at each source point
+    weight_norm : None | 'unit-noise-gain' | 'nai'
+        The weight normalization scheme to use.
+    pick_ori : None | 'normal' | 'max-power' | max-power-pre-weight-norm
+        The source orientation to compute the beamformer in.
+    reduce_rank : bool
+        Whether to reduce the rank by one during computation of the filter.
+    rank : dict | None | 'full' | 'info'
+        See compute_rank.
+    inversion : 'matrix' | 'single'
+        The inversion scheme to compute the weights.
+    nn : (n_dipoles, 3) numpy.ndarray
+        The source normals.
+    orient_std : (n_dipoles,) numpy.ndarray
+        The std of the orientation prior used in weighting the lead fields.
+    whitener : (n_channels, n_channels) numpy.ndarray
+        The whitener.
+    multi_dipoles : list of list of int
+        Groups of dipoles (indices with respect to the sources in G) to
+        compute joint beamformer weights for, e.g. pairs of bilaterally
+        symmetric dipoles. If None, a standard beamformer is computed.
+    single_dipoles : (n_single_dipoles,) numpy.ndarray
+        Indices (with respect to the sources in G) of the dipoles not part
+        of a multi-dipole. Only used if multi_dipoles is passed.
+
+    For more detailed information on the parameters, see the docstrings of
+    `make_lcmv` and `make_dics`.
+
+    Returns
+    -------
+    W : (n_dipoles, n_channels) numpy.ndarray
+        The beamformer filter weights.
+    """
+    # Lines changes are marked with MWW
+
+    mne.utils._check_option(
+        "weight_norm",
+        weight_norm,
+        ["unit-noise-gain-invariant", "unit-noise-gain", "nai", None],
+    )
+
+    if multi_dipoles is not None and weight_norm == "unit-noise-gain-invariant":
+        raise ValueError(
+            "multi_dipoles cannot be used with "
+            "weight_norm='unit-noise-gain-invariant', which computes the "
+            "weights from the leadfields alone and would discard the joint "
+            "beamformer denominator of each multi-dipole."
+        )
+
+    # Whiten the data covariance
+    Cm = whitener @ Cm @ whitener.T.conj()
+
+    # Restore to properly Hermitian as large whitening coefs can have bad
+    # rounding error
+    Cm[:] = (Cm + Cm.T.conj()) / 2.0
+
+    assert Cm.shape == (G.shape[0],) * 2
+
+    s, _ = np.linalg.eigh(Cm)
+    if not (s >= -s.max() * 1e-7).all():
+        # This shouldn't ever happen, but just in case
+        warn(
+            "data covariance does not appear to be positive semidefinite, "
+            "results will likely be incorrect"
+        )
+
+    # Tikhonov regularization using reg parameter to control for trade-off
+    # between spatial resolution and noise sensitivity
+    # eq. 25 in Gross and Ioannides, 1999 Phys. Med. Biol. 44 2081
+    Cm_inv, loading_factor, rank = mne.utils._reg_pinv(Cm, reg, rank)
+
+    assert orient_std.shape == (G.shape[1],)
+
+    n_sources = G.shape[1] // n_orient
+
+    assert nn.shape == (n_sources, 3)
+
+    mne_logger.info(
+        f"Computing beamformer filters for {n_sources} source{mne.utils._pl(n_sources)}"
+    )
+    n_channels = G.shape[0]
+
+    assert n_orient in (3, 1)
+
+    Gk = np.reshape(G.T, (n_sources, n_orient, n_channels)).transpose(0, 2, 1)
+
+    assert Gk.shape == (n_sources, n_channels, n_orient)
+
+    sk = np.reshape(orient_std, (n_sources, n_orient))
+
+    del G, orient_std
+
+    mne.utils._check_option("reduce_rank", reduce_rank, (True, False))
+
+    # inversion of the denominator
+    mne.utils._check_option("inversion", inversion, ("matrix", "single"))
+
+    if (
+        inversion == "single"
+        and n_orient > 1
+        and pick_ori == "vector"
+        and weight_norm == "unit-noise-gain-invariant"
+    ):
+        raise ValueError(
+            'Cannot use pick_ori="vector" with inversion="single" and '
+            'weight_norm="unit-noise-gain-invariant"'
+        )
+
+    if reduce_rank and inversion == "single":
+        raise ValueError(
+            'reduce_rank cannot be used with inversion="single"; '
+            'consider using inversion="matrix" if you have a rank-deficient '
+            "forward model (i.e., from a sphere model with MEG channels), "
+            "otherwise consider using reduce_rank=False"
+        )
+    if n_orient > 1:
+        _, Gk_s, _ = np.linalg.svd(Gk, full_matrices=False)
+        assert Gk_s.shape == (n_sources, n_orient)
+        if not reduce_rank and (Gk_s[:, 0] > 1e6 * Gk_s[:, 2]).any():
+            raise ValueError(
+                "Singular matrix detected when estimating spatial filters. "
+                "Consider reducing the rank of the forward operator by using "
+                "reduce_rank=True."
+            )
+        del Gk_s
+
+    # --------------------------------
+    # 1. Reduce rank of the lead field
+    # --------------------------------
+
+    if reduce_rank:
+        Gk = _reduce_leadfield_rank(Gk)
+
+    def _compute_bf_terms(
+        Gk: np.ndarray, Cm_inv: np.ndarray
+    ) -> tuple[np.ndarray, np.ndarray]:
+        bf_numer = np.matmul(Gk.swapaxes(-2, -1).conj(), Cm_inv)
+        bf_denom = np.matmul(bf_numer, Gk)
+        return bf_numer, bf_denom
+
+    # ----------------------------------------------------------
+    # 2. Reorient lead field in direction of max power or normal
+    # ----------------------------------------------------------
+
+    if pick_ori == "max-power" or pick_ori == "max-power-pre-weight-norm":
+        assert n_orient == 3
+        _, bf_denom = _compute_bf_terms(Gk, Cm_inv)
+
+        if pick_ori == "max-power":
+            if weight_norm is None:
+                ori_numer = np.eye(n_orient)[np.newaxis]
+                ori_denom = bf_denom
+            else:
+                # Compute power, cf Sekihara & Nagarajan 2008, eq. 4.47
+                ori_numer = bf_denom
+
+                # Cm_inv should be Hermitian so no need for .T.conj()
+                ori_denom = np.matmul(
+                    np.matmul(Gk.swapaxes(-2, -1).conj(), Cm_inv @ Cm_inv), Gk
+                )
+
+            ori_denom_inv = _sym_inv_sm(ori_denom, reduce_rank, inversion, sk)
+            ori_pick = np.matmul(ori_denom_inv, ori_numer)
+
+        else:
+            # MWW
+            #
+            # Compute orientation based on pre-normalised power
+            #
+            # See eq 5 in Brookes et al, Optimising experimental design for
+            # MEG beamformer imaging, Neuroimage 2008. This optimises the
+            # orientation by maximising the power BEFORE any weight
+            # normalisation is performed
+            ori_pick = _sym_inv_sm(bf_denom, reduce_rank, inversion, sk)
+
+        assert ori_pick.shape == (n_sources, n_orient, n_orient)
+
+        # Pick eigenvector that corresponds to maximum eigenvalue
+        if pick_ori == "max-power-pre-weight-norm":
+            # ori_pick is symmetric
+            eig_vals, eig_vecs = np.linalg.eigh(ori_pick.real)
+        else:
+            # ori_pick is not symmetric, but it is the product of two symmetric
+            # positive semi-definite matrices, so the eigenvalues and
+            # eigenvectors are real
+            eig_vals, eig_vecs = np.linalg.eig(ori_pick.real)
+            eig_vals, eig_vecs = eig_vals.real, eig_vecs.real
+
+        # Sort eigenvectors by eigenvalues for picking
+        order = np.argsort(np.abs(eig_vals), axis=-1)
+        # eig_vals = np.take_along_axis(eig_vals, order, axis=-1)
+        max_power_ori = eig_vecs[np.arange(len(eig_vecs)), :, order[:, -1]]
+
+        assert max_power_ori.shape == (n_sources, n_orient)
+
+        # Set the (otherwise arbitrary) sign to match the normal
+        signs = np.sign(np.sum(max_power_ori * nn, axis=1, keepdims=True))
+        signs[signs == 0] = 1.0
+        max_power_ori *= signs
+
+        # Compute the lead field for the optimal orientation,
+        # and adjust number/denom
+        Gk = np.matmul(Gk, max_power_ori[..., np.newaxis])
+        n_orient = 1
+
+    else:
+        max_power_ori = None
+        if pick_ori == "normal":
+            Gk = Gk[..., 2:3]
+            n_orient = 1
+
+    if multi_dipoles is not None:
+        # MWW
+        #
+        # Compute joint beamformer weights for each multi-dipole (e.g. a
+        # bilateral pair of dipoles) by concatenating their leadfields.
+        # This avoids the suppression of correlated sources that occurs
+        # with a standard beamformer.
+        if n_orient != 1:
+            raise ValueError(
+                "multi_dipoles requires pick_ori='max-power' or "
+                "'max-power-pre-weight-norm'."
+            )
+
+        W_multi = []
+        for multi_dipole in multi_dipoles:
+            # Concatenate the leadfields of the dipoles in this multi-dipole
+            Gk_multi = np.zeros([n_channels, n_orient * len(multi_dipole)])
+            for dd in range(len(multi_dipole)):
+                Gk_multi[:, dd * n_orient : (dd + 1) * n_orient] = Gk[
+                    multi_dipole[dd], :, :
+                ]
+
+            # 3. Compute numerator and denominator of beamformer formula
+            bf_numer_multi, bf_denom_multi = _compute_bf_terms(Gk_multi, Cm_inv)
+
+            # 4. Invert the (joint) denominator
+            #
+            # Note, reduce_rank is not passed on here: a rank-reduced
+            # pseudo-inverse of the joint denominator would make the weights
+            # of the dipoles in the multi-dipole collinear (i.e. their
+            # reconstructed time courses would be perfectly correlated)
+            bf_denom_multi_inv = _sym_inv_sm(
+                bf_denom_multi, reduce_rank=False, inversion="matrix", sk=sk
+            )
+            W_multi.append(np.matmul(bf_denom_multi_inv, bf_numer_multi))
+
+        # Standard beamformer weights for the remaining dipoles
+        if single_dipoles is not None:
+            Gk_single = Gk[single_dipoles]
+
+            # 3. Compute numerator and denominator of beamformer formula
+            bf_numer_single, bf_denom_single = _compute_bf_terms(Gk_single, Cm_inv)
+
+            # 4. Invert the denominator
+            bf_denom_single_inv = _sym_inv_sm(
+                bf_denom_single, reduce_rank, inversion, sk[single_dipoles]
+            )
+            W_single = np.matmul(bf_denom_single_inv, bf_numer_single)
+
+        del Gk  # lead field has been adjusted and should not be used anymore
+
+        # Build W from W_multi and W_single
+        W = np.zeros((n_sources, n_orient, n_channels))
+        for mm, multi_dipole in enumerate(multi_dipoles):
+            for dd in range(len(multi_dipole)):
+                W[multi_dipole[dd]] = W_multi[mm][dd * n_orient : (dd + 1) * n_orient]
+        if single_dipoles is not None:
+            W[single_dipoles] = W_single
+
+        assert W.shape == (n_sources, n_orient, n_channels)
+
+        del sk
+        # MWW end
+
+    else:
+        # ------------------------------------------------------------------
+        # 3. Compute numerator and denominator of beamformer formula
+        #    (unit-gain)
+        # ------------------------------------------------------------------
+
+        bf_numer, bf_denom = _compute_bf_terms(Gk, Cm_inv)
+
+        assert bf_denom.shape == (n_sources,) + (n_orient,) * 2
+        assert bf_numer.shape == (n_sources, n_orient, n_channels)
+
+        del Gk  # lead field has been adjusted and should not be used anymore
+
+        # -------------------------
+        # 4. Invert the denominator
+        # -------------------------
+
+        # Here W is W_ug, i.e.: G.T @ Cm_inv / (G.T @ Cm_inv @ G)
+        bf_denom_inv = _sym_inv_sm(bf_denom, reduce_rank, inversion, sk)
+
+        assert bf_denom_inv.shape == (n_sources, n_orient, n_orient)
+
+        W = np.matmul(bf_denom_inv, bf_numer)
+
+        assert W.shape == (n_sources, n_orient, n_channels)
+
+        del bf_denom_inv, sk
+
+    # ----------------------------------------------------------------
+    # 5. Re-scale filter weights according to the selected weight_norm
+    # ----------------------------------------------------------------
+
+    # Weight normalization is done by computing, for each source:
+    #
+    #     W_ung = W_ug / sqrt(W_ug @ W_ug.T)
+    #
+    # with W_ung referring to the unit-noise-gain (weight normalized) filter
+    # and W_ug referring to the above-calculated unit-gain filter stored in W.
+
+    if weight_norm is not None:
+        # Three different ways to calculate the normalization factors here.
+        # Only matters when in vector mode, as otherwise n_orient == 1 and
+        # they are all equivalent.
+        #
+        # In MNE < 0.21, we just used the Frobenius matrix norm:
+        #
+        #    noise_norm = np.linalg.norm(W, axis=(1, 2), keepdims=True)
+        #    assert noise_norm.shape == (n_sources, 1, 1)
+        #    W /= noise_norm
+        #
+        # Sekihara 2008 says to use sqrt(diag(W_ug @ W_ug.T)),
+        # which is not rotation invariant:
+        if weight_norm in ("unit-noise-gain", "nai"):
+            noise_norm = np.matmul(W, W.swapaxes(-2, -1).conj()).real
+            noise_norm = np.reshape(noise_norm, (n_sources, -1, 1))[
+                :, :: n_orient + 1
+            ]  # np.diag operation over last two axes
+            np.sqrt(noise_norm, out=noise_norm)
+            noise_norm[noise_norm == 0] = np.inf
+            assert noise_norm.shape == (n_sources, n_orient, 1)
+            W /= noise_norm
+        else:
+            assert weight_norm == "unit-noise-gain-invariant"
+            # Here we use sqrtm. The shortcut:
+            #
+            #    use = W
+            #
+            # ... does not match the direct route (it is rotated!),
+            # so we'll use the direct one to match FieldTrip:
+            use = bf_numer
+            inner = np.matmul(use, use.swapaxes(-2, -1).conj())
+            W = np.matmul(mne.utils._sym_mat_pow(inner, -0.5), use)
+            noise_norm = 1.0
+
+        if weight_norm == "nai":
+            # Estimate noise level based on covariance matrix, taking the
+            # first eigenvalue that falls outside the signal subspace
+            # or the loading factor used during regularization, whichever
+            # is largest.
+            if rank > len(Cm):
+                # Covariance matrix is full rank, no noise subspace!
+                # Use the loading factor as noise ceiling.
+                if loading_factor == 0:
+                    raise RuntimeError(
+                        "Cannot compute noise subspace with a full-rank "
+                        "covariance matrix and no regularization. "
+                        "Try manually specifying the rank of the covariance "
+                        "matrix or using regularization."
+                    )
+                noise = loading_factor
+            else:
+                noise, _ = np.linalg.eigh(Cm)
+                noise = noise[-rank]
+                noise = max(noise, loading_factor)
+            W /= np.sqrt(noise)
+
+    W = W.reshape(n_sources * n_orient, n_channels)
+    mne_logger.info("Filter computation complete")
+
+    return W, max_power_ori
+
+
+def _prepare_beamformer_input(
+    info: mne.Info,
+    forward: mne.Forward,
+    label: mne.Label | None = None,
+    pick_ori: str | None = None,
+    noise_cov: mne.Covariance | None = None,
+    rank: str | dict | None = None,
+    pca: bool = False,
+    loose: float | None = None,
+    combine_xyz: str = "fro",
+    exp: float | None = None,
+    limit: float | None = None,
+    allow_fixed_depth: bool = True,
+    limit_depth_chs: bool = False,
+) -> tuple[
+    bool,
+    mne.Info,
+    np.ndarray,
+    np.ndarray,
+    np.ndarray,
+    np.ndarray,
+    np.ndarray,
+    np.ndarray,
+]:
+    """Input preparation common for LCMV, DICS, and RAP-MUSIC.
+
+    Modified version of mne.beamformer._prepare_beamformer_input.
+
+    Parameters
+    ----------
+    info : instance of mne.Info
+        Measurement info
+    forward : instance of mne.Forward
+        The forward solution.
+    label : instance of mne.Label | None
+        Restricts the forward solution to a given label.
+    pick_ori : None | 'normal' | 'max-power' | 'vector' | 'max-power-pre-weight-norm'
+        The source orientation to compute the beamformer in.
+    noise_cov : instance of mne.Covariance | None
+        The noise covariance.
+    rank : dict | None | 'full' | 'info'
+        See :py:func:`mne.compute_rank`.
+    pca : bool
+        If True, the rank of the forward is reduced to match the rank of the
+        noise covariance matrix.
+    loose : float | None
+        Value that weights the source variances of the dipole components
+        defining the tangent space of the cortical surfaces. If ``None``,
+        no loose orientation constraint is applied.
+    combine_xyz : str
+        How to combine the dipoles in the same locations of the forward model
+        when picking normals. See :py:func:`mne.forward._pick_ori`.
+    exp : float | None
+        Exponent for the depth weighting. If None, no depth weighting is performed.
+    limit : float | None
+        Limit on depth weighting factors. If None, no upper limit is applied.
+    allow_fixed_depth : bool
+        If True, fixed depth weighting is allowed.
+    limit_depth_chs : bool
+        If True, use only grad channels for depth weighting.
+
+    Returns
+    -------
+    is_free_ori : bool
+        Whether the forward operator is free orientation.
+    info : instance of mne.Info
+        Measurement info restricted to selected channels.
+    proj : array
+        The SSP/PCA projector.
+    vertno : array
+        The indices of the vertices corresponding to the source space.
+    G : array
+        The forward operator restricted to selected channels.
+    whitener : array
+        The whitener for the selected channels.
+    nn : array
+        The normals of the source space.
+    orient_std : array
+        The standard deviation of the orientation prior.
+    """
+    # Lines marked MWW are where code has been changed.
+
+    # MWW
+    # _check_option('pick_ori', pick_ori, ('normal', 'max-power', 'vector', None))
+    mne.utils._check_option(
+        "pick_ori",
+        pick_ori,
+        ("normal", "max-power", "vector", "max-power-pre-weight-norm", None),
+    )
+
+    # MWW
+    # Restrict forward solution to selected vertices
+    # if label is not None:
+    #    _, src_sel = label_src_vertno_sel(label, forward["src"])
+    #    forward = _restrict_forward_to_src_sel(forward, src_sel)
+
+    if loose is None:
+        loose = 0.0 if mne.forward.forward.is_fixed_orient(forward) else 1.0
+
+    # MWW
+    # if noise_cov is None:
+    #    noise_cov = make_ad_hoc_cov(info, std=1.0)
+
+    forward, info_picked, gain, _, orient_prior, _, trace_GRGT, noise_cov, whitener = (
+        _prepare_forward(
+            forward,
+            info,
+            noise_cov,
+            "auto",
+            loose,
+            rank=rank,
+            pca=pca,
+            use_cps=True,
+            exp=exp,
+            limit_depth_chs=limit_depth_chs,
+            combine_xyz=combine_xyz,
+            limit=limit,
+            allow_fixed_depth=allow_fixed_depth,
+        )
+    )
+    is_free_ori = not mne.forward.forward.is_fixed_orient(
+        forward
+    )  # could have been changed
+    nn = forward["source_nn"]
+    if is_free_ori:  # take Z coordinate
+        nn = nn[2::3]
+    nn = nn.copy()
+    vertno = _get_vertno(forward["src"])
+    if forward["surf_ori"]:
+        nn[...] = [0, 0, 1]  # align to local +Z coordinate
+    if pick_ori is not None and not is_free_ori:
+        raise ValueError(
+            f"Normal or max-power orientation (got {pick_ori}) can only be "
+            "picked when a forward operator with free orientation is used."
+        )
+    if pick_ori == "normal" and not forward["surf_ori"]:
+        raise ValueError(
+            "Normal orientation can only be picked when a forward operator "
+            "oriented in surface coordinates is used."
+        )
+    mne.utils._check_src_normal(pick_ori, forward["src"])
+    del forward, info
+
+    # Undo the scaling that MNE prefers
+    scale = np.sqrt((noise_cov["eig"] > 0).sum() / trace_GRGT)
+    gain /= scale
+    if orient_prior is not None:
+        orient_std = np.sqrt(orient_prior)
+    else:
+        orient_std = np.ones(gain.shape[1])
+
+    # Get the projector
+    proj, _, _ = mne._fiff.proj.make_projector(
+        info_picked["projs"], info_picked["ch_names"]
+    )
+
+    return is_free_ori, info_picked, proj, vertno, gain, whitener, nn, orient_std
+
+
+def lcmv_weights(session: Session) -> tuple[np.ndarray, np.ndarray]:
+    """The LCMV weights of a session, on the MNI grid.
+
+    Parameters
+    ----------
+    session : Session
+        Files of the session; the filters come from ``session.filters_file``.
+
+    Returns
+    -------
+    weights : (n_dipoles, n_channels) numpy.ndarray
+        Beamformer weights, applied to whitened data when the filters whiten.
+    coords : (n_dipoles, 3) numpy.ndarray
+        MNI coordinates (mm) of the dipoles.
+    """
+    filters = mne.beamformer.read_beamformer(session.filters_file)
+    weights = filters["weights"]
+    if filters.get("whitener") is not None:
+        weights = weights @ filters["whitener"]
+    fwd = mne.read_forward_solution(session.fwd_model_file, verbose=False)
+    return weights, _get_source_coords_mni(session, fwd)
+
+
+def leadfields(
+    session: Session, orientation: str | None = None
+) -> tuple[np.ndarray, np.ndarray]:
+    """The leadfields of a session's forward model, on the MNI grid.
+
+    Parameters
+    ----------
+    session : Session
+        Files of the session; the forward model comes from
+        ``session.fwd_model_file``.
+    orientation : str, optional
+        How the three dipole orientations are reduced to one: ``'l2-norm'``
+        (the norm across x, y, z), ``'max-dim'`` (the largest of the three),
+        ``'max-power'`` (projected onto the orientation of maximum power), or
+        None for no reduction.
+
+    Returns
+    -------
+    leadfields : (n_channels, n_dipoles) or (n_channels, n_dipoles, 3) numpy.ndarray
+        Leadfields, or (n_channels, 3, n_dipoles) flattened to
+        (n_channels * 3, n_dipoles) when not reduced.
+    coords : (n_dipoles, 3) numpy.ndarray
+        MNI coordinates (mm) of the dipoles.
+    """
+    fwd = mne.read_forward_solution(session.fwd_model_file, verbose=False)
+    L = fwd["sol"]["data"]
+    L = L.reshape((L.shape[0], -1, 3))
+    if orientation == "l2-norm":
+        out = np.linalg.norm(L, axis=-1)
+    elif orientation == "max-dim":
+        L_max, L_min = np.max(L, axis=-1), np.min(L, axis=-1)
+        L_max[abs(L_min) > L_max] = L_min[abs(L_min) > L_max]
+        out = L_max
+    elif orientation == "max-power":
+        # The eigenvector with the smallest eigenvalue of L^T L
+        LT_L = np.matmul(L.transpose(1, 2, 0), L.transpose((1, 0, 2)))
+        eig_vals, eig_vecs = np.linalg.eig(LT_L)
+        order = np.argsort(np.abs(eig_vals), axis=-1)
+        max_power_ori = eig_vecs[np.arange(len(eig_vecs)), :, order[:, 0]]
+        signs = np.sign(
+            np.sum(max_power_ori * fwd["source_nn"][2::3], axis=1, keepdims=True)
+        )
+        signs[signs == 0] = 1.0
+        max_power_ori *= signs
+        out = np.sum(L * max_power_ori[None, ...], axis=-1)
+    elif orientation is None:
+        out = np.transpose(L, (0, 2, 1)).reshape(-1, L.shape[1])
+    else:
+        raise ValueError(
+            "orientation must be 'l2-norm', 'max-dim', 'max-power' or None."
+        )
+    return out, _get_source_coords_mni(session, fwd)
