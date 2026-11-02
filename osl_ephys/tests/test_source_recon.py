@@ -101,16 +101,26 @@ def test_volumetric_minimum_norm_on_mni152_surfaces(
     assert (tmp_path / "elekta" / f"elekta_sflip-{estimator}-parc-raw.fif").exists()
 
 
+def keep_this(dataset, userargs):
+    dataset["kept"] = 1
+    return dataset
+
+
 def test_preproc_and_qc_directories_can_be_elsewhere(sessions, tmp_path):
     results = run_batch(
-        "preproc:\n  - resample: {sfreq: 100}\n",
+        "preproc:\n  - resample: {sfreq: 100}\n  - keep_this: {}\n",
         sessions[:1],
         tmp_path / "osl",
         n_workers=1,
         preproc_dir=tmp_path / "preproc",
         qc_dir=tmp_path / "qc",
+        extra_funcs=[keep_this],
+        covs={"age": [30]},
     )
     assert results[0][1] == "ok", results
     assert (tmp_path / "preproc" / "elekta_preproc-raw.fif").exists()
     assert not (tmp_path / "osl" / "preproc").exists()
+    # What a custom step adds is saved, the settings and inputs of the run are not
+    pickles = [f.name for f in (tmp_path / "preproc").glob("*.pkl")]
+    assert pickles == ["elekta_kept.pkl"]
     assert (tmp_path / "qc" / "report.html").exists()

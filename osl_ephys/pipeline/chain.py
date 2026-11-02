@@ -151,6 +151,17 @@ def _as_session(session) -> dict:
     return dict(session)
 
 
+# The settings and inputs of a run in the dataset, which are not outputs of the session
+_NOT_WRITTEN = (
+    "session",
+    "paths",
+    "qc_dir",
+    "log_dir",
+    "surface_extraction_method",
+    "covs",
+)
+
+
 def _run_preproc(config, dataset, qc_dir, extra_funcs, overwrite):
     """The preprocessing section: load, run the steps, write, report."""
     from osl_ephys.preproc.dataset import (
@@ -190,7 +201,12 @@ def _run_preproc(config, dataset, qc_dir, extra_funcs, overwrite):
         paths["preproc_dir"].mkdir(parents=True, exist_ok=True)
         outbase = str(paths["preproc_dir"] / "{run_id}_{ftype}.{fext}")
         outnames = write_dataset(
-            dataset, outbase, session["id"], ftype=PREPROC_FTYPE, overwrite=overwrite
+            dataset,
+            outbase,
+            session["id"],
+            ftype=PREPROC_FTYPE,
+            overwrite=overwrite,
+            skip=_NOT_WRITTEN,
         )
         dataset["outnames"] = outnames
         if qc_dir is not None:
