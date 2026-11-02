@@ -1,6 +1,7 @@
 """Align the sign of each parcel time course across sessions.
 
-Writes data/<id>/<id>_sflip_parc-raw.fif.
+Writes data/<id>/<id>_sflip-lcmv-parc-raw.fif, or <id>_sflip-eloreta-parc-raw.fif
+after the FreeSurfer route.
 """
 
 from osl_ephys.pipeline import run_batch

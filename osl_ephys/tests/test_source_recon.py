@@ -49,7 +49,7 @@ def test_source_reconstruction_on_mni152_surfaces(sessions, tmp_path):
             tmp_path / id_ / f"{id_}_parc-raw.fif", verbose=False
         )
         assert len(mne.pick_types(parc.info, misc=True)) == 52
-        assert (tmp_path / id_ / f"{id_}_sflip_parc-raw.fif").exists()
+        assert (tmp_path / id_ / f"{id_}_sflip-lcmv-parc-raw.fif").exists()
     assert (tmp_path / "qc" / "parc" / "elekta" / "psd_topo.webp").exists()
     assert (tmp_path / "qc" / "coreg" / "elekta" / "coreg.webp").exists()
     assert (tmp_path / "qc" / "sign_flip" / "sign_flip.webp").exists()
@@ -72,17 +72,30 @@ parcellation:
       source_method: minimum_norm
       parcellation_file: atlas-Glasser_nparc-52_space-MNI_res-8x8x8.nii.gz
       orthogonalisation: symmetric
+group:
+  - sign_flip: {n_embeddings: 5, method: spectral}
 """
 
 
 @pytest.mark.fsl
-def test_volumetric_minimum_norm_on_mni152_surfaces(sessions, tmp_path):
-    results = run_batch(
-        MINIMUM_NORM_CONFIG, sessions[:1], tmp_path, n_workers=1, qc_dir=False
-    )
+@pytest.mark.parametrize(
+    "inverse_method, estimator",
+    [(None, "mne"), ("dSPM", "dspm"), ("sLORETA", "sloreta"), ("eLORETA", "eloreta")],
+)
+def test_volumetric_minimum_norm_on_mni152_surfaces(
+    sessions, tmp_path, inverse_method, estimator
+):
+    config = MINIMUM_NORM_CONFIG
+    if inverse_method is not None:
+        config = config.replace(
+            "source_method: minimum_norm",
+            f"source_method: minimum_norm\n      inverse_method: {inverse_method}",
+        )
+    results = run_batch(config, sessions[:1], tmp_path, n_workers=1, qc_dir=False)
     assert results[0][1] == "ok", results
     assert (tmp_path / "elekta" / "freesurfer" / "op-inv.fif").exists()
     parc = mne.io.read_raw_fif(
         tmp_path / "elekta" / "elekta_parc-raw.fif", verbose=False
     )
     assert len(mne.pick_types(parc.info, misc=True)) == 52
+    assert (tmp_path / "elekta" / f"elekta_sflip-{estimator}-parc-raw.fif").exists()

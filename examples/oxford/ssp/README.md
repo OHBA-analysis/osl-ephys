@@ -19,4 +19,4 @@ subject.
 5. `5_source_reconstruct.py` computes the forward model, beamforms and
    parcellates. The parcel time courses are `data/<id>/<id>_parc-raw.fif`.
 6. `6_sign_flip.py` aligns the sign of each parcel across sessions. The
-   output is `data/<id>/<id>_sflip_parc-raw.fif`.
+   output is `data/<id>/<id>_sflip-lcmv-parc-raw.fif`.

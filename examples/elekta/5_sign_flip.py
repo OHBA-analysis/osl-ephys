@@ -2,7 +2,7 @@
 
 The group step picks the template session (the one whose time-embedded
 covariance is most like the others') and flips every session to match it,
-writing data/<id>/<id>_sflip_parc-raw.fif. Only needed before fitting a
+writing data/<id>/<id>_sflip-lcmv-parc-raw.fif. Only needed before fitting a
 group model on time-delay embedded data.
 """
 

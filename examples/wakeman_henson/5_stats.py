@@ -11,11 +11,13 @@ data/stats.
 from osl_ephys.pipeline import run_batch
 from sessions import sessions
 
+estimator = "lcmv"  # eloreta after the FreeSurfer route
+
 stats_sessions = [
     {
         "id": session["id"],
         "subject": session["subject"],
-        "raw_file": f"data/{session['id']}/{session['id']}_sflip_parc-raw.fif",
+        "raw_file": f"data/{session['id']}/{session['id']}_sflip-{estimator}-parc-raw.fif",
     }
     for session in sessions
 ]

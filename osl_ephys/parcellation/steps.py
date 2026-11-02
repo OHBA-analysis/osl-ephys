@@ -34,6 +34,12 @@ def parcellate(dataset, userargs):
     """
     session = Session.from_dataset(dataset)
     source_method = str(userargs.pop("source_method", "lcmv")).lower()
+    # lcmv, or the inverse method of the minimum norm: mne, dspm, sloreta, eloreta
+    estimator = (
+        "lcmv"
+        if source_method == "lcmv"
+        else str(userargs.get("inverse_method", "MNE")).lower()
+    )
     extra_chans = userargs.pop("extra_chans", "stim")
     qc = userargs.pop("qc", True)
     orthogonalisation = userargs.pop("orthogonalisation", None)
@@ -82,6 +88,10 @@ def parcellate(dataset, userargs):
     parc_file.parent.mkdir(parents=True, exist_ok=True)
     parc_raw = parcellation.convert_to_mne_raw(
         parcel_data, data, ch_names=names, extra_chans=extra_chans
+    )
+    # The sign flip step names its output from this
+    parc_raw.info["description"] = (
+        f"{parc_raw.info['description'] or ''}\n\n%% source_estimator: {estimator} %%"
     )
     parc_raw.save(str(parc_file), overwrite=True, verbose=False)
     if qc and dataset.get("qc_dir") is not None and not fs_route:

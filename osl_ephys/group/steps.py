@@ -5,6 +5,7 @@ flips every session (the group step)."""
 from __future__ import annotations
 
 import logging
+import re
 from pathlib import Path
 
 import mne
@@ -28,6 +29,16 @@ def _template_cov(parc_file, n_embeddings, standardize):
     return sign_flipping.calc_cov(
         raw.get_data(picks="misc").T, n_embeddings, standardize
     )
+
+
+def _sflip_file(parc_file, id_):
+    """The sign flipped file of a parcellated file, with the source estimator
+    ``parcellate`` recorded in the file in its name (``lcmv``, ``mne``, ``dspm``,
+    ``sloreta`` or ``eloreta``); a file without one has none in the name."""
+    description = mne.io.read_info(str(parc_file), verbose=False)["description"]
+    found = re.search(r"%% source_estimator: (\S+) %%", description or "")
+    name = f"sflip-{found[1]}-parc" if found else "sflip-parc"
+    return parc_file.with_name(f"{id_}_{name}-raw.fif")
 
 
 _SOLVERS = {
@@ -74,7 +85,8 @@ def fix_sign_ambiguity(dataset, userargs):
     Options: ``template`` (the id of the template session), ``n_embeddings``,
     ``standardize``, ``method`` (``coordinate_ascent``, ``spectral``,
     ``belief_propagation`` or ``sdp``, plus that solver's options). Writes
-    ``<id>_sflip_parc-raw.fif``.
+    ``<id>_sflip-<estimator>-parc-raw.fif``, where the estimator is ``lcmv``,
+    ``mne``, ``dspm``, ``sloreta`` or ``eloreta``.
     """
     n_embeddings = userargs.pop("n_embeddings", 15)
     standardize = userargs.pop("standardize", True)
@@ -82,7 +94,7 @@ def fix_sign_ambiguity(dataset, userargs):
     template = userargs.pop("template")
     cov = _template_cov(_parc_file(dataset, template), n_embeddings, standardize)
     id_ = dataset["session"]["id"]
-    out = _parc_file(dataset, id_).with_name(f"{id_}_sflip_parc-raw.fif")
+    out = _sflip_file(_parc_file(dataset, id_), id_)
     _flip_file(
         _parc_file(dataset, id_), cov, out, n_embeddings, standardize, method, userargs
     )
@@ -131,7 +143,7 @@ def sign_flip(dataset, userargs):
     results = {}
     for id_, f in parc_files.items():
         if id_ in covs:
-            out = f.with_name(f"{id_}_sflip_parc-raw.fif")
+            out = _sflip_file(f, id_)
             before, after = _flip_file(
                 f, covs[template], out, n_embeddings, standardize, method, userargs
             )

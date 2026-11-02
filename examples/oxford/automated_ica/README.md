@@ -19,4 +19,4 @@ ECG channels, and a structural MRI of each subject.
    parcellates. The parcel time courses are `data/<id>/<id>_parc-raw.fif`.
 5. `5_sign_flip.py` aligns the sign of each parcel across sessions, which
    matters when a group model (such as an HMM) is trained on the data. The
-   output is `data/<id>/<id>_sflip_parc-raw.fif`.
+   output is `data/<id>/<id>_sflip-lcmv-parc-raw.fif`.

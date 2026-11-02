@@ -106,10 +106,10 @@ for sub in subjects_to_do:
                 subjects_dir, subject + "_meg", subject + "_meg_preproc_raw.fif"
             )
             input_fif_file = op.join(
-                recon_dir, subject, "sflip_parc-raw.fif"
+                recon_dir, subject, "sflip-lcmv-parc-raw.fif"
             )
             epoch_fif_file = op.join(
-                recon_dir, subject, "epoch_sflip_parc-epo.fif"
+                recon_dir, subject, "epoch_sflip-lcmv-parc-epo.fif"
             )
             glm_model_file = op.join(
                 glm_dir, subject, "first_level_glm_model.hdf5"
