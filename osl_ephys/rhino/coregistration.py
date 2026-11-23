@@ -20,7 +20,6 @@ from mne.transforms import (
     combine_transforms,
     apply_trans,
     rotation,
-    _get_trans,
 )
 from mne.viz.backends.renderer import _get_renderer
 from osl_ephys.session import Session, SurfaceFilenames, save_params
@@ -30,7 +29,7 @@ from osl_ephys.rhino._geometry import (
     _transform_vtk_mesh,
     _xform_points,
 )
-from osl_ephys.rhino.headshape import _extract_headshape
+from osl_ephys.rhino.headshape import _read_fiducials_and_headshape
 from osl_ephys.rhino.surfaces import (
     _create_freesurfer_mesh_from_bet_surface,
     _create_freesurfer_meshes_from_bet_surfaces,
@@ -109,7 +108,14 @@ def scale_surfaces_to_headshape(
     # Extract headshape from FIF file
     # -------------------------------
     print(f"Loading headshape from {preproc_file}")
-    headshape_mm, nasion_mm, rpa_mm, lpa_mm = _extract_headshape(preproc_file)
+    headshape_mm, nasion_mm, rpa_mm, lpa_mm = (
+        points * 1000 for points in _read_fiducials_and_headshape(preproc_file)
+    )
+    if len(headshape_mm) == 0:
+        raise ValueError(f"No headshape points found in {preproc_file}")
+
+    # Remove points below the ears (neck/body)
+    headshape_mm = headshape_mm[headshape_mm[:, 2] >= min(lpa_mm[2], rpa_mm[2])].T
     print(f"Found {headshape_mm.shape[1]} headshape points")
 
     # ---------------------------------
@@ -434,12 +440,10 @@ def coregister_head_and_mri(
     # and change dev_head_t to equal dev_ctf_t in fif file info
     info = mne.io.read_info(session.preproc_file)
 
-    dev_ctf_t = info["dev_ctf_t"]
-    if dev_ctf_t is not None:
+    if info["dev_ctf_t"] is not None:
         print("Detected CTF data")
         print("Setting dev_head_t equal to dev_ctf_t in fif file info.")
-        dev_head_t, _ = _get_trans(info["dev_head_t"], "meg", "head")
-        dev_head_t["trans"] = dev_ctf_t["trans"]
+        info["dev_head_t"]["trans"] = info["dev_ctf_t"]["trans"]
 
     raw = mne.io.RawArray(np.zeros([len(info["ch_names"]), 1]), info)
     raw.save(cfns.info_fif_file, overwrite=True)
@@ -888,7 +892,9 @@ def plot_coregistration(
 
     mrivoxel_scaledmri_t = read_trans(mrivoxel_scaledmri_t_file)
     head_scaledmri_t = read_trans(head_scaledmri_t_file)
-    dev_head_t, _ = _get_trans(info["dev_head_t"], "meg", "head")
+    # Identity for data without MEG sensors (e.g. EEG)
+    dev_head_t = info["dev_head_t"]
+    dev_head_t = Transform("meg", "head") if dev_head_t is None else dev_head_t.copy()
 
     # Change xform from metres to mm.
     # Note that MNE xform in fif.info assume metres, whereas we want it in mm.
