@@ -60,6 +60,8 @@ dependencies = [
     "numpy",
     # The file mapping of the simultaneous EEG-fMRI preprocessing (semp)
     "osl-pathfinder",
+    # The sign flipping methods
+    "osl-signflip>=0.1.0",
     "packaging",
     "pandas",
     "parse",

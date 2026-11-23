@@ -134,6 +134,11 @@ How do I refine the coregistration of a particular subject?
 
 Rerun its ``coregister`` step with a higher ``n_init`` (``run_batch(config, [session], outdir, overwrite=True)``), or remove misleading headshape points first: see the :doc:`tutorials_build/source-recon_deleting-headshape-points` tutorial.
 
+Which sign flipping method should I use?
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+``sign_flip`` (and ``fix_sign_ambiguity``) align the arbitrary sign of each parcel across sessions with the methods implemented in `osl-signflip <https://pypi.org/project/osl-signflip>`_, chosen with the ``method`` option: ``sdp`` (the default; a semidefinite relaxation that is fast and gives the same answer whatever the random seed), ``spectral``, ``belief_propagation``, or ``random`` (random search, the method of osl-ephys version 2). The method's hyperparameters go in the same options, e.g. ``sign_flip: {method: random, n_restarts: 3, n_iter: 2500, max_flips: 20}``; ``osl_ephys.group.get_method_hyperparameters("sdp")`` lists the options of a method and their defaults, and an unknown option is an error.
+
 Utilities
 ---------
 

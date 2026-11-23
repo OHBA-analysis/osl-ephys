@@ -2,10 +2,10 @@
 sessions."""
 
 from osl_ephys.group.sign_flipping import (
+    DEFAULT_METHOD,
+    METHODS,
     find_flips,
+    get_method_hyperparameters,
     sign_flip,
     sign_flip_mne_raw,
-    find_flips_spectral,
-    find_flips_belief_propagation,
-    find_flips_sdp,
 )

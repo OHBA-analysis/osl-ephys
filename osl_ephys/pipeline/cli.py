@@ -63,7 +63,15 @@ def _check(args):
     print(
         f"osl-ephys {osl_ephys.__version__}, mne {mne.__version__}, python {sys.version.split()[0]}"
     )
-    for name in ("numpy", "scipy", "sails", "glmtools", "fslpy", "pyvista"):
+    for name in (
+        "numpy",
+        "scipy",
+        "sails",
+        "glmtools",
+        "fslpy",
+        "osl-signflip",
+        "pyvista",
+    ):
         try:
             print(f"  {name} {version(name)}")
         except Exception:
