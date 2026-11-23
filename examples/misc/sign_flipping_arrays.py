@@ -13,22 +13,23 @@ files = [f"src/subject{i}.mat" for i in range(1, 11)]
 n_embeddings, standardize = 15, True
 
 data = [io.loadmat(f)["X"] for f in files]
-covs = [sign_flipping.calc_cov(x, n_embeddings, standardize) for x in data]
+covs = np.stack(
+    [sign_flipping.compute_covariance(x, n_embeddings, standardize) for x in data]
+)
 
-# The template is the subject whose covariance is most like the others'
-scores = [
-    np.mean([sign_flipping.calc_corr(a, b, n_embeddings) for b in covs if b is not a])
-    for a in covs
-]
-template = int(np.argmax(scores))
+# The template is a typical subject: the one with the median total similarity
+# of its (sign-invariant) covariance to the others'
+template = sign_flipping.find_template(covs, diag_offset=n_embeddings)
 print("Template:", files[template])
 
 for i, (x, cov) in enumerate(zip(data, covs)):
     if i == template:
         flipped = x
     else:
+        # method can be "sdp" (the default), "spectral", "belief_propagation" or
+        # "random", followed by that method's options
         flips, corr = sign_flipping.find_flips(
-            cov, covs[template], x.shape[1], n_embeddings
+            cov, covs[template], n_embeddings, method="sdp"
         )
         print(f"{files[i]}: correlation with the template {corr:.3f}")
         flipped = x * flips[np.newaxis, :]
