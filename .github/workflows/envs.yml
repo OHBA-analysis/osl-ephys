@@ -1,0 +1,102 @@
+name: Environments
+
+# The conda environment files in envs/ must keep working as the dependencies
+# move on conda-forge and PyPI, so each is created on its platform with the
+# checkout in place of the released osl-ephys, the 3D rendering is checked off
+# screen (linux-64 takes the OSMesa VTK) and the tests are run.
+
+on:
+  push:
+    branches: [main, v3]
+  pull_request: {}
+  workflow_dispatch: {}
+  schedule:
+    # Monday 06:00 UTC, to catch upstream changes between pushes
+    - cron: "0 6 * * 1"
+
+jobs:
+  envs:
+    name: ${{ matrix.platform }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux-64
+            os: ubuntu-latest
+          # No OSMesa VTK on conda-forge for ARM, so the standard build renders
+          # under a virtual display, as a user without one would run it
+          - platform: linux-aarch64
+            os: ubuntu-24.04-arm
+            prefix: xvfb-run -a
+          - platform: osx-64
+            os: macos-15-intel
+          - platform: osx-arm64
+            os: macos-latest
+    defaults:
+      run:
+        # Activates the conda environment in every step
+        shell: bash -el {0}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Full history and tags are needed by setuptools_scm
+          fetch-depth: 0
+
+      # The file installs the released osl-ephys from PyPI; here the checkout
+      # (with the test dependencies) takes its place. A POSIX class, as the
+      # macOS sed has no \s
+      - name: Point the environment file at the checkout
+        run: |
+          sed 's|^\([[:space:]]*- \)osl-ephys$|\1-e .[dev]|' envs/${{ matrix.platform }}.yml > environment-ci.yml
+          grep -q -- "-e .\[dev\]" environment-ci.yml
+
+      - uses: conda-incubator/setup-miniconda@v3
+        with:
+          miniforge-version: latest
+          environment-file: environment-ci.yml
+          activate-environment: osle
+
+      - name: Install Xvfb
+        if: matrix.prefix != ''
+        run: sudo apt-get install -y xvfb
+
+      - name: Check the installation
+        run: |
+          conda list
+          pip check
+          osl-ephys check
+
+      # What the coregistration and parcellation plots need: an off-screen
+      # render to a file. The importable plotting functions prove the Qt and
+      # trame backends load
+      - name: Render off screen
+        env:
+          PYVISTA_OFF_SCREEN: "true"
+        run: |
+          ${{ matrix.prefix }} python - <<'PY'
+          import pyvista
+          pyvista.OFF_SCREEN = True
+          plotter = pyvista.Plotter(off_screen=True)
+          plotter.add_mesh(pyvista.Sphere())
+          image = plotter.screenshot("sphere.png", return_img=True)
+          assert image.any(), "the off-screen render is blank"
+          from osl_ephys.rhino import plot_coregistration, plot_surfaces
+          from osl_ephys.parcellation import plot_parcellation
+          print("rendered", image.shape, "with", pyvista.Report())
+          PY
+
+      # The test recordings and parcellations from osl-files, fetched once
+      - name: Cache the osl-files data
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/osl-files
+            ~/Library/Caches/osl-files
+          key: osl-files-${{ runner.os }}-${{ hashFiles('osl_ephys/files/_fetch.py') }}
+
+      - name: Run the tests
+        env:
+          MPLBACKEND: Agg
+          PYVISTA_OFF_SCREEN: "true"
+        run: ${{ matrix.prefix }} pytest osl_ephys/tests

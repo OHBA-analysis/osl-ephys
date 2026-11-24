@@ -1,0 +1,38 @@
+# osl-ephys on Intel Macs
+name: osle
+channels:
+  - conda-forge
+dependencies:
+  - python=3.12
+  - pip
+  - fslpy
+  - h5io
+  - ipyevents
+  - ipywidgets
+  - matplotlib-base
+  - mne-base
+  - mne-icalabel
+  - onnxruntime
+  - nibabel
+  - nilearn
+  - numba
+  - numpy
+  - packaging
+  - pandas
+  - parse
+  - pillow
+  - pooch
+  - pyside6
+  - pyvista
+  - pyvistaqt
+  - pyyaml
+  - scikit-image
+  - scikit-learn
+  - scipy
+  - trame
+  - trame-vtk
+  - trame-vuetify
+  # glmtools, sails and osl-pathfinder are not on conda-forge, so they come
+  # from PyPI with osl-ephys itself
+  - pip:
+      - osl-ephys
