@@ -10,7 +10,6 @@ import numpy as np
 import nibabel as nib
 import matplotlib.pyplot as plt
 from scipy.spatial import KDTree
-from fsl import wrappers as fsl_wrappers
 import mne
 from mne.transforms import (
     Transform,
@@ -24,6 +23,7 @@ from mne.transforms import (
 from mne.viz.backends.renderer import _get_renderer
 from osl_ephys.session import Session, SurfaceFilenames, save_params
 from osl_ephys.rhino._geometry import (
+    _copy_with_sform,
     _get_sform,
     _niimask2indexpointcloud,
     _transform_vtk_mesh,
@@ -318,7 +318,7 @@ def coregister_head_and_mri(
     allow_mri_scaling: bool = False,
     mni_fiducials: dict[str, np.ndarray] | None = None,
     n_init: int = 1,
-    plot_type: str = "png",
+    plot: bool = True,
     show: bool = False,
 ) -> None:
     """Coregister HEAD (polhemus) and MRI space.
@@ -389,11 +389,9 @@ def coregister_head_and_mri(
         Defaults to [[1, 85, -41], [83, -20, -65], [-83, -20, -65]].
     n_init : int, optional
         Number of initialisations for the ICP algorithm that performs coregistration.
-    plot_type : str, optional
-        Type of coregistration plot to save. Options are "png", "html" or None.
-        "png" saves static PNG images (requires a display/render window).
-        "html" saves an interactive HTML file (works in headless environments).
-        None skips plotting.
+    plot : bool, optional
+        Whether to save a plot of the coregistration (``coreg.png`` in the
+        session's coreg directory).
     show : bool, optional
         Whether to display the coregistration plot interactively. Default is
         False (suitable for batch processing).
@@ -551,10 +549,11 @@ def coregister_head_and_mri(
     if use_nose:
         filenames.append("bet_outskin_plus_nose_mesh_file")
     for filename in filenames:
-        shutil.copyfile(getattr(sfns, filename), getattr(cfns, filename))
-        # Command: fslorient -setsform <sform> <mri_file>
-        sform = xform_nativeindex2scalednative.flatten()
-        fsl_wrappers.misc.fslorient(getattr(cfns, filename), setsform=tuple(sform))
+        _copy_with_sform(
+            getattr(sfns, filename),
+            getattr(cfns, filename),
+            xform_nativeindex2scalednative,
+        )
 
     # Scale vtk meshes
     for mesh_fname, vtk_fname in zip(
@@ -715,11 +714,8 @@ def coregister_head_and_mri(
         f"max {quality['max']:.1f} mm"
     )
 
-    if plot_type is not None:
-        filename = f"{session.coreg_dir}/coreg.{plot_type}"
-        plot_coregistration(
-            session, include_nose=use_nose, filename=filename, show=show
-        )
+    if plot:
+        plot_coregistration(session, include_nose=use_nose, show=show)
 
     print("Coregistration complete.")
 
@@ -837,11 +833,10 @@ def plot_coregistration(
     include_nose : bool, option
         Should we use the outskin surface with the nose?
     filename : str, optional
-        Filename to save display to (as an interactive html).
-        Must have extension .html.
+        PNG file to save the plot (three views) to. Defaults to
+        ``coreg.png`` in the session's coreg directory.
     show : bool, optional
-        Should we show the plots? Only used if filename has
-        extension '.png'.
+        Should we show the plots?
     """
 
     # Note the jargon used varies for xforms and coord spaces:
@@ -855,6 +850,8 @@ def plot_coregistration(
 
     if filename is None:
         filename = f"{session.coreg_dir}/coreg.png"
+    if Path(filename).suffix.lower() != ".png":
+        raise ValueError("filename must have extension .png.")
 
     coreg = session.coreg
 
@@ -1183,78 +1180,67 @@ def plot_coregistration(
             focalpoint=(0.0, 0.0, 0.0),
         )
 
-        # Save
-        ext = Path(filename).suffix.lower()
-
-        if ext == ".html":
-            print(f"Saving {filename}")
-            renderer.figure.plotter.export_html(filename)
-
-        elif ext == ".png":
-            # Capture three views and composite into a single PNG
-            views = [
-                (
-                    "Frontal",
-                    dict(
-                        azimuth=90,
-                        elevation=90,
-                        distance=600,
-                        focalpoint=(0.0, 0.0, 0.0),
-                    ),
+        # Capture three views and composite into a single PNG
+        views = [
+            (
+                "Frontal",
+                dict(
+                    azimuth=90,
+                    elevation=90,
+                    distance=600,
+                    focalpoint=(0.0, 0.0, 0.0),
                 ),
-                (
-                    "Right",
-                    dict(
-                        azimuth=0,
-                        elevation=90,
-                        distance=600,
-                        focalpoint=(0.0, 0.0, 0.0),
-                    ),
+            ),
+            (
+                "Right",
+                dict(
+                    azimuth=0,
+                    elevation=90,
+                    distance=600,
+                    focalpoint=(0.0, 0.0, 0.0),
                 ),
-                (
-                    "Top",
-                    dict(
-                        azimuth=90,
-                        elevation=0,
-                        distance=600,
-                        focalpoint=(0.0, 0.0, 0.0),
-                    ),
+            ),
+            (
+                "Top",
+                dict(
+                    azimuth=90,
+                    elevation=0,
+                    distance=600,
+                    focalpoint=(0.0, 0.0, 0.0),
                 ),
-            ]
+            ),
+        ]
 
-            plotter = renderer.figure.plotter
-            screenshots = []
+        plotter = renderer.figure.plotter
+        screenshots = []
 
-            for name, cam in views:
-                renderer.set_camera(
-                    azimuth=cam["azimuth"],
-                    elevation=cam["elevation"],
-                    distance=cam["distance"],
-                    focalpoint=cam["focalpoint"],
-                )
-                screenshots.append(plotter.screenshot())
+        for name, cam in views:
+            renderer.set_camera(
+                azimuth=cam["azimuth"],
+                elevation=cam["elevation"],
+                distance=cam["distance"],
+                focalpoint=cam["focalpoint"],
+            )
+            screenshots.append(plotter.screenshot())
 
-            fig, axes = plt.subplots(1, 3, figsize=(18, 6))
-            for ax, img, (name, _) in zip(axes, screenshots, views):
-                ax.imshow(img)
-                ax.axis("off")
-                ax.set_title(name, fontsize=22)
-            if display_headshape_pnts:
-                rms = coreg_rms(session, include_nose=include_nose)
-                fig.suptitle(
-                    f"headshape to scalp: rms {rms:.1f} mm",
-                    fontsize=18,
-                    y=1.02,
-                )
-            fig.tight_layout()
-            print(f"Saving {filename}")
-            fig.savefig(filename, dpi=150, bbox_inches="tight")
-            if show:
-                plt.show()
-            plt.close(fig)
-
-        else:
-            raise ValueError("Extension must be png or html.")
+        fig, axes = plt.subplots(1, 3, figsize=(18, 6))
+        for ax, img, (name, _) in zip(axes, screenshots, views):
+            ax.imshow(img)
+            ax.axis("off")
+            ax.set_title(name, fontsize=22)
+        if display_headshape_pnts:
+            rms = coreg_rms(session, include_nose=include_nose)
+            fig.suptitle(
+                f"headshape to scalp: rms {rms:.1f} mm",
+                fontsize=18,
+                y=1.02,
+            )
+        fig.tight_layout()
+        print(f"Saving {filename}")
+        fig.savefig(filename, dpi=150, bbox_inches="tight")
+        if show:
+            plt.show()
+        plt.close(fig)
 
 
 def _rhino_icp(

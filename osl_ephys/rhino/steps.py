@@ -91,13 +91,13 @@ def coregister(dataset, userargs):
 
     RHINO route options: ``use_headshape``, ``use_nose``,
     ``allow_mri_scaling``, ``n_init``,
-    ``plot_type``, ``already_coregistered`` (just save the files RHINO
+    ``plot``, ``already_coregistered`` (just save the files RHINO
     needs). FreeSurfer route options: ``allow_mri_scaling``, ``n_init``,
     ``fit_fiducials``, ``fit_icp``.
     """
     session = Session.from_dataset(dataset)
     if freesurfer.is_freesurfer_route(dataset, userargs):
-        for name in ("use_headshape", "use_nose", "plot_type", "already_coregistered"):
+        for name in ("use_headshape", "use_nose", "plot", "already_coregistered"):
             userargs.pop(name, None)
         if userargs.get("n_init") is None:
             userargs["n_init"] = 20

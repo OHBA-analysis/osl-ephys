@@ -34,7 +34,6 @@ def sessions():
     ]
 
 
-@pytest.mark.fsl
 def test_source_reconstruction_on_mni152_surfaces(sessions, tmp_path):
     results = run_batch(CONFIG, sessions, tmp_path, n_workers=2)
     assert {s for _, s, _, _ in results} == {"ok"}, results
@@ -77,7 +76,6 @@ group:
 """
 
 
-@pytest.mark.fsl
 @pytest.mark.parametrize(
     "inverse_method, estimator",
     [(None, "mne"), ("dSPM", "dspm"), ("sLORETA", "sloreta"), ("eLORETA", "eloreta")],
