@@ -7,7 +7,6 @@ import shutil
 import subprocess
 import numpy as np
 import nibabel as nib
-import nilearn as nil
 import mne
 from mne.transforms import Transform, read_trans
 from mne.io.constants import FIFF
@@ -317,14 +316,16 @@ def _make_mni_grid(gridstep: int, grid_file: str) -> None:
             files.mask.file(f"MNI152_T1_{int(gridstep)}mm_brain.nii.gz"), grid_file
         )
     except FileNotFoundError:
+        from nilearn import image
+
         img = nib.load(files.mask.file("MNI152_T1_1mm_brain.nii.gz"))
         affine = np.diag([-gridstep, gridstep, gridstep, 1.0])
         affine[:3, 3] = img.affine[:3, 3]
         shape = np.ceil(np.array(img.shape) / gridstep).astype(int)
-        grid = nil.image.resample_img(
+        grid = image.resample_img(
             img, affine, shape, interpolation="nearest", force_resample=True
         )
-        nib.save(nil.image.binarize_img(grid, 0, copy_header=True), grid_file)
+        nib.save(image.binarize_img(grid, 0, copy_header=True), grid_file)
 
 
 def _mni_grid_coords(grid_file: str) -> np.ndarray:
